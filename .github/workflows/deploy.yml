@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: deploy-common-week
@@ -27,15 +28,6 @@ jobs:
       - run: npm ci
       - run: npm run check
 
-      - name: Build production container
-        run: |
-          docker build \
-            --build-arg APP_BUILD="$GITHUB_SHA" \
-            --build-arg NEXT_PUBLIC_APP_URL="https://common-week.jim-greco.com" \
-            --build-arg NEXT_PUBLIC_ENABLE_DEMO="true" \
-            --tag common-week:"$GITHUB_SHA" \
-            .
-
   deploy:
     needs: verify
     runs-on: ubuntu-latest
@@ -43,6 +35,35 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish ARM64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          build-args: |
+            APP_BUILD=${{ github.sha }}
+            NEXT_PUBLIC_APP_URL=${{ vars.PRODUCTION_BASE_URL || 'https://common-week.jim-greco.com' }}
+            NEXT_PUBLIC_ENABLE_DEMO=${{ vars.NEXT_PUBLIC_ENABLE_DEMO || 'true' }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          cache-from: type=gha,scope=common-week-arm64
+          cache-to: type=gha,mode=max,scope=common-week-arm64
 
       - name: Validate deployment configuration
         env:
@@ -91,7 +112,23 @@ jobs:
             --exclude '*.tsbuildinfo' \
             ./ "$EC2_USER@$EC2_HOST:~/common-week/"
 
-      - name: Rebuild and restart Common Week
+          ssh -i "$HOME/.ssh/common-week" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            'install -d -m 700 "$HOME/common-week/.docker"'
+          scp -i "$HOME/.ssh/common-week" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$HOME/.docker/config.json" \
+            "$EC2_USER@$EC2_HOST:~/common-week/.docker/config.json"
+          ssh -i "$HOME/.ssh/common-week" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            'chmod 600 "$HOME/common-week/.docker/config.json"'
+
+      - name: Pull and restart Common Week
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -101,18 +138,24 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
-            "COMMON_WEEK_APP_BUILD='$GITHUB_SHA' bash -se" <<'REMOTE'
+            "COMMON_WEEK_APP_BUILD='$GITHUB_SHA' COMMON_WEEK_IMAGE='ghcr.io/$GITHUB_REPOSITORY:$GITHUB_SHA' bash -se" <<'REMOTE'
           set -euo pipefail
           cd "$HOME/deploy"
           cp "$HOME/common-week/deploy/docker-compose.common-week.yml" ./docker-compose.common-week.yml
-          export COMMON_WEEK_APP_BUILD
+          export COMMON_WEEK_APP_BUILD COMMON_WEEK_IMAGE
+          export DOCKER_CONFIG="$HOME/common-week/.docker"
+
+          cleanup() {
+            rm -rf "$DOCKER_CONFIG"
+          }
+          trap cleanup EXIT
 
           compose() {
             docker-compose -f docker-compose.yml -f docker-compose.common-week.yml "$@"
           }
 
-          compose build common-week
-          compose up -d --force-recreate common-week
+          compose pull common-week
+          compose up -d --force-recreate --no-build common-week
 
           for attempt in $(seq 1 60); do
             if compose exec -T common-week node -e '
@@ -124,7 +167,9 @@ jobs:
                 .catch(() => process.exit(1));
             ' </dev/null; then
               echo "Common Week is healthy at build $COMMON_WEEK_APP_BUILD."
-              docker system prune -f
+              docker images ghcr.io/jimgreco/common-week --format '{{.Repository}}:{{.Tag}}' \
+                | grep -Fvx "$COMMON_WEEK_IMAGE" \
+                | xargs -r docker image rm || true
               exit 0
             fi
 

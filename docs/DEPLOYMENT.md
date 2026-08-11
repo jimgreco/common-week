@@ -2,7 +2,7 @@
 
 ## Consolidated EC2 server
 
-Every push to `main` runs `.github/workflows/deploy.yml`. After application checks and a production-image build pass, the workflow syncs the repository to `~/common-week`, joins the service to the existing `~/deploy` Docker Compose project, rebuilds it, and verifies that `/api/health` reports the exact pushed commit.
+Every push to `main` runs `.github/workflows/deploy.yml`. After application checks pass, the workflow builds an ARM64 production image on GitHub's runner, publishes that exact commit image to GitHub Container Registry, syncs the Compose overlay to `~/common-week`, pulls the image into the existing `~/deploy` stack, and verifies that `/api/health` reports the exact pushed commit. The shared host never performs the resource-intensive Next.js image build.
 
 Create a `production` GitHub environment and add these repository or environment secrets:
 
@@ -10,7 +10,9 @@ Create a `production` GitHub environment and add these repository or environment
 - `EC2_USER`
 - `EC2_SSH_KEY`
 
-The service starts in demo mode when no application credentials are configured. For a real household, add these entries to `~/deploy/.env` on the server:
+The service starts in demo mode when no application credentials are configured. For a real household, add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` as GitHub `production` environment secrets, and set `NEXT_PUBLIC_ENABLE_DEMO=false` as an environment variable. These public values must be available when the image is built because Next.js inlines `NEXT_PUBLIC_` values.
+
+Add the corresponding runtime configuration to `~/deploy/.env` on the server:
 
 ```dotenv
 COMMON_WEEK_APP_URL=https://common-week.jim-greco.com
@@ -22,7 +24,7 @@ COMMON_WEEK_GOOGLE_CLIENT_ID=
 COMMON_WEEK_GOOGLE_CLIENT_SECRET=
 ```
 
-The public Supabase values are passed into the image build because Next.js inlines `NEXT_PUBLIC_` values. The service-role and Google client secrets are runtime-only container values.
+Keep the two public Supabase entries aligned with the GitHub environment values. The service-role and Google client secrets remain runtime-only container values.
 
 In Nginx Proxy Manager, create a proxy host for the canonical hostname with upstream `http://common-week:3000`, enable TLS, and keep the proxy on the shared Compose network. Set the GitHub Actions variable `PRODUCTION_BASE_URL` to that `https://` origin so deployments also verify the public route. Until DNS and the proxy host exist, the workflow still verifies the container from inside the shared server.
 
