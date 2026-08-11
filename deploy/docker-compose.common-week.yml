@@ -1,0 +1,23 @@
+services:
+  common-week:
+    build:
+      context: ../common-week
+      dockerfile: Dockerfile
+      args:
+        APP_BUILD: ${COMMON_WEEK_APP_BUILD:-local}
+        NEXT_PUBLIC_APP_URL: ${COMMON_WEEK_APP_URL:-https://common-week.jim-greco.com}
+        NEXT_PUBLIC_ENABLE_DEMO: ${COMMON_WEEK_ENABLE_DEMO:-true}
+        NEXT_PUBLIC_SUPABASE_URL: ${COMMON_WEEK_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${COMMON_WEEK_SUPABASE_PUBLISHABLE_KEY:-}
+    restart: always
+    environment:
+      APP_BUILD: ${COMMON_WEEK_APP_BUILD:-local}
+      GOOGLE_CLIENT_ID: ${COMMON_WEEK_GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${COMMON_WEEK_GOOGLE_CLIENT_SECRET:-}
+      NEXT_PUBLIC_APP_URL: ${COMMON_WEEK_APP_URL:-https://common-week.jim-greco.com}
+      NEXT_PUBLIC_ENABLE_DEMO: ${COMMON_WEEK_ENABLE_DEMO:-true}
+      NEXT_PUBLIC_SUPABASE_URL: ${COMMON_WEEK_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${COMMON_WEEK_SUPABASE_PUBLISHABLE_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${COMMON_WEEK_SUPABASE_SERVICE_ROLE_KEY:-}
+    expose:
+      - "3000"

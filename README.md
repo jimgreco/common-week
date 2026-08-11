@@ -57,7 +57,7 @@ Key paths:
 
 - [Supabase, Google OAuth, and Calendar setup](docs/SETUP.md)
 - [Weather and geocoding integration](docs/WEATHER.md)
-- [Vercel deployment](docs/DEPLOYMENT.md)
+- [EC2 and Vercel deployment](docs/DEPLOYMENT.md)
 
 ## Current V1 constraints
 

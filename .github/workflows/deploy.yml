@@ -1,0 +1,155 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-common-week
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run check
+
+      - name: Build production container
+        run: |
+          docker build \
+            --build-arg APP_BUILD="$GITHUB_SHA" \
+            --build-arg NEXT_PUBLIC_APP_URL="https://common-week.jim-greco.com" \
+            --build-arg NEXT_PUBLIC_ENABLE_DEMO="true" \
+            --tag common-week:"$GITHUB_SHA" \
+            .
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate deployment configuration
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          set -euo pipefail
+          for name in EC2_HOST EC2_SSH_KEY EC2_USER; do
+            test -n "${!name}" || { echo "Missing required secret: $name"; exit 1; }
+          done
+
+      - name: Prepare SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$EC2_SSH_KEY" > "$HOME/.ssh/common-week"
+          chmod 600 "$HOME/.ssh/common-week"
+          ssh-keyscan -H "$EC2_HOST" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Transfer application to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/common-week" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            'mkdir -p "$HOME/common-week"'
+          rsync -avz --delete \
+            -e "ssh -i $HOME/.ssh/common-week -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
+            --exclude '.git' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude '.next' \
+            --exclude '.playwright-cli' \
+            --exclude 'coverage' \
+            --exclude 'node_modules' \
+            --exclude '*.tsbuildinfo' \
+            ./ "$EC2_USER@$EC2_HOST:~/common-week/"
+
+      - name: Rebuild and restart Common Week
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/common-week" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            "COMMON_WEEK_APP_BUILD='$GITHUB_SHA' bash -se" <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/deploy"
+          cp "$HOME/common-week/deploy/docker-compose.common-week.yml" ./docker-compose.common-week.yml
+          export COMMON_WEEK_APP_BUILD
+
+          compose() {
+            docker-compose -f docker-compose.yml -f docker-compose.common-week.yml "$@"
+          }
+
+          compose build common-week
+          compose up -d --force-recreate common-week
+
+          for attempt in $(seq 1 60); do
+            if compose exec -T common-week node -e '
+              fetch("http://127.0.0.1:3000/api/health")
+                .then(async (response) => {
+                  const body = await response.json();
+                  process.exit(response.ok && body.status === "ok" && body.build === process.env.APP_BUILD ? 0 : 1);
+                })
+                .catch(() => process.exit(1));
+            ' </dev/null; then
+              echo "Common Week is healthy at build $COMMON_WEEK_APP_BUILD."
+              docker system prune -f
+              exit 0
+            fi
+
+            if [ "$attempt" = "60" ]; then
+              compose ps common-week || true
+              compose logs --tail=100 common-week || true
+              exit 1
+            fi
+            sleep 2
+          done
+          REMOTE
+
+      - name: Check public endpoint
+        if: ${{ vars.PRODUCTION_BASE_URL != '' }}
+        env:
+          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+        run: |
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 3 \
+            "${PRODUCTION_BASE_URL%/}/api/health")"
+          BUILD="$GITHUB_SHA" BODY="$body" node -e '
+            const body = JSON.parse(process.env.BODY);
+            if (body.status !== "ok" || body.build !== process.env.BUILD) process.exit(1);
+          '
+
+      - name: Note missing public endpoint
+        if: ${{ vars.PRODUCTION_BASE_URL == '' }}
+        run: echo "::notice::PRODUCTION_BASE_URL is not configured; the container health check passed, but the public proxy was not tested."

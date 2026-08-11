@@ -1,0 +1,11 @@
+.git
+.github
+.next
+.playwright-cli
+coverage
+node_modules
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+npm-debug.log*
