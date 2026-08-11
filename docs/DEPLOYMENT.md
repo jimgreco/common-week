@@ -2,7 +2,7 @@
 
 ## Consolidated EC2 server
 
-Every push to `main` runs `.github/workflows/deploy.yml`. After application checks pass, the workflow builds an ARM64 production image on GitHub's runner, publishes that exact commit image to GitHub Container Registry, syncs the Compose overlay to `~/common-week`, pulls the image into the existing `~/deploy` stack, and verifies that `/api/health` reports the exact pushed commit. The shared host never performs the resource-intensive Next.js image build.
+Every push to `main` runs `.github/workflows/deploy.yml`. After application checks pass, the workflow builds an ARM64 production image on a native GitHub-hosted ARM runner, publishes that exact commit image to GitHub Container Registry, syncs the Compose overlay to `~/common-week`, pulls the image into the existing `~/deploy` stack, and verifies that `/api/health` reports the exact pushed commit. The shared host never performs the resource-intensive Next.js image build.
 
 Create a `production` GitHub environment and add these repository or environment secrets:
 
