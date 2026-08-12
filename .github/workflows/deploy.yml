@@ -81,12 +81,14 @@ jobs:
 
       - name: Validate deployment configuration
         env:
+          COMMON_WEEK_GOOGLE_CLIENT_ID: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_ID }}
+          COMMON_WEEK_GOOGLE_CLIENT_SECRET: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_SECRET }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
           set -euo pipefail
-          for name in EC2_HOST EC2_SSH_KEY EC2_USER; do
+          for name in COMMON_WEEK_GOOGLE_CLIENT_ID COMMON_WEEK_GOOGLE_CLIENT_SECRET EC2_HOST EC2_SSH_KEY EC2_USER; do
             test -n "${!name}" || { echo "Missing required secret: $name"; exit 1; }
           done
 
@@ -105,6 +107,8 @@ jobs:
 
       - name: Transfer application to EC2
         env:
+          COMMON_WEEK_GOOGLE_CLIENT_ID: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_ID }}
+          COMMON_WEEK_GOOGLE_CLIENT_SECRET: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_SECRET }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
@@ -142,6 +146,21 @@ jobs:
             "$EC2_USER@$EC2_HOST" \
             'chmod 600 "$HOME/common-week/.docker/config.json"'
 
+          secrets_file="$RUNNER_TEMP/common-week-production-secrets.env"
+          umask 077
+          printf 'COMMON_WEEK_GOOGLE_CLIENT_ID=%s\nCOMMON_WEEK_GOOGLE_CLIENT_SECRET=%s\n' \
+            "$COMMON_WEEK_GOOGLE_CLIENT_ID" "$COMMON_WEEK_GOOGLE_CLIENT_SECRET" > "$secrets_file"
+          scp -i "$HOME/.ssh/common-week" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$secrets_file" \
+            "$EC2_USER@$EC2_HOST:~/common-week/.env.production.pending"
+          ssh -i "$HOME/.ssh/common-week" \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" \
+            'chmod 600 "$HOME/common-week/.env.production.pending"'
+
       - name: Pull and restart Common Week
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
@@ -158,6 +177,34 @@ jobs:
           export COMMON_WEEK_APP_BUILD COMMON_WEEK_IMAGE
           export COMPOSE_PROFILES=common-week
           export DOCKER_CONFIG="$HOME/common-week/.docker"
+          secrets_file="$HOME/common-week/.env.production.pending"
+
+          cleanup() {
+            rm -rf "$DOCKER_CONFIG"
+            rm -f "$secrets_file"
+          }
+          trap cleanup EXIT
+
+          test -s "$secrets_file" || { echo "Google credential payload was not transferred."; exit 1; }
+          google_client_id="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_CLIENT_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
+          google_client_secret="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_CLIENT_SECRET" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
+          test -n "$google_client_id" || { echo "COMMON_WEEK_GOOGLE_CLIENT_ID is empty."; exit 1; }
+          test -n "$google_client_secret" || { echo "COMMON_WEEK_GOOGLE_CLIENT_SECRET is empty."; exit 1; }
+
+          update_env() {
+            key="$1"
+            value="$2"
+            temporary="$(mktemp)"
+            if [ -f .env ]; then
+              grep -v "^${key}=" .env > "$temporary" || true
+            fi
+            printf '%s=%s\n' "$key" "$value" >> "$temporary"
+            chmod 600 "$temporary"
+            mv "$temporary" .env
+          }
+
+          update_env COMMON_WEEK_GOOGLE_CLIENT_ID "$google_client_id"
+          update_env COMMON_WEEK_GOOGLE_CLIENT_SECRET "$google_client_secret"
 
           if ! grep -q '^COMMON_WEEK_DB_PASSWORD=' .env 2>/dev/null; then
             umask 077
@@ -172,11 +219,6 @@ jobs:
           case "$common_week_db_password" in
             (*[!0-9a-f]*|'') echo "COMMON_WEEK_DB_PASSWORD must be a non-empty hex value."; exit 1 ;;
           esac
-
-          cleanup() {
-            rm -rf "$DOCKER_CONFIG"
-          }
-          trap cleanup EXIT
 
           compose() {
             docker-compose "$@"

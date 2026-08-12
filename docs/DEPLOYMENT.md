@@ -13,11 +13,13 @@ Every push to `main` runs `.github/workflows/deploy.yml`. The workflow:
 
 The service uses the `common-week` Compose profile so an unrelated infrastructure deployment does not replace the application image pinned by its own workflow. It uses the same PostgreSQL container as the other server apps but a separate database and restricted login. DynamoDB is not used.
 
-Create a `production` GitHub environment with:
+Configure these GitHub Actions secrets at the repository level or in the `production` environment:
 
 - `EC2_HOST`
 - `EC2_USER`
 - `EC2_SSH_KEY`
+- `COMMON_WEEK_GOOGLE_CLIENT_ID`
+- `COMMON_WEEK_GOOGLE_CLIENT_SECRET`
 
 Set the Actions variable:
 
@@ -25,13 +27,11 @@ Set the Actions variable:
 PRODUCTION_BASE_URL=https://common-week.jim-greco.com
 ```
 
-The first application deployment generates `COMMON_WEEK_DB_PASSWORD` and `COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY` directly in `~/deploy/.env` with restrictive permissions. Add the remaining runtime values there:
+The deployment transfers the Google credentials through a permission-restricted temporary file, updates `~/deploy/.env`, and removes the temporary copy. The first application deployment also generates `COMMON_WEEK_DB_PASSWORD` and `COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY` directly in that protected server file. The remaining runtime values are:
 
 ```dotenv
 COMMON_WEEK_APP_URL=https://common-week.jim-greco.com
 COMMON_WEEK_ENABLE_DEMO=false
-COMMON_WEEK_GOOGLE_CLIENT_ID=
-COMMON_WEEK_GOOGLE_CLIENT_SECRET=
 ```
 
 Do not copy another app's OAuth client unless its Google configuration intentionally includes Common Week's callback. The authorized production redirect URI must be:
