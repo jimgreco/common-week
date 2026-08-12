@@ -1,7 +1,7 @@
 import "server-only";
 
 import { weatherProvider } from "@/lib/integrations/weather";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { query } from "@/lib/server/database";
 import type { DailyWeather, HouseholdLocation, PlannerSourceState } from "@/types/domain";
 
 interface WeatherBundle {
@@ -9,7 +9,7 @@ interface WeatherBundle {
   state: PlannerSourceState;
 }
 
-function weatherFromCache(row: Record<string, unknown>): DailyWeather | null {
+function weatherFromCache(row: { daily: unknown; hourly: unknown }): DailyWeather | null {
   if (!row.daily || typeof row.daily !== "object" || !Array.isArray(row.hourly)) return null;
   const daily = row.daily as Omit<DailyWeather, "hourly">;
   if (daily.status !== "available" || typeof daily.date !== "string" || typeof daily.locationId !== "string") return null;
@@ -30,21 +30,17 @@ export async function getWeatherForAssignments(
   }
 
   try {
-    const admin = createAdminClient();
-    const now = new Date().toISOString();
     const results = await Promise.all(
       [...byLocation.values()].map(async ({ location, dates }) => {
         const sorted = [...dates].sort();
         const loaded = new Map<string, DailyWeather>();
-
         try {
-          const { data: cached } = await admin
-            .from("weather_cache")
-            .select("daily, hourly")
-            .eq("location_id", location.id)
-            .in("forecast_date", sorted)
-            .gt("expires_at", now);
-          for (const row of (cached ?? []) as Array<Record<string, unknown>>) {
+          const cached = await query<{ daily: unknown; hourly: unknown }>(
+            `select daily, hourly from weather_cache
+              where location_id = $1 and forecast_date = any($2::date[]) and expires_at > now()`,
+            [location.id, sorted],
+          );
+          for (const row of cached.rows) {
             const forecast = weatherFromCache(row);
             if (forecast) loaded.set(forecast.date, forecast);
           }
@@ -82,20 +78,25 @@ export async function getWeatherForAssignments(
       }
 
       try {
-        const cacheRows = [...fresh.values()]
-          .filter((forecast) => forecast.status === "available")
-          .map((forecast) => ({
-            location_id: location.id,
-            forecast_date: forecast.date,
-            daily: { ...forecast, hourly: [] },
-            hourly: forecast.hourly,
-            fetched_at: new Date().toISOString(),
-            expires_at: new Date(Date.now() + 2 * 60 * 60_000).toISOString(),
-          }));
-        if (cacheRows.length) {
-          await admin.from("weather_cache").upsert(cacheRows, {
-            onConflict: "location_id,forecast_date",
-          });
+        for (const forecast of fresh.values()) {
+          if (forecast.status !== "available") continue;
+          await query(
+            `insert into weather_cache (
+               location_id, forecast_date, daily, hourly, fetched_at, expires_at
+             ) values ($1, $2::date, $3::jsonb, $4::jsonb, now(), $5)
+             on conflict (location_id, forecast_date) do update set
+               daily = excluded.daily,
+               hourly = excluded.hourly,
+               fetched_at = excluded.fetched_at,
+               expires_at = excluded.expires_at`,
+            [
+              location.id,
+              forecast.date,
+              JSON.stringify({ ...forecast, hourly: [] }),
+              JSON.stringify(forecast.hourly),
+              new Date(Date.now() + 2 * 60 * 60_000),
+            ],
+          );
         }
       } catch {
         // Caching is an optimization; a fresh provider result remains usable.

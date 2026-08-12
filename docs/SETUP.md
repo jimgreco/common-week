@@ -1,86 +1,101 @@
-# Supabase and Google setup
+# PostgreSQL and Google setup
 
-## 1. Create and migrate Supabase
+## 1. Configure local PostgreSQL
 
-1. Create a Supabase project.
-2. Copy `.env.example` to `.env.local`.
-3. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` from the Supabase project settings.
-4. Apply the migration:
+Common Week uses an ordinary PostgreSQL 16 database. DynamoDB is not involved.
 
-```bash
-npx supabase login
-npx supabase link --project-ref YOUR_PROJECT_REF
-npx supabase db push
+Create a dedicated database and login role as a PostgreSQL administrator:
+
+```sql
+create role common_week_app login password 'replace-with-a-long-random-password';
+create database common_week owner common_week_app;
 ```
 
-The migration creates the complete data model, indexes, default categories, helper functions, Row Level Security policies, and Realtime publication. Never expose the service-role key in a `NEXT_PUBLIC_` variable.
+Copy `.env.example` to `.env.local`, set the connection string, and disable demo mode:
 
-For a local database policy check:
-
-```bash
-npx supabase start
-npx supabase db reset
-npx supabase test db
+```dotenv
+DATABASE_URL=postgresql://common_week_app:YOUR_PASSWORD@127.0.0.1:5432/common_week
+PGSSL=false
+ENABLE_DEMO=false
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-The included pgTAP test is a structural smoke test. Before production launch, also perform the two-account isolation test in the checklist below.
+Apply migrations:
+
+```bash
+npm run db:migrate
+```
+
+Migrations are recorded in `app_schema_migrations` and are safe to run again. The schema includes the household model, opaque sessions, planning data, locations, date constraints, provider caches, indexes, default categories, and collaboration notification triggers.
+
+The production workflow creates the `common_week_app` role and `common_week` database on the existing shared PostgreSQL container if needed. It generates an independent database password on the server rather than sharing the administrator credential with the app.
 
 ## 2. Configure Google Cloud
 
-1. In Google Cloud Console, create or select a project.
+1. Create or select a Google Cloud project.
 2. Enable **Google Calendar API**.
-3. Configure the OAuth consent screen and add only these scopes:
+3. Configure the OAuth consent screen with only:
    - `openid`
    - `email`
    - `profile`
    - `https://www.googleapis.com/auth/calendar.readonly`
 4. Create a **Web application** OAuth client.
-5. Add the Supabase callback as an authorized redirect URI:
+5. Add the exact authorized redirect URI:
 
 ```text
-https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback
+http://localhost:3000/auth/callback
+```
+
+For production also add:
+
+```text
+https://common-week.jim-greco.com/auth/callback
 ```
 
 6. If the consent screen is in testing, add both household Google accounts as test users.
 
-No Calendar write scope is requested or used.
+Set the server-only credentials and generate a token-encryption key:
 
-## 3. Configure Supabase Auth
-
-In **Authentication → Providers → Google**, enable Google and enter the OAuth client ID and secret from Google Cloud.
-
-In **Authentication → URL Configuration**:
-
-- Set the local Site URL to `http://localhost:3000` during development or the canonical HTTPS origin in production.
-- Add `http://localhost:3000/auth/callback` and `https://YOUR_DOMAIN/auth/callback` to the redirect allow list.
-
-Set the same Google client credentials as server-only application variables:
-
-```text
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
+```bash
+openssl rand -base64 32
 ```
 
-They are required to refresh each member's Calendar authorization independently. `NEXT_PUBLIC_APP_URL` must be an exact origin without a trailing path.
+```dotenv
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_TOKEN_ENCRYPTION_KEY=the-generated-base64-value
+```
 
-## 4. Create and join a household
+The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. No Calendar write scope is requested.
+
+## 3. Create and join a household
 
 1. Sign in with the first Google account.
 2. Create the household on the onboarding page.
-3. Add at least one saved location and make it the default.
-4. In Settings, invite the second member's exact Google email.
-5. Sign out, then sign in with that invited Google account. The callback accepts a non-expired invitation matching the authenticated email.
-6. Each member chooses their own visible calendars and aliases in Settings. OAuth credentials are never shared between members.
+3. Add a saved location and make it the default.
+4. Invite the second member's exact Google email in Settings.
+5. Sign out, then sign in with the invited account. A current invitation matching Google's verified email is accepted atomically.
+6. Each member selects and aliases their own visible calendars.
 
-V1 records an invitation but does not deliver an email. Send the app URL to the partner separately.
+## 4. Verify PostgreSQL isolation
+
+Against a migrated disposable database:
+
+```bash
+DATABASE_URL=postgresql://... npm run test:database
+```
+
+This exercises household-scoped item reads/writes, cross-household category and location rejection, session-to-membership resolution, and date/week constraints against real PostgreSQL.
+
+The browser never connects to PostgreSQL. Household identity comes from the server-side session, not form/query input, and every shared-data query includes that authenticated household boundary.
 
 ## 5. Production acceptance checklist
 
-- Sign in, sign out, and wait long enough to exercise session and Google token refresh.
-- Revoke the app in one Google account and confirm only Calendar degrades to a reconnect state.
-- Create one household with two accounts; verify both see and edit the same planning item via Realtime.
-- With a third account, attempt direct reads/writes against every household table and confirm no rows are returned or changed.
-- Select primary, extra, and shared calendars; check timed, all-day, recurring-expanded, and multi-day events.
-- Exercise dates around a month boundary, year boundary, and DST transition.
+- Sign in/out and exercise both the app session and Google access-token refresh.
+- Revoke Google authorization for one member and confirm only Calendar degrades to reconnect state.
+- Verify two members see each other's planning changes promptly.
+- Use a third account in a different household and attempt item IDs, category IDs, and location IDs from the first household; confirm no reads or writes succeed.
+- Select primary, additional, and shared calendars; check timed, all-day, recurring-expanded, and multi-day events.
+- Exercise month, year, and DST boundaries.
 - Change Friday's location through Sunday and confirm all three weather summaries refresh.
-- Disable the network during quick entry; confirm typed text remains with Retry.
+- Interrupt the network during quick entry and confirm typed text stays visible with Retry.

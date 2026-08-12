@@ -17,6 +17,23 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: common_week_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d common_week_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/common_week_test
+      PGSSL: "false"
     steps:
       - uses: actions/checkout@v7
 
@@ -27,6 +44,8 @@ jobs:
 
       - run: npm ci
       - run: npm run check
+      - run: npm run db:migrate
+      - run: npm run test:database
 
   deploy:
     needs: verify
@@ -57,9 +76,6 @@ jobs:
           build-args: |
             APP_BUILD=${{ github.sha }}
             NEXT_PUBLIC_APP_URL=${{ vars.PRODUCTION_BASE_URL || 'https://common-week.jim-greco.com' }}
-            NEXT_PUBLIC_ENABLE_DEMO=${{ vars.NEXT_PUBLIC_ENABLE_DEMO || 'true' }}
-            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
           cache-from: type=gha,scope=common-week-arm64
           cache-to: type=gha,mode=max,scope=common-week-arm64
 
@@ -143,6 +159,20 @@ jobs:
           export COMPOSE_PROFILES=common-week
           export DOCKER_CONFIG="$HOME/common-week/.docker"
 
+          if ! grep -q '^COMMON_WEEK_DB_PASSWORD=' .env 2>/dev/null; then
+            umask 077
+            printf 'COMMON_WEEK_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env
+          fi
+          if ! grep -q '^COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY=' .env 2>/dev/null; then
+            umask 077
+            printf 'COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32 | tr -d '\n')" >> .env
+          fi
+          chmod 600 .env
+          common_week_db_password="$(awk -F= '$1 == "COMMON_WEEK_DB_PASSWORD" { sub(/^[^=]*=/, ""); print; exit }' .env)"
+          case "$common_week_db_password" in
+            (*[!0-9a-f]*|'') echo "COMMON_WEEK_DB_PASSWORD must be a non-empty hex value."; exit 1 ;;
+          esac
+
           cleanup() {
             rm -rf "$DOCKER_CONFIG"
           }
@@ -153,6 +183,25 @@ jobs:
           }
 
           compose pull common-week
+          compose up -d db
+          for attempt in $(seq 1 30); do
+            if compose exec -T db pg_isready -U admin >/dev/null 2>&1; then break; fi
+            if [ "$attempt" = "30" ]; then compose logs --tail=100 db; exit 1; fi
+            sleep 2
+          done
+          if ! compose exec -T db psql -U admin -d postgres -tAc \
+            "select 1 from pg_roles where rolname = 'common_week_app'" | grep -qx 1; then
+            compose exec -T db createuser -U admin common_week_app
+          fi
+          compose exec -T db psql -U admin -d postgres -v ON_ERROR_STOP=1 \
+            -c "alter role common_week_app login password '$common_week_db_password'"
+          if ! compose exec -T db psql -U admin -d postgres -tAc \
+            "select 1 from pg_database where datname = 'common_week'" | grep -qx 1; then
+            compose exec -T db createdb -U admin -O common_week_app common_week
+          fi
+          compose exec -T db psql -U admin -d postgres -v ON_ERROR_STOP=1 \
+            -c "alter database common_week owner to common_week_app"
+          compose run --rm --no-deps common-week node scripts/migrate.mjs
           compose up -d --force-recreate --no-build common-week
 
           for attempt in $(seq 1 60); do

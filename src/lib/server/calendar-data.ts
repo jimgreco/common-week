@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { fromZonedTime } from "date-fns-tz";
 import { addDateDays } from "@/lib/date";
 import { googleCalendarService, type GoogleCalendarListEntry } from "@/lib/integrations/google-calendar";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { query, withTransaction } from "@/lib/server/database";
 import { getGoogleAccessToken } from "@/lib/server/google-tokens";
 import type { CalendarEvent, CalendarPreference, PlannerSourceState } from "@/types/domain";
 
@@ -16,6 +16,16 @@ interface MemberIdentity {
 interface CalendarBundle {
   events: CalendarEvent[];
   state: PlannerSourceState;
+}
+
+interface PreferenceRow {
+  id: string;
+  google_calendar_id: string;
+  calendar_name: string;
+  display_alias: string | null;
+  color: string;
+  is_selected: boolean;
+  is_primary: boolean;
 }
 
 function attributionFor(name: string): string {
@@ -40,58 +50,66 @@ function preferenceFromGoogle(
   };
 }
 
+function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
+  return rows.map((row) => ({
+    id: row.id,
+    googleCalendarId: row.google_calendar_id,
+    calendarName: row.calendar_name,
+    displayAlias: row.display_alias,
+    color: row.color,
+    isSelected: row.is_selected,
+    isPrimary: row.is_primary,
+  }));
+}
+
+async function readPreferences(householdId: string, userId: string) {
+  return query<PreferenceRow>(
+    `select id, google_calendar_id, calendar_name, display_alias, color, is_selected, is_primary
+       from calendar_preferences
+      where household_id = $1 and user_id = $2
+      order by is_primary desc, calendar_name`,
+    [householdId, userId],
+  );
+}
+
 async function ensurePreferences(
   householdId: string,
   userId: string,
   accessToken: string,
   discoverNewCalendars = false,
 ): Promise<CalendarPreference[]> {
-  const admin = createAdminClient();
-  const { data: existing, error } = await admin
-    .from("calendar_preferences")
-    .select("id, google_calendar_id, calendar_name, display_alias, color, is_selected, is_primary")
-    .eq("user_id", userId);
-  if (error) throw new Error("Calendar preferences could not be loaded.");
-
-  if (!existing?.length || discoverNewCalendars) {
+  const existing = await readPreferences(householdId, userId);
+  if (!existing.rowCount || discoverNewCalendars) {
     const calendars = await googleCalendarService.listCalendars(accessToken);
     if (!calendars.length) return [];
-    const existingIds = new Set((existing ?? []).map((row) => row.google_calendar_id));
-    const rows = calendars.filter((calendar) => !existingIds.has(calendar.id)).map((calendar) => {
-      const preference = preferenceFromGoogle(householdId, userId, calendar);
-      return {
-        household_id: preference.householdId,
-        user_id: preference.userId,
-        google_calendar_id: preference.googleCalendarId,
-        calendar_name: preference.calendarName,
-        display_alias: preference.displayAlias,
-        color: preference.color,
-        is_selected: preference.isSelected,
-        is_primary: preference.isPrimary,
-      };
+    await withTransaction(async (database) => {
+      for (const calendar of calendars) {
+        const preference = preferenceFromGoogle(householdId, userId, calendar);
+        await database.query(
+          `insert into calendar_preferences (
+             household_id, user_id, google_calendar_id, calendar_name, display_alias,
+             color, is_selected, is_primary
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+           on conflict (user_id, google_calendar_id) do update set
+             calendar_name = excluded.calendar_name,
+             color = excluded.color,
+             is_primary = excluded.is_primary`,
+          [
+            preference.householdId,
+            preference.userId,
+            preference.googleCalendarId,
+            preference.calendarName,
+            preference.displayAlias,
+            preference.color,
+            preference.isSelected,
+            preference.isPrimary,
+          ],
+        );
+      }
     });
-    if (!rows.length) return mapPreferences(existing ?? []);
-    const { data: inserted, error: insertError } = await admin
-      .from("calendar_preferences")
-      .insert(rows)
-      .select("id, google_calendar_id, calendar_name, display_alias, color, is_selected, is_primary");
-    if (insertError) throw new Error("Calendar preferences could not be initialized.");
-    return mapPreferences([...(existing ?? []), ...(inserted ?? [])]);
+    return mapPreferences((await readPreferences(householdId, userId)).rows);
   }
-
-  return mapPreferences(existing);
-}
-
-function mapPreferences(rows: Array<Record<string, unknown>>): CalendarPreference[] {
-  return rows.map((row) => ({
-    id: String(row.id),
-    googleCalendarId: String(row.google_calendar_id),
-    calendarName: String(row.calendar_name),
-    displayAlias: row.display_alias ? String(row.display_alias) : null,
-    color: String(row.color),
-    isSelected: Boolean(row.is_selected),
-    isPrimary: Boolean(row.is_primary),
-  }));
+  return mapPreferences(existing.rows);
 }
 
 async function eventsForMember(
@@ -102,7 +120,6 @@ async function eventsForMember(
 ): Promise<{ events: CalendarEvent[]; connected: boolean }> {
   const accessToken = await getGoogleAccessToken(member.userId);
   if (!accessToken) return { events: [], connected: false };
-  const admin = createAdminClient();
   try {
     const preferences = (await ensurePreferences(householdId, member.userId, accessToken)).filter(
       (preference) => preference.isSelected,
@@ -114,14 +131,13 @@ async function eventsForMember(
     const cacheKey = createHash("sha256")
       .update(`${weekStart}:${timeZone}:${preferences.map((preference) => `${preference.id}:${preference.isSelected}`).join(",")}`)
       .digest("hex");
-    const { data: cached } = await admin
-      .from("calendar_event_cache")
-      .select("events, expires_at")
-      .eq("user_id", member.userId)
-      .eq("cache_key", cacheKey)
-      .maybeSingle();
-    if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
-      return { events: cached.events as CalendarEvent[], connected: true };
+    const cached = await query<{ events: CalendarEvent[]; expires_at: Date }>(
+      `select events, expires_at from calendar_event_cache
+        where user_id = $1 and cache_key = $2`,
+      [member.userId, cacheKey],
+    );
+    if (cached.rows[0] && cached.rows[0].expires_at.getTime() > Date.now()) {
+      return { events: cached.rows[0].events, connected: true };
     }
 
     const attribution = attributionFor(member.displayName);
@@ -131,21 +147,22 @@ async function eventsForMember(
       ),
     );
     const events = eventGroups.flat();
-    await admin.from("calendar_event_cache").upsert(
-      {
-        user_id: member.userId,
-        cache_key: cacheKey,
-        window_start: timeMin,
-        window_end: timeMax,
-        events,
-        expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
-      },
-      { onConflict: "user_id,cache_key" },
+    await query(
+      `insert into calendar_event_cache (
+         user_id, cache_key, window_start, window_end, events, expires_at
+       ) values ($1, $2, $3, $4, $5::jsonb, $6)
+       on conflict (user_id, cache_key) do update set
+         window_start = excluded.window_start,
+         window_end = excluded.window_end,
+         events = excluded.events,
+         expires_at = excluded.expires_at,
+         created_at = now()`,
+      [member.userId, cacheKey, timeMin, timeMax, JSON.stringify(events), new Date(Date.now() + 5 * 60_000)],
     );
     return { events, connected: true };
   } catch (error) {
     if (error instanceof Error && error.message === "GOOGLE_AUTH_REQUIRED") {
-      await admin.from("google_connections").delete().eq("user_id", member.userId);
+      await query("delete from google_connections where user_id = $1", [member.userId]);
       return { events: [], connected: false };
     }
     throw error;
@@ -186,14 +203,12 @@ export async function getCurrentUserCalendarPreferences(userId: string): Promise
   try {
     const token = await getGoogleAccessToken(userId);
     if (!token) return [];
-    const admin = createAdminClient();
-    const { data: member } = await admin
-      .from("household_members")
-      .select("household_id")
-      .eq("user_id", userId)
-      .single();
-    if (!member) return [];
-    return ensurePreferences(member.household_id, userId, token, true);
+    const member = await query<{ household_id: string }>(
+      "select household_id from household_members where user_id = $1",
+      [userId],
+    );
+    if (!member.rows[0]) return [];
+    return ensurePreferences(member.rows[0].household_id, userId, token, true);
   } catch {
     return [];
   }

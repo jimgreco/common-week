@@ -5,46 +5,63 @@ import { z } from "zod";
 import { datesForLocationScope, isDateOnly, weekStartForDate } from "@/lib/date";
 import { geocodingService } from "@/lib/integrations/geocoding";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
+import { postgresErrorCode, query } from "@/lib/server/database";
 import { getPlannerData } from "@/lib/server/planner-data";
-import { createClient } from "@/lib/supabase/server";
 import type { ActionResult, GeocodingResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
 
 const uuid = z.string().uuid();
 const itemText = z.string().trim().min(1).max(1000);
 const dateOnly = z.string().refine(isDateOnly, "Invalid date.");
 
+interface PlanningRow {
+  id: string;
+  planning_date: string | null;
+  week_start_date: string;
+  type: PlanningItemType;
+  category_id: string | null;
+  text: string;
+  is_completed: boolean;
+  sort_order: number;
+  created_by: string;
+  updated_at: Date;
+}
+
 function actionError<T = undefined>(error: unknown, fallback: string): ActionResult<T> {
+  if (error instanceof z.ZodError || postgresErrorCode(error)) return { ok: false, error: fallback };
   return { ok: false, error: error instanceof Error ? error.message : fallback };
 }
 
-function mappedItem(row: Record<string, unknown>): PlanningItem {
+function mappedItem(row: PlanningRow): PlanningItem {
   return {
-    id: String(row.id),
-    planningDate: row.planning_date ? String(row.planning_date) : null,
-    weekStartDate: String(row.week_start_date),
-    type: row.type as PlanningItemType,
-    categoryId: row.category_id ? String(row.category_id) : null,
+    id: row.id,
+    planningDate: row.planning_date,
+    weekStartDate: row.week_start_date,
+    type: row.type,
+    categoryId: row.category_id,
     categoryName: null,
     categoryColor: null,
-    text: String(row.text),
-    isCompleted: Boolean(row.is_completed),
-    sortOrder: Number(row.sort_order),
-    createdBy: String(row.created_by),
-    updatedAt: String(row.updated_at),
+    text: row.text,
+    isCompleted: row.is_completed,
+    sortOrder: row.sort_order,
+    createdBy: row.created_by,
+    updatedAt: row.updated_at.toISOString(),
     saveState: "saved",
   };
+}
+
+function validateWeek(planningDate: string | null, weekStartDate: string) {
+  if (weekStartForDate(weekStartDate) !== weekStartDate) throw new Error("Week must begin Monday.");
+  if (planningDate && weekStartForDate(planningDate) !== weekStartDate) {
+    throw new Error("Planning date must be in the selected week.");
+  }
 }
 
 export async function loadPlannerSourcesAction(weekStartDate: string): Promise<ActionResult<PlannerSourcePayload>> {
   try {
     const weekStart = dateOnly.parse(weekStartDate);
-    if (weekStartForDate(weekStart) !== weekStart) throw new Error("Week must begin Monday.");
+    validateWeek(null, weekStart);
     const context = await requireHouseholdContext();
-    const data = await getPlannerData(
-      { userId: context.userId, householdId: context.householdId },
-      weekStart,
-      { includeExternal: true },
-    );
+    const data = await getPlannerData(context, weekStart, { includeExternal: true });
     return {
       ok: true,
       data: {
@@ -66,37 +83,38 @@ export async function createPlanningItemAction(input: {
   categoryId: string | null;
 }): Promise<ActionResult<PlanningItem>> {
   try {
-    const parsed = z
-      .object({
-        text: itemText,
-        type: z.enum(["note", "task"]),
-        planningDate: dateOnly.nullable(),
-        weekStartDate: dateOnly,
-        categoryId: uuid.nullable(),
-      })
-      .parse(input);
-    if (weekStartForDate(parsed.weekStartDate) !== parsed.weekStartDate) throw new Error("Week must begin Monday.");
-    if (parsed.planningDate && weekStartForDate(parsed.planningDate) !== parsed.weekStartDate) {
-      throw new Error("Planning date must be in the selected week.");
-    }
+    const parsed = z.object({
+      text: itemText,
+      type: z.enum(["note", "task"]),
+      planningDate: dateOnly.nullable(),
+      weekStartDate: dateOnly,
+      categoryId: uuid.nullable(),
+    }).parse(input);
+    validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("planning_items")
-      .insert({
-        household_id: context.householdId,
-        created_by: context.userId,
-        planning_date: parsed.planningDate,
-        week_start_date: parsed.weekStartDate,
-        type: parsed.type,
-        category_id: parsed.categoryId,
-        text: parsed.text,
-      })
-      .select("id, planning_date, week_start_date, type, category_id, text, is_completed, sort_order, created_by, updated_at")
-      .single();
-    if (error || !data) throw new Error("Your item could not be saved.");
+    const result = await query<PlanningRow>(
+      `insert into planning_items (
+         household_id, created_by, planning_date, week_start_date, type, category_id, text
+       )
+       select $1, $2, $3::date, $4::date, $5::planning_item_type, $6::uuid, $7
+       where $6::uuid is null or exists (
+         select 1 from categories where id = $6 and (household_id is null or household_id = $1)
+       )
+       returning id, planning_date::text, week_start_date::text, type, category_id,
+                 text, is_completed, sort_order, created_by, updated_at`,
+      [
+        context.householdId,
+        context.userId,
+        parsed.planningDate,
+        parsed.weekStartDate,
+        parsed.type,
+        parsed.categoryId,
+        parsed.text,
+      ],
+    );
+    if (!result.rows[0]) throw new Error("That category is not available to this household.");
     revalidatePath("/planner");
-    return { ok: true, data: mappedItem(data) };
+    return { ok: true, data: mappedItem(result.rows[0]) };
   } catch (error) {
     return actionError(error, "Your item could not be saved.");
   }
@@ -111,33 +129,35 @@ export async function updatePlanningItemAction(input: {
   categoryId: string | null;
 }): Promise<ActionResult> {
   try {
-    const parsed = z
-      .object({
-        id: uuid,
-        text: itemText,
-        type: z.enum(["note", "task"]),
-        planningDate: dateOnly.nullable(),
-        weekStartDate: dateOnly,
-        categoryId: uuid.nullable(),
-      })
-      .parse(input);
-    if (weekStartForDate(parsed.weekStartDate) !== parsed.weekStartDate) throw new Error("Week must begin Monday.");
-    if (parsed.planningDate && weekStartForDate(parsed.planningDate) !== parsed.weekStartDate) {
-      throw new Error("Planning date must be in the selected week.");
-    }
-    await requireHouseholdContext();
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("planning_items")
-      .update({
-        text: parsed.text,
-        type: parsed.type,
-        planning_date: parsed.planningDate,
-        week_start_date: parsed.weekStartDate,
-        category_id: parsed.categoryId,
-      })
-      .eq("id", parsed.id);
-    if (error) throw new Error("Your changes could not be saved.");
+    const parsed = z.object({
+      id: uuid,
+      text: itemText,
+      type: z.enum(["note", "task"]),
+      planningDate: dateOnly.nullable(),
+      weekStartDate: dateOnly,
+      categoryId: uuid.nullable(),
+    }).parse(input);
+    validateWeek(parsed.planningDate, parsed.weekStartDate);
+    const context = await requireHouseholdContext();
+    const result = await query(
+      `update planning_items set
+         text = $3, type = $4::planning_item_type, planning_date = $5::date,
+         week_start_date = $6::date, category_id = $7::uuid
+       where id = $1 and household_id = $2
+         and ($7::uuid is null or exists (
+           select 1 from categories where id = $7 and (household_id is null or household_id = $2)
+         ))`,
+      [
+        parsed.id,
+        context.householdId,
+        parsed.text,
+        parsed.type,
+        parsed.planningDate,
+        parsed.weekStartDate,
+        parsed.categoryId,
+      ],
+    );
+    if (!result.rowCount) throw new Error("That item is not available to this household.");
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {
@@ -148,13 +168,12 @@ export async function updatePlanningItemAction(input: {
 export async function togglePlanningItemAction(id: string, completed: boolean): Promise<ActionResult> {
   try {
     const parsedId = uuid.parse(id);
-    await requireHouseholdContext();
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("planning_items")
-      .update({ is_completed: Boolean(completed) })
-      .eq("id", parsedId);
-    if (error) throw new Error("Task status could not be saved.");
+    const context = await requireHouseholdContext();
+    const result = await query(
+      "update planning_items set is_completed = $3 where id = $1 and household_id = $2",
+      [parsedId, context.householdId, Boolean(completed)],
+    );
+    if (!result.rowCount) throw new Error("That task is not available to this household.");
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {
@@ -165,10 +184,12 @@ export async function togglePlanningItemAction(id: string, completed: boolean): 
 export async function deletePlanningItemAction(id: string): Promise<ActionResult> {
   try {
     const parsedId = uuid.parse(id);
-    await requireHouseholdContext();
-    const supabase = await createClient();
-    const { error } = await supabase.from("planning_items").delete().eq("id", parsedId);
-    if (error) throw new Error("The item could not be deleted.");
+    const context = await requireHouseholdContext();
+    const result = await query(
+      "delete from planning_items where id = $1 and household_id = $2",
+      [parsedId, context.householdId],
+    );
+    if (!result.rowCount) throw new Error("That item is not available to this household.");
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {
@@ -182,26 +203,25 @@ export async function setDailyLocationAction(input: {
   scope: "day" | "through-sunday" | "week";
 }): Promise<ActionResult> {
   try {
-    const parsed = z
-      .object({ startDate: dateOnly, locationId: uuid, scope: z.enum(["day", "through-sunday", "week"]) })
-      .parse(input);
+    const parsed = z.object({
+      startDate: dateOnly,
+      locationId: uuid,
+      scope: z.enum(["day", "through-sunday", "week"]),
+    }).parse(input);
     const context = await requireHouseholdContext();
-    const supabase = await createClient();
-    const { data: location } = await supabase
-      .from("locations")
-      .select("id")
-      .eq("id", parsed.locationId)
-      .eq("household_id", context.householdId)
-      .maybeSingle();
-    if (!location) throw new Error("That location is not available to this household.");
+    const location = await query(
+      "select 1 from locations where id = $1 and household_id = $2",
+      [parsed.locationId, context.householdId],
+    );
+    if (!location.rowCount) throw new Error("That location is not available to this household.");
 
-    const rows = datesForLocationScope(parsed.startDate, parsed.scope).map((date) => ({
-      household_id: context.householdId,
-      date,
-      location_id: parsed.locationId,
-    }));
-    const { error } = await supabase.from("daily_settings").upsert(rows, { onConflict: "household_id,date" });
-    if (error) throw new Error("Location changes could not be saved.");
+    await query(
+      `insert into daily_settings (household_id, date, location_id)
+       select $1, assigned_date, $3
+         from unnest($2::date[]) as assigned_date
+       on conflict (household_id, date) do update set location_id = excluded.location_id`,
+      [context.householdId, datesForLocationScope(parsed.startDate, parsed.scope), parsed.locationId],
+    );
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {
@@ -209,29 +229,30 @@ export async function setDailyLocationAction(input: {
   }
 }
 
-export async function searchLocationsAction(query: string): Promise<ActionResult<GeocodingResult[]>> {
+export async function searchLocationsAction(search: string): Promise<ActionResult<GeocodingResult[]>> {
   try {
     await requireUserContext();
-    const parsed = z.string().trim().min(2).max(120).parse(query);
+    const parsed = z.string().trim().min(2).max(120).parse(search);
     return { ok: true, data: await geocodingService.search(parsed) };
   } catch (error) {
     return actionError<GeocodingResult[]>(error, "Location search failed.");
   }
 }
 
-export async function searchPlanningItemsAction(query: string): Promise<ActionResult<PlanningItem[]>> {
+export async function searchPlanningItemsAction(search: string): Promise<ActionResult<PlanningItem[]>> {
   try {
-    const parsed = z.string().trim().min(2).max(100).parse(query);
-    await requireHouseholdContext();
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("planning_items")
-      .select("id, planning_date, week_start_date, type, category_id, text, is_completed, sort_order, created_by, updated_at")
-      .ilike("text", `%${parsed.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`)
-      .order("updated_at", { ascending: false })
-      .limit(30);
-    if (error) throw new Error("Search is temporarily unavailable.");
-    return { ok: true, data: (data ?? []).map((row) => mappedItem(row)) };
+    const parsed = z.string().trim().min(2).max(100).parse(search);
+    const context = await requireHouseholdContext();
+    const escaped = parsed.replace(/[\\%_]/g, "\\$&");
+    const result = await query<PlanningRow>(
+      `select id, planning_date::text, week_start_date::text, type, category_id,
+              text, is_completed, sort_order, created_by, updated_at
+         from planning_items
+        where household_id = $1 and text ilike $2 escape '\\'
+        order by updated_at desc limit 30`,
+      [context.householdId, `%${escaped}%`],
+    );
+    return { ok: true, data: result.rows.map(mappedItem) };
   } catch (error) {
     return actionError<PlanningItem[]>(error, "Search is temporarily unavailable.");
   }

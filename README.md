@@ -1,72 +1,84 @@
 # Common Week
 
-Common Week is a shared Monday-through-Sunday family planner. It keeps four different kinds of information legible in one view: scheduled Google Calendar commitments, daily location, location-specific weather, and flexible household notes/tasks.
+Common Week is a shared Monday-through-Sunday family planner. It keeps scheduled Google Calendar commitments, daily location, location-specific weather, and flexible household notes/tasks legible in one view.
 
-The repository contains a deployable Next.js application plus the Supabase schema, Row Level Security policies, provider adapters, tests, and setup documentation required for V1. With no environment variables, it opens as a polished interactive demo so the product can be evaluated immediately.
+The production application uses the existing self-hosted PostgreSQL 16 service. It does not use DynamoDB or Supabase. With no database configuration, it opens as a polished interactive demo so the product can still be evaluated locally.
 
 ## What is implemented
 
-- Google sign-in and per-user read-only Google Calendar authorization
+- Independent Google sign-in for each member with read-only Google Calendar authorization
 - Shared single-household model with email-matched partner invitations
-- Selected primary, secondary, and shared calendars with aliases, colors, all-day/timed/multi-day events, and subtle conflict flags
+- Selected primary, additional, and shared calendars with aliases, colors, all-day/timed/multi-day events, and conflict flags
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
-- Daily and weekly notes/tasks, categories, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, retry state, and realtime refresh
-- Saved/default/travel locations, Open-Meteo geocoding, and day/through-Sunday/entire-week assignment
-- Open-Meteo daily and hourly weather with forecast-horizon truthfulness, provider-error isolation, Fahrenheit/Celsius display, and database caching
-- Settings for household, members, invitations, calendar selection/aliases, locations, timezone, and temperature unit
-- Supabase RLS, server-only OAuth credentials/cache tables, CSP and security headers, strict server validation, CI, unit/component tests, and pgTAP policy checks
+- Daily and weekly notes/tasks, categories, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
+- Saved/default/travel locations, day/through-Sunday/whole-week assignment, and Open-Meteo geocoding
+- Location-specific daily/hourly weather with honest forecast-unavailable states and PostgreSQL caching
+- Prompt collaboration through PostgreSQL `LISTEN/NOTIFY`, server-sent events, automatic reconnect, and a polling fallback
+- Database-backed opaque sessions, PKCE OAuth state validation, encrypted Google tokens, CSP/security headers, and parameterized server-only data access
+- Exact-SHA container publishing and deployment through the consolidated server Compose project
 
 ## Run it
+
+For the interactive demo:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Without Supabase variables, `Common Week` runs in demo mode. For a real household, follow [Supabase and Google setup](docs/SETUP.md).
+For durable local storage, create the `common_week` PostgreSQL database, copy `.env.example` to `.env.local`, set `ENABLE_DEMO=false`, and run:
 
-Useful commands:
+```bash
+npm run db:migrate
+npm run dev
+```
+
+See [PostgreSQL and Google setup](docs/SETUP.md) for the complete setup.
+
+Useful verification commands:
 
 ```bash
 npm run lint
 npm run typecheck
 npm run test:run
+npm run db:migrate
+npm run test:database
 npm run build
-npm run check
 ```
 
 ## Architecture
 
-- **Next.js App Router:** the household plan renders first, then a server action hydrates Calendar/weather without blocking it; writes use Server Actions and the client planner handles optimistic interaction and Supabase Realtime refreshes.
-- **Supabase/PostgreSQL:** durable household data, auth sessions, email-matched invitations, cache tables, and RLS-enforced household isolation.
+- **Next.js App Router:** planning data renders first; Calendar and weather hydrate independently so either provider can fail without taking down the planner.
+- **Local PostgreSQL:** the `common_week` database holds users, sessions, household data, planning data, saved locations, calendar preferences, encrypted provider credentials, and provider caches.
+- **Server-only authorization boundary:** the browser has no database credential or generic data API. Every read/write derives user and household identity from an opaque HTTP-only session and includes that trusted household in its SQL predicate.
 - **Provider boundaries:** `GoogleCalendarService`, `WeatherProvider`, and `GeocodingService` normalize external data before it reaches the UI.
-- **Date safety:** planning dates remain `YYYY-MM-DD` strings; Monday boundaries are computed without converting date-only values through a user timezone.
-- **Independent failure domains:** calendar and weather adapters return their own source state, while shared planning data remains usable.
-- **Credential boundary:** Google access/refresh tokens and the Supabase service-role key are imported only by server-only modules and are never returned to the browser.
+- **Date safety:** planning dates remain `YYYY-MM-DD` strings; Monday boundaries are computed without converting date-only values through UTC.
+- **Realtime:** PostgreSQL triggers publish only household/table identifiers; the authenticated event stream filters those notifications and never exposes row data.
+- **Credential boundary:** Google access and refresh tokens are encrypted with AES-256-GCM before storage and are used only in server modules.
 
 Key paths:
 
 - [`src/components/planner/weekly-planner.tsx`](src/components/planner/weekly-planner.tsx) — interactive weekly experience
-- [`src/lib/server/planner-data.ts`](src/lib/server/planner-data.ts) — planner data assembly
+- [`src/lib/server/planner-data.ts`](src/lib/server/planner-data.ts) — authorized planner assembly
+- [`src/lib/server/session.ts`](src/lib/server/session.ts) — opaque PostgreSQL sessions
 - [`src/lib/integrations`](src/lib/integrations) — normalized provider adapters
-- [`supabase/migrations/202608100001_initial_family_planner.sql`](supabase/migrations/202608100001_initial_family_planner.sql) — schema, indexes, functions, policies, Realtime
-- [`supabase/tests/household_isolation.sql`](supabase/tests/household_isolation.sql) — database policy assertions
-- [`security_best_practices_report.md`](security_best_practices_report.md) — security review
+- [`db/migrations/001_initial_common_week.sql`](db/migrations/001_initial_common_week.sql) — PostgreSQL schema, indexes, triggers, and default categories
+- [`scripts/test-database.mjs`](scripts/test-database.mjs) — real-PostgreSQL isolation and constraint checks
 
 ## Setup and deployment
 
-- [Supabase, Google OAuth, and Calendar setup](docs/SETUP.md)
+- [PostgreSQL, Google OAuth, and Calendar setup](docs/SETUP.md)
 - [Weather and geocoding integration](docs/WEATHER.md)
-- [EC2 and Vercel deployment](docs/DEPLOYMENT.md)
+- [Consolidated EC2 deployment](docs/DEPLOYMENT.md)
 
 ## Current V1 constraints
 
-- Creating an invitation records it securely; V1 does not send transactional invitation email. The partner signs in using the invited Google email and joins automatically.
-- Google Calendar is intentionally read-only. Calendar writes, RSVP, and Google Calendar search are absent.
-- Forecasts use Open-Meteo's useful forecast horizon. Future dates outside it say “Forecast not yet available,” and past weather is not reconstructed.
-- Realtime is item-level last-write-wins, not simultaneous rich-text collaboration.
-- A real two-account/RLS/OAuth smoke test requires the project's Supabase and Google credentials; the local demo and automated application tests do not substitute for that environment check.
+- Invitations are recorded securely but not emailed. The partner opens the app and signs in with the invited Google address.
+- Google Calendar is intentionally read-only. Calendar writes, RSVP, and Calendar search are absent.
+- Forecasts use Open-Meteo's useful forecast horizon. Past weather is not reconstructed.
+- Collaboration is item-level last-write-wins, not simultaneous rich-text editing.
+- Google Cloud credentials and the public proxy/DNS still require operator setup before real-account production acceptance testing.
 
 ## Recommended next feature
 
-After V1 is deployed and exercised by both household members, add transactional invitation email with a signed deep link. It closes the only manual onboarding step without expanding the planner into task management or calendar editing.
+After both household accounts complete production acceptance, add transactional invitation email with a signed deep link. It closes the only manual onboarding step without expanding the product into a task manager.

@@ -3,12 +3,14 @@ import { ArrowRight, CalendarDays, Check, CloudSun, MapPin } from "lucide-react"
 import { signInWithGoogle } from "@/app/actions/auth";
 import { BrandMark } from "@/components/brand-mark";
 import { currentWeekStart } from "@/lib/date";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isDemoMode, isGoogleOAuthConfigured } from "@/lib/env";
 import { getUserContext } from "@/lib/server/auth";
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
-  if (isSupabaseConfigured) {
+  if (!isDemoMode) {
     const context = await getUserContext();
     if (context?.householdId) redirect("/planner");
     if (context) redirect("/onboarding");
@@ -31,17 +33,19 @@ export default async function Home() {
             See where you’ll be, what the weather looks like, what’s already scheduled, and what the two of you still need to decide.
           </p>
           <div className="landing-actions">
-            {isSupabaseConfigured ? (
+            {!isDemoMode && isGoogleOAuthConfigured ? (
               <form action={signInWithGoogle}>
                 <button className="button button-primary button-large" type="submit">
                   <span className="google-g" aria-hidden="true">G</span>
                   Continue with Google
                 </button>
               </form>
-            ) : (
+            ) : isDemoMode ? (
               <Link className="button button-primary button-large" href={demoHref}>
                 Open interactive planner <ArrowRight size={17} aria-hidden="true" />
               </Link>
+            ) : (
+              <span className="landing-auth-unavailable">Google sign-in is being configured.</span>
             )}
             <span className="landing-security-note">Private by default · Calendar is read-only</span>
           </div>

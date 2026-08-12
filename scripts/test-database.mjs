@@ -1,0 +1,122 @@
+import assert from "node:assert/strict";
+import { createHash, randomBytes } from "node:crypto";
+import pg from "pg";
+
+const { Client } = pg;
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL is required for database integration tests.");
+
+const client = new Client({
+  connectionString,
+  ssl: process.env.PGSSL === "true" ? { rejectUnauthorized: false } : false,
+  application_name: "common-week-database-tests",
+});
+
+await client.connect();
+await client.query("begin");
+try {
+  const suffix = randomBytes(6).toString("hex");
+  const userA = (await client.query(
+    `insert into users (google_subject, email, display_name)
+     values ($1, $2, 'Household A') returning id`,
+    [`google-a-${suffix}`, `a-${suffix}@example.com`],
+  )).rows[0].id;
+  const userB = (await client.query(
+    `insert into users (google_subject, email, display_name)
+     values ($1, $2, 'Household B') returning id`,
+    [`google-b-${suffix}`, `b-${suffix}@example.com`],
+  )).rows[0].id;
+  const householdA = (await client.query("insert into households (name) values ('A') returning id")).rows[0].id;
+  const householdB = (await client.query("insert into households (name) values ('B') returning id")).rows[0].id;
+  await client.query(
+    "insert into household_members (household_id, user_id, role) values ($1, $2, 'owner'), ($3, $4, 'owner')",
+    [householdA, userA, householdB, userB],
+  );
+
+  const locationA = (await client.query(
+    `insert into locations (household_id, name, latitude, longitude, timezone)
+     values ($1, 'A Home', 40, -73, 'America/New_York') returning id`,
+    [householdA],
+  )).rows[0].id;
+  const locationB = (await client.query(
+    `insert into locations (household_id, name, latitude, longitude, timezone)
+     values ($1, 'B Home', 41, -72, 'America/New_York') returning id`,
+    [householdB],
+  )).rows[0].id;
+  const categoryB = (await client.query(
+    "insert into categories (household_id, name, color) values ($1, 'Private B', '#123456') returning id",
+    [householdB],
+  )).rows[0].id;
+  const itemA = (await client.query(
+    `insert into planning_items (household_id, created_by, week_start_date, planning_date, type, text)
+     values ($1, $2, '2026-08-10', '2026-08-11', 'task', 'Private A task') returning id`,
+    [householdA, userA],
+  )).rows[0].id;
+
+  const ownRead = await client.query("select id from planning_items where household_id = $1", [householdA]);
+  const foreignRead = await client.query("select id from planning_items where household_id = $1", [householdB]);
+  assert.equal(ownRead.rowCount, 1, "household A can read its item");
+  assert.equal(foreignRead.rowCount, 0, "household B query cannot read household A item");
+
+  const foreignUpdate = await client.query(
+    "update planning_items set text = 'tampered' where id = $1 and household_id = $2",
+    [itemA, householdB],
+  );
+  assert.equal(foreignUpdate.rowCount, 0, "a foreign household cannot update an item by ID");
+
+  const crossCategory = await client.query(
+    `insert into planning_items (household_id, created_by, week_start_date, type, category_id, text)
+     select $1, $2, '2026-08-10', 'note', $3, 'cross category'
+      where exists (
+        select 1 from categories where id = $3 and (household_id is null or household_id = $1)
+      ) returning id`,
+    [householdA, userA, categoryB],
+  );
+  assert.equal(crossCategory.rowCount, 0, "household-specific categories cannot cross household boundaries");
+
+  const foreignLocation = await client.query(
+    "select 1 from locations where id = $1 and household_id = $2",
+    [locationB, householdA],
+  );
+  const ownLocation = await client.query(
+    "select 1 from locations where id = $1 and household_id = $2",
+    [locationA, householdA],
+  );
+  assert.equal(foreignLocation.rowCount, 0, "foreign locations are rejected");
+  assert.equal(ownLocation.rowCount, 1, "own locations are accepted");
+
+  const sessionToken = randomBytes(32).toString("base64url");
+  const sessionHash = createHash("sha256").update(sessionToken).digest();
+  await client.query(
+    "insert into auth_sessions (token_hash, user_id, expires_at) values ($1, $2, now() + interval '1 day')",
+    [sessionHash, userA],
+  );
+  const sessionIdentity = await client.query(
+    `select u.id, hm.household_id
+       from auth_sessions s join users u on u.id = s.user_id
+       left join household_members hm on hm.user_id = u.id
+      where s.token_hash = $1 and s.expires_at > now()`,
+    [sessionHash],
+  );
+  assert.equal(sessionIdentity.rows[0].id, userA, "opaque session resolves to the correct user");
+  assert.equal(sessionIdentity.rows[0].household_id, householdA, "session receives only its own membership");
+
+  await client.query("savepoint invalid_date");
+  let rejectedInvalidDate = false;
+  try {
+    await client.query(
+      `insert into planning_items (household_id, created_by, week_start_date, planning_date, type, text)
+       values ($1, $2, '2026-08-10', '2026-08-18', 'note', 'Wrong week')`,
+      [householdA, userA],
+    );
+  } catch (error) {
+    rejectedInvalidDate = error?.code === "23514";
+    await client.query("rollback to savepoint invalid_date");
+  }
+  assert.equal(rejectedInvalidDate, true, "date-only week constraints reject an item outside its week");
+
+  process.stdout.write("Database migration, household isolation, session, and date constraints passed.\n");
+} finally {
+  await client.query("rollback");
+  await client.end();
+}

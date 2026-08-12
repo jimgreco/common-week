@@ -111,6 +111,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .landing-lede { max-width: 570px; margin: 28px 0; color: var(--ink-soft); font-size: 17px; line-height: 1.65; }
 .landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .landing-security-note { color: var(--muted); font-size: 11px; }
+.landing-auth-unavailable { padding: 12px 15px; border: 1px solid var(--rule-strong); border-radius: 4px; color: var(--ink-soft); font-size: 12px; }
 .paper-preview { min-width: 0; border: 1px solid var(--rule-strong); background: var(--white); box-shadow: var(--shadow); transform: rotate(.45deg); }
 .paper-preview-header { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid var(--rule); font-family: var(--font-geist-mono), monospace; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .paper-preview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }

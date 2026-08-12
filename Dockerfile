@@ -11,14 +11,8 @@ RUN npm ci
 FROM base AS builder
 ARG APP_BUILD=local
 ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
-ARG NEXT_PUBLIC_ENABLE_DEMO=true
-ARG NEXT_PUBLIC_SUPABASE_URL=
-ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ENV APP_BUILD=${APP_BUILD}
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
-ENV NEXT_PUBLIC_ENABLE_DEMO=${NEXT_PUBLIC_ENABLE_DEMO}
-ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
@@ -36,6 +30,8 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/db ./db
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
 USER nextjs
 EXPOSE 3000

@@ -2,64 +2,56 @@
 
 ## Consolidated EC2 server
 
-Every push to `main` runs `.github/workflows/deploy.yml`. After application checks pass, the workflow builds an ARM64 production image on a native GitHub-hosted ARM runner, publishes exact-commit and `latest` tags to GitHub Container Registry, activates the canonical `common-week` service in `~/deploy/docker-compose.yml`, and verifies that `/api/health` reports the exact pushed commit. The shared host never performs the resource-intensive Next.js image build.
+Every push to `main` runs `.github/workflows/deploy.yml`. The workflow:
 
-Common Week is registered in the consolidated deploy repository alongside the other applications. It uses the `common-week` Compose profile so an unrelated infrastructure deployment does not replace the exact image pinned by the application workflow.
+1. Runs lint, TypeScript, Vitest, a real PostgreSQL migration/isolation test, and the production build.
+2. Builds an ARM64 image and publishes exact-commit plus `latest` tags to GitHub Container Registry.
+3. Connects to the shared server and uses the canonical `common-week` service in `~/deploy/docker-compose.yml`.
+4. Starts the existing `db` service, creates the dedicated `common_week_app` login and `common_week` database if absent, and runs application migrations from the exact image.
+5. Restarts Common Week and requires `/api/health` to report the exact Git SHA and a ready PostgreSQL connection.
+6. Checks the public endpoint when `PRODUCTION_BASE_URL` is configured.
 
-Create a `production` GitHub environment and add these repository or environment secrets:
+The service uses the `common-week` Compose profile so an unrelated infrastructure deployment does not replace the application image pinned by its own workflow. It uses the same PostgreSQL container as the other server apps but a separate database and restricted login. DynamoDB is not used.
+
+Create a `production` GitHub environment with:
 
 - `EC2_HOST`
 - `EC2_USER`
 - `EC2_SSH_KEY`
 
-The service starts in demo mode when no application credentials are configured. For a real household, add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` as GitHub `production` environment secrets, and set `NEXT_PUBLIC_ENABLE_DEMO=false` as an environment variable. These public values must be available when the image is built because Next.js inlines `NEXT_PUBLIC_` values.
+Set the Actions variable:
 
-Add the corresponding runtime configuration to `~/deploy/.env` on the server:
+```text
+PRODUCTION_BASE_URL=https://common-week.jim-greco.com
+```
+
+The first application deployment generates `COMMON_WEEK_DB_PASSWORD` and `COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY` directly in `~/deploy/.env` with restrictive permissions. Add the remaining runtime values there:
 
 ```dotenv
 COMMON_WEEK_APP_URL=https://common-week.jim-greco.com
 COMMON_WEEK_ENABLE_DEMO=false
-COMMON_WEEK_SUPABASE_URL=
-COMMON_WEEK_SUPABASE_PUBLISHABLE_KEY=
-COMMON_WEEK_SUPABASE_SERVICE_ROLE_KEY=
 COMMON_WEEK_GOOGLE_CLIENT_ID=
 COMMON_WEEK_GOOGLE_CLIENT_SECRET=
 ```
 
-Keep the two public Supabase entries aligned with the GitHub environment values. The service-role and Google client secrets remain runtime-only container values.
+Do not copy another app's OAuth client unless its Google configuration intentionally includes Common Week's callback. The authorized production redirect URI must be:
 
-In Nginx Proxy Manager, create a proxy host for the canonical hostname with upstream `http://common-week:3000`, enable TLS, and keep the proxy on the shared Compose network. Set the GitHub Actions variable `PRODUCTION_BASE_URL` to that `https://` origin so deployments also verify the public route. Until DNS and the proxy host exist, the workflow still verifies the container from inside the shared server.
-
-## Vercel
-
-## Before deploying
-
-1. Complete [Supabase and Google setup](SETUP.md).
-2. Push this repository to a private Git provider repository.
-3. Import the project into Vercel as a Next.js project.
-4. Add every variable from `.env.example` for Production and Preview as appropriate. Use a different Supabase project for preview if preview data must be isolated.
-5. Set `NEXT_PUBLIC_APP_URL` to the canonical production origin, for example `https://planner.example.com`.
-6. Update the Supabase Site URL/redirect allow list and Google OAuth configuration for that canonical origin.
-
-Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `GOOGLE_CLIENT_SECRET` as `NEXT_PUBLIC_` variables.
-
-## Build and deploy
-
-Vercel detects Next.js automatically. The production build command is:
-
-```bash
-npm run build
+```text
+https://common-week.jim-greco.com/auth/callback
 ```
 
-The CI workflow runs lint, TypeScript, Vitest, and the production build on pull requests and `main` pushes.
+In Nginx Proxy Manager, create a TLS proxy host for the canonical hostname with upstream `http://common-week:3000`. Keep the proxy on the shared Compose network. Server-sent events send `X-Accel-Buffering: no`; preserve streaming through the proxy for immediate collaboration updates.
+
+## Vercel note
+
+The application remains build-compatible with Vercel, but the chosen production database is private on the consolidated EC2 Compose network. A Vercel deployment would need secure network access to that database or a separate managed PostgreSQL instance. The canonical deployment path is therefore the existing EC2 server.
 
 ## Post-deploy verification
 
-- Confirm `/` signs in and `/auth/callback` returns only to an allow-listed relative path.
-- Inspect response headers for Content Security Policy, frame denial, MIME sniffing prevention, referrer policy, and permissions policy.
+- Confirm `/api/health` reports `status: ok`, the deployed commit, and `database: ready`.
+- Confirm `/` offers Google sign-in after credentials are configured.
 - Complete the two-member and third-account isolation checks in [SETUP.md](SETUP.md).
-- Confirm all server-only environment variables are present in Production and absent from the browser bundle.
+- Inspect response headers for CSP, frame denial, MIME-sniffing prevention, referrer policy, and permissions policy.
+- Confirm database and Google secrets are absent from browser JavaScript.
 - Test `/planner` at 1440px, 390px, and 320px widths.
-- Confirm Calendar or weather provider interruption does not prevent planning-item use.
-
-The app intentionally opts out of search indexing because it is a private household tool.
+- Confirm Calendar or weather interruption does not prevent planning-item use.

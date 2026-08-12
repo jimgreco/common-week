@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { WeeklyPlanner } from "@/components/planner/weekly-planner";
 import { currentWeekStart, isDateOnly, weekStartForDate } from "@/lib/date";
 import { getDemoPlannerData } from "@/lib/demo-data";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isDemoMode } from "@/lib/env";
 import { getUserContext } from "@/lib/server/auth";
 import { getPlannerData } from "@/lib/server/planner-data";
 
@@ -16,7 +16,7 @@ export default async function PlannerPage({ searchParams }: PageProps<"/planner"
     ? weekStartForDate(params.week)
     : currentWeekStart();
 
-  if (!isSupabaseConfigured) {
+  if (isDemoMode) {
     return <WeeklyPlanner initialData={getDemoPlannerData(requested)} currentUserName="Jim" />;
   }
 

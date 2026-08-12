@@ -18,7 +18,6 @@ import { BrandMark } from "@/components/brand-mark";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
-import { createClient } from "@/lib/supabase/client";
 import type { DayPlan, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
 export function WeeklyPlanner({ initialData, currentUserName }: { initialData: WeeklyPlannerData; currentUserName: string }) {
@@ -82,21 +81,21 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
 
   useEffect(() => {
     if (initialData.isDemo) return;
-    const supabase = createClient();
     const refresh = () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(() => router.refresh(), 250);
     };
-    const channel = supabase
-      .channel(`planner:${initialData.household.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "planning_items", filter: `household_id=eq.${initialData.household.id}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "daily_settings", filter: `household_id=eq.${initialData.household.id}` }, refresh)
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setNotice("Live updates paused. Your changes can still be saved.");
-      });
+    const events = new EventSource("/api/realtime");
+    events.addEventListener("change", refresh);
+    events.onopen = () => setNotice((current) => current?.startsWith("Live updates") ? null : current);
+    events.onerror = () => setNotice("Live updates are reconnecting. Your changes can still be saved.");
+    const fallback = window.setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30_000);
     return () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      void supabase.removeChannel(channel);
+      window.clearInterval(fallback);
+      events.close();
     };
   }, [initialData.household.id, initialData.isDemo, router]);
 

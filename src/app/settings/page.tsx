@@ -5,17 +5,17 @@ import { redirect } from "next/navigation";
 import { BrandMark } from "@/components/brand-mark";
 import { SettingsPanel } from "@/components/settings/settings-panel";
 import { getDemoPlannerData } from "@/lib/demo-data";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isDemoMode } from "@/lib/env";
 import { getUserContext } from "@/lib/server/auth";
 import { getCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
-import { createClient } from "@/lib/supabase/server";
+import { query } from "@/lib/server/database";
 import type { HouseholdLocation, HouseholdMember } from "@/types/domain";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  if (!isSupabaseConfigured) {
+  if (isDemoMode) {
     const data = getDemoPlannerData();
     return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={[]} isDemo /></SettingsScaffold>;
   }
@@ -23,21 +23,32 @@ export default async function SettingsPage() {
   const context = await getUserContext();
   if (!context) redirect("/");
   if (!context.householdId) redirect("/onboarding");
-  const supabase = await createClient();
   const [householdResult, membersResult, locationsResult, invitationsResult, calendars] = await Promise.all([
-    supabase.from("households").select("id, name, timezone, temperature_unit, default_location_id").eq("id", context.householdId).single(),
-    supabase.from("household_members").select("id, user_id, role").eq("household_id", context.householdId),
-    supabase.from("locations").select("id, name, latitude, longitude, timezone, is_saved").eq("household_id", context.householdId).order("name"),
-    supabase.from("household_invitations").select("id, email, status, expires_at").eq("household_id", context.householdId).eq("status", "pending"),
+    query<{ id: string; name: string; timezone: string; temperature_unit: "fahrenheit" | "celsius"; default_location_id: string | null }>(
+      "select id, name, timezone, temperature_unit, default_location_id from households where id = $1",
+      [context.householdId],
+    ),
+    query<{ id: string; user_id: string; role: "owner" | "member" | "viewer"; display_name: string; email: string }>(
+      `select hm.id, hm.user_id, hm.role, u.display_name, u.email::text
+         from household_members hm join users u on u.id = hm.user_id
+        where hm.household_id = $1 order by hm.created_at`,
+      [context.householdId],
+    ),
+    query<{ id: string; name: string; latitude: number; longitude: number; timezone: string; is_saved: boolean }>(
+      "select id, name, latitude, longitude, timezone, is_saved from locations where household_id = $1 order by name",
+      [context.householdId],
+    ),
+    query<{ id: string; email: string; status: string; expires_at: Date }>(
+      "select id, email::text, status, expires_at from household_invitations where household_id = $1 and status = 'pending' order by created_at",
+      [context.householdId],
+    ),
     getCurrentUserCalendarPreferences(context.userId),
   ]);
-  if (!householdResult.data) throw new Error("Settings could not be loaded.");
-  const memberRows = membersResult.data ?? [];
-  const { data: profiles } = await supabase.from("profiles").select("id, display_name, email").in("id", memberRows.map((row) => row.user_id));
-  const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-  const members: HouseholdMember[] = memberRows.map((member) => ({ id: member.id, userId: member.user_id, displayName: profileMap.get(member.user_id)?.display_name ?? "Family member", email: profileMap.get(member.user_id)?.email ?? "", role: member.role }));
-  const locations: HouseholdLocation[] = (locationsResult.data ?? []).map((location) => ({ id: location.id, name: location.name, latitude: location.latitude, longitude: location.longitude, timezone: location.timezone, isSaved: location.is_saved, isDefault: location.id === householdResult.data.default_location_id }));
-  return <SettingsScaffold><SettingsPanel household={{ id: householdResult.data.id, name: householdResult.data.name, timezone: householdResult.data.timezone, temperatureUnit: householdResult.data.temperature_unit }} members={members} invitations={(invitationsResult.data ?? []).map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at }))} locations={locations} calendars={calendars} isDemo={false} /></SettingsScaffold>;
+  const household = householdResult.rows[0];
+  if (!household) throw new Error("Settings could not be loaded.");
+  const members: HouseholdMember[] = membersResult.rows.map((member) => ({ id: member.id, userId: member.user_id, displayName: member.display_name, email: member.email, role: member.role }));
+  const locations: HouseholdLocation[] = locationsResult.rows.map((location) => ({ id: location.id, name: location.name, latitude: Number(location.latitude), longitude: Number(location.longitude), timezone: location.timezone, isSaved: location.is_saved, isDefault: location.id === household.default_location_id }));
+  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString() }))} locations={locations} calendars={calendars} isDemo={false} /></SettingsScaffold>;
 }
 
 function SettingsScaffold({ children }: { children: React.ReactNode }) {

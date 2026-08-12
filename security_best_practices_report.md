@@ -1,66 +1,66 @@
-# Security best-practices review
+# Common Week security review
 
-Reviewed: 2026-08-10  
-Scope: Next.js/React/TypeScript application, Supabase schema and RLS, Google OAuth/Calendar integration, Open-Meteo integrations, dependency tree, and deployment configuration.
+## Executive summary
 
-## Outcome
+The local-PostgreSQL refactor has no known Critical or High application-code finding after remediation. Authentication, session, SQL, provider-token, browser, and deployment boundaries were reviewed against the Next.js/React security guidance. The remaining work is two Medium production-operations controls and two Low defense-in-depth improvements; none requires weakening the current product.
 
-No open critical or high-severity source findings remain. `npm audit` reports zero known vulnerabilities in both production and full dependency trees. The review did identify and fix an ownership-column privilege issue and revoked-token cleanup behavior before completion.
+Reviewed scope: Next.js 16.3, React 19, TypeScript, Google OAuth/Calendar, PostgreSQL schema and queries, provider requests, Docker image, GitHub Actions, and the consolidated Compose service.
 
-Production release is still gated on applying the migration to a disposable Supabase project and running a real three-account isolation exercise. Docker was not running in this environment, so the included pgTAP database test could not be executed locally.
+## Resolved controls
 
-## Open findings
+- Google OAuth uses an unpredictable state cookie, PKCE S256, fixed canonical callback, ID-token audience verification, and verified email checks (`src/app/auth/callback/route.ts:16-57`).
+- Sessions use random 256-bit opaque tokens, store only SHA-256 hashes, expire after 30 days, and use HTTP-only, SameSite Lax, path-scoped cookies that follow the configured HTTPS origin (`src/lib/server/session.ts:9-76`).
+- Google access and refresh tokens use AES-256-GCM with random IVs before database storage (`src/lib/server/token-crypto.ts:7-33`).
+- All reviewed planning mutations validate runtime input, derive household identity from the server session, parameterize SQL, and include household/resource predicates (`src/app/actions/planner.ts:85-258`).
+- PostgreSQL runs under the dedicated `common_week_app` login and separate `common_week` database, not the shared administrator login (`../deploy/docker-compose.yml:156-172`).
+- Realtime requires an authenticated household and uses one shared PostgreSQL listener per app process, preventing browser streams from exhausting the main query pool (`src/app/api/realtime/route.ts:8-49`, `src/lib/server/realtime.ts:1-75`).
+- The browser receives no database/provider secret. Server modules use `server-only`, and the CSP blocks arbitrary script/connect origins (`src/lib/server/database.ts:1-59`, `src/proxy.ts:6-43`).
+- CI uses reproducible installs, audits the production build, migrates real PostgreSQL, and runs explicit cross-household tests (`.github/workflows/ci.yml:15-52`, `scripts/test-database.mjs:1-129`).
 
-### SEC-LOW-01 — OAuth refresh tokens rely on database and service-role protection
+## Medium findings
 
-**Severity:** Low  
-**Location:** `supabase/migrations/202608100001_initial_family_planner.sql:122-131`, `src/lib/supabase/admin.ts:1-15`
+### CW-SEC-001 — Verify rate limiting for public OAuth routes
 
-Google access and refresh tokens are stored as text columns. Browser roles have no table privileges, RLS is enabled, and the service-role client is poisoned as server-only, so this is not a client exposure. A database backup or service-role compromise would nevertheless expose reusable refresh tokens.
+- Rule ID: NEXT-DOS-001
+- Severity: Medium
+- Location: `src/app/auth/google/route.ts:12-21`, `src/app/auth/callback/route.ts:34-128`, `docs/DEPLOYMENT.md:43`
+- Evidence: Both OAuth handlers are intentionally public. The repository documents Nginx Proxy Manager but does not contain a checked-in rate-limit policy for these paths.
+- Impact: Automated traffic can consume application connections/CPU and generate unnecessary requests to Google's authorization service.
+- Fix: Configure a conservative per-IP request limit for `/auth/google` and `/auth/callback` in the public reverse proxy, with normal OAuth redirects still allowed.
+- Mitigation: The callback requires a matching HTTP-only state cookie and PKCE verifier before token exchange; Google also applies upstream abuse controls.
+- False positive notes: The production proxy may already have an access list or rate rule not represented in this repository. Verify it live before closure.
 
-**Recommendation:** Before a higher-risk or multi-tenant launch, envelope-encrypt refresh tokens using a managed KMS or a carefully designed Supabase Vault/RPC boundary. Rotate the Supabase service-role key if it is ever exposed, and revoke affected Google grants.
+### CW-SEC-002 — Establish encrypted PostgreSQL backups and a restore drill
 
-### SEC-LOW-02 — CSP permits inline styles
+- Rule ID: availability / durable-storage control
+- Severity: Medium
+- Location: `../deploy/docker-compose.yml:12-14`, `docs/DEPLOYMENT.md:49-57`
+- Evidence: PostgreSQL data is persisted to the server volume, but no checked-in backup schedule, off-host encrypted target, retention policy, or restore test is visible.
+- Impact: Host, volume, or operator failure could permanently remove household plans and stored configuration.
+- Fix: Add scheduled encrypted `pg_dump` backups for `common_week` to off-host storage, define retention, and test restoration into a disposable database.
+- Mitigation: The database already has a persistent host volume and migrations can reconstruct schema, but not household data.
+- False positive notes: An infrastructure-level snapshot/backup system may exist outside this repository. Confirm recovery point and restore evidence.
 
-**Severity:** Low  
-**Location:** `src/proxy.ts:15-27`
+## Low findings
 
-The production script policy uses a per-request nonce and `strict-dynamic`, but `style-src` includes `unsafe-inline` because the UI uses React style attributes for calendar colors and weather chart heights. No user-controlled HTML or CSS sink was found, so the practical risk is limited.
+### CW-SEC-003 — Add database-native row isolation if the data plane expands
 
-**Recommendation:** If the UI later renders rich text or other untrusted markup, remove inline-style requirements first and tighten `style-src`; do not add HTML bypasses such as `dangerouslySetInnerHTML`.
+- Rule ID: defense-in-depth authorization
+- Severity: Low
+- Location: `src/app/actions/planner.ts:85-258`, `src/app/actions/settings.ts:20-194`, `scripts/test-database.mjs:1-129`
+- Evidence: Supabase RLS was removed with the Supabase browser data plane. Authorization is now enforced by the server data-access layer and its household-scoped predicates; PostgreSQL itself does not receive per-request user identity.
+- Impact: A future server query that omits the required household predicate would not be independently blocked by a database policy.
+- Fix: If a generic API, additional service, or direct client data plane is added, introduce a non-owner runtime role plus transaction-local identity and forced PostgreSQL RLS policies before launch.
+- Mitigation: Today the browser cannot query PostgreSQL, every reviewed query is server-only, the runtime uses a separate database/login, and real-PostgreSQL CI tests cross-household IDs.
+- False positive notes: This is not a current direct-access bypass; it is a future-regression defense.
 
-## Resolved during review
+### CW-SEC-004 — Token-encryption key rotation requires reconnect or migration
 
-### SEC-HIGH-01 — Immutable planning-item ownership columns
-
-The migration now revokes table-level `UPDATE` from `authenticated` and grants only the mutable columns (`planning_date`, week, type, category, text, completion, and order). This prevents a client from changing `household_id`, `created_by`, `created_at`, or `updated_at`, even in deployments whose default grants include table-level update. See `supabase/migrations/202608100001_initial_family_planner.sql:477-481`.
-
-### SEC-MED-01 — Revoked Google credentials
-
-A genuine Google 401 now deletes that user's server-side connection and returns a Calendar-only disconnected state. It does not repeatedly reuse a revoked credential or break planning/weather. See `src/lib/server/calendar-data.ts:146-151`.
-
-### SEC-MED-02 — OAuth callback redirect validation
-
-The callback accepts only local absolute paths and rejects protocol-relative paths and backslashes, preventing an OAuth open redirect. See `src/app/auth/callback/route.ts:5-7` and `:57-58`.
-
-## Verified controls
-
-- OAuth requests the read-only Calendar scope and no Calendar write scope (`src/app/actions/auth.ts:14-25`).
-- Server Actions validate length, type, UUID, Monday boundary, and date-in-week constraints, then derive `user_id` and `household_id` from the authenticated server context (`src/app/actions/planner.ts:61-100`).
-- All household tables have RLS; browser grants are explicit and narrow, while locations, daily settings, planning items, invitations, calendar preferences, and weather cache require membership or ownership checks (`supabase/migrations/202608100001_initial_family_planner.sql:329-475`).
-- OAuth and calendar cache tables are explicitly inaccessible to browser roles (`supabase/migrations/202608100001_initial_family_planner.sql:477-478`).
-- Security-definer household functions use an empty `search_path`, reject unauthenticated callers internally, and revoke execution from public/anonymous roles (`supabase/migrations/202608100001_initial_family_planner.sql:224-317`).
-- The Supabase service-role key and Google client secret are documented only as server variables; none use the `NEXT_PUBLIC_` prefix (`.env.example:1-11`).
-- External requests use fixed provider origins, timeouts, and normalized response types. User input changes query parameters, not request origins.
-- The response proxy sets CSP, frame denial, MIME-sniffing prevention, referrer policy, permissions policy, and HTTPS upgrade (`src/proxy.ts:30-43`).
-- Server Action bodies are capped at 256 KB and the framework signature is suppressed (`next.config.ts:3-9`).
-- No `dangerouslySetInnerHTML`, dynamic code evaluation, browser-side service-role import, or client-provided household/user identity trust was found.
-
-## Required live security checks
-
-1. Apply the migration to a disposable Supabase project and run `npx supabase test db`.
-2. Create household A with two accounts and household B with a third account.
-3. Using the third account's authenticated client, attempt select/insert/update/delete against every household-scoped table and verify zero cross-household disclosure or mutation.
-4. Confirm browser network responses and built JavaScript contain no service-role key, Google client secret, access token, or refresh token.
-5. Revoke one member's Google grant and verify only their Calendar source disconnects.
-6. Verify production headers and OAuth redirect allow lists on the final Vercel domain.
+- Rule ID: secret lifecycle
+- Severity: Low
+- Location: `src/lib/server/token-crypto.ts:5-33`, `docs/DEPLOYMENT.md:28-35`
+- Evidence: Ciphertexts carry a format version, but the runtime accepts only the single current `GOOGLE_TOKEN_ENCRYPTION_KEY`.
+- Impact: Replacing that key without first re-encrypting stored tokens makes existing Google connections unreadable and requires both members to reconnect.
+- Fix: Before routine rotation is needed, add a key identifier/keyring and an online re-encryption migration.
+- Mitigation: The key is generated server-side, never browser-exposed, and reconnecting safely replaces the encrypted credentials.
+- False positive notes: V1 has one household and no scheduled rotation requirement; reconnect is an acceptable recovery path today.

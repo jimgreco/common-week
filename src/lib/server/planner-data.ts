@@ -2,7 +2,7 @@ import "server-only";
 
 import { eventFallsOnDate, markCalendarConflicts } from "@/lib/calendar-utils";
 import { weekDates } from "@/lib/date";
-import { createClient } from "@/lib/supabase/server";
+import { query } from "@/lib/server/database";
 import { getHouseholdCalendarEvents } from "@/lib/server/calendar-data";
 import { getWeatherForAssignments } from "@/lib/server/weather-data";
 import type {
@@ -19,37 +19,66 @@ interface PlannerContext {
   householdId: string;
 }
 
-function mapLocation(row: Record<string, unknown>, defaultLocationId: string | null): HouseholdLocation {
+interface HouseholdRow {
+  id: string;
+  name: string;
+  timezone: string;
+  temperature_unit: "fahrenheit" | "celsius";
+  default_location_id: string | null;
+}
+
+interface LocationRow {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  is_saved: boolean;
+}
+
+interface PlanningRow {
+  id: string;
+  planning_date: string | null;
+  week_start_date: string;
+  type: "note" | "task";
+  category_id: string | null;
+  category_name: string | null;
+  category_color: string | null;
+  text: string;
+  is_completed: boolean;
+  sort_order: number;
+  created_by: string;
+  created_by_name: string;
+  updated_at: Date;
+}
+
+function mapLocation(row: LocationRow, defaultLocationId: string | null): HouseholdLocation {
   return {
-    id: String(row.id),
-    name: String(row.name),
+    id: row.id,
+    name: row.name,
     latitude: Number(row.latitude),
     longitude: Number(row.longitude),
-    timezone: String(row.timezone),
-    isSaved: Boolean(row.is_saved),
+    timezone: row.timezone,
+    isSaved: row.is_saved,
     isDefault: row.id === defaultLocationId,
   };
 }
 
-function mapPlanningItem(
-  row: Record<string, unknown>,
-  profileNames: Map<string, string>,
-): PlanningItem {
-  const joinedCategory = row.categories as { name?: string; color?: string } | null;
+function mapPlanningItem(row: PlanningRow): PlanningItem {
   return {
-    id: String(row.id),
-    planningDate: row.planning_date ? String(row.planning_date) : null,
-    weekStartDate: String(row.week_start_date),
-    type: row.type as "note" | "task",
-    categoryId: row.category_id ? String(row.category_id) : null,
-    categoryName: joinedCategory?.name ?? null,
-    categoryColor: joinedCategory?.color ?? null,
-    text: String(row.text),
-    isCompleted: Boolean(row.is_completed),
-    sortOrder: Number(row.sort_order),
-    createdBy: String(row.created_by),
-    createdByName: profileNames.get(String(row.created_by)),
-    updatedAt: String(row.updated_at),
+    id: row.id,
+    planningDate: row.planning_date,
+    weekStartDate: row.week_start_date,
+    type: row.type,
+    categoryId: row.category_id,
+    categoryName: row.category_name,
+    categoryColor: row.category_color,
+    text: row.text,
+    isCompleted: row.is_completed,
+    sortOrder: row.sort_order,
+    createdBy: row.created_by,
+    createdByName: row.created_by_name,
+    updatedAt: row.updated_at.toISOString(),
     saveState: "saved",
   };
 }
@@ -59,95 +88,81 @@ export async function getPlannerData(
   weekStart: string,
   options: { includeExternal?: boolean } = {},
 ): Promise<WeeklyPlannerData> {
-  const supabase = await createClient();
   const dates = weekDates(weekStart);
-
   const [householdResult, locationsResult, settingsResult, planningResult, categoriesResult, membersResult] =
     await Promise.all([
-      supabase
-        .from("households")
-        .select("id, name, timezone, temperature_unit, default_location_id")
-        .eq("id", context.householdId)
-        .single(),
-      supabase
-        .from("locations")
-        .select("id, name, latitude, longitude, timezone, is_saved")
-        .eq("household_id", context.householdId)
-        .order("name"),
-      supabase
-        .from("daily_settings")
-        .select("date, location_id")
-        .eq("household_id", context.householdId)
-        .gte("date", dates[0])
-        .lte("date", dates[6]),
-      supabase
-        .from("planning_items")
-        .select(
-          "id, planning_date, week_start_date, type, category_id, text, is_completed, sort_order, created_by, updated_at, categories(name, color)",
-        )
-        .eq("household_id", context.householdId)
-        .eq("week_start_date", weekStart)
-        .order("sort_order")
-        .order("created_at"),
-      supabase
-        .from("categories")
-        .select("id, name, color, sort_order")
-        .or(`household_id.is.null,household_id.eq.${context.householdId}`)
-        .order("sort_order"),
-      supabase
-        .from("household_members")
-        .select("id, user_id, role, created_at")
-        .eq("household_id", context.householdId)
-        .order("created_at"),
+      query<HouseholdRow>(
+        `select h.id, h.name, h.timezone, h.temperature_unit, h.default_location_id
+           from households h
+           join household_members hm on hm.household_id = h.id
+          where h.id = $1 and hm.user_id = $2`,
+        [context.householdId, context.userId],
+      ),
+      query<LocationRow>(
+        `select id, name, latitude, longitude, timezone, is_saved
+           from locations where household_id = $1 order by name`,
+        [context.householdId],
+      ),
+      query<{ date: string; location_id: string }>(
+        `select date::text, location_id from daily_settings
+          where household_id = $1 and date between $2::date and $3::date`,
+        [context.householdId, dates[0], dates[6]],
+      ),
+      query<PlanningRow>(
+        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+                pi.category_id, c.name as category_name, c.color as category_color,
+                pi.text, pi.is_completed, pi.sort_order, pi.created_by,
+                u.display_name as created_by_name, pi.updated_at
+           from planning_items pi
+           join users u on u.id = pi.created_by
+           left join categories c on c.id = pi.category_id
+          where pi.household_id = $1 and pi.week_start_date = $2::date
+          order by pi.sort_order, pi.created_at`,
+        [context.householdId, weekStart],
+      ),
+      query<{ id: string; name: string; color: string }>(
+        `select id, name, color from categories
+          where household_id is null or household_id = $1
+          order by sort_order`,
+        [context.householdId],
+      ),
+      query<{
+        id: string;
+        user_id: string;
+        role: "owner" | "member" | "viewer";
+        display_name: string;
+        email: string;
+      }>(
+        `select hm.id, hm.user_id, hm.role, u.display_name, u.email::text
+           from household_members hm
+           join users u on u.id = hm.user_id
+          where hm.household_id = $1
+          order by hm.created_at`,
+        [context.householdId],
+      ),
     ]);
 
-  if (householdResult.error || !householdResult.data) {
-    throw new Error("The household planner could not be loaded.");
-  }
+  const household = householdResult.rows[0];
+  if (!household) throw new Error("The household planner could not be loaded.");
 
-  const memberRows = (membersResult.data ?? []) as Array<Record<string, unknown>>;
-  const userIds = memberRows.map((row) => String(row.user_id));
-  const { data: profileRows } = userIds.length
-    ? await supabase.from("profiles").select("id, display_name, email").in("id", userIds)
-    : { data: [] };
-  const profiles = new Map(
-    ((profileRows ?? []) as Array<Record<string, unknown>>).map((row) => [
-      String(row.id),
-      { displayName: String(row.display_name), email: String(row.email) },
-    ]),
-  );
-  const profileNames = new Map([...profiles.entries()].map(([id, profile]) => [id, profile.displayName]));
-
-  const household = householdResult.data;
-  const locations = ((locationsResult.data ?? []) as Array<Record<string, unknown>>).map((row) =>
-    mapLocation(row, household.default_location_id),
-  );
+  const locations = locationsResult.rows.map((row) => mapLocation(row, household.default_location_id));
   const locationById = new Map(locations.map((location) => [location.id, location]));
   const defaultLocation = household.default_location_id
     ? locationById.get(household.default_location_id) ?? null
     : null;
-  const overrides = new Map(
-    ((settingsResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
-      String(row.date),
-      String(row.location_id),
-    ]),
-  );
+  const overrides = new Map(settingsResult.rows.map((row) => [row.date, row.location_id]));
   const assignments = dates.map((date) => ({
     date,
     location: locationById.get(overrides.get(date) ?? "") ?? defaultLocation,
   }));
 
-  const members: HouseholdMember[] = memberRows.map((row) => {
-    const profile = profiles.get(String(row.user_id));
-    return {
-      id: String(row.id),
-      userId: String(row.user_id),
-      displayName: profile?.displayName ?? "Family member",
-      email: profile?.email ?? "",
-      role: row.role as "owner" | "member" | "viewer",
-    };
-  });
-
+  const members: HouseholdMember[] = membersResult.rows.map((row) => ({
+    id: row.id,
+    userId: row.user_id,
+    displayName: row.display_name,
+    email: row.email,
+    role: row.role,
+  }));
   const loadingState: PlannerSourceState = { status: "loading" };
   const [calendarBundle, weatherBundle] = options.includeExternal === false
     ? [{ events: [], state: loadingState }, { forecasts: new Map(), state: loadingState }]
@@ -161,12 +176,12 @@ export async function getPlannerData(
       getWeatherForAssignments(assignments),
     ]);
 
-  const items = ((planningResult.data ?? []) as Array<Record<string, unknown>>).map((row) =>
-    mapPlanningItem(row, profileNames),
-  );
-  const categories: PlanningCategory[] = ((categoriesResult.data ?? []) as Array<Record<string, unknown>>).map(
-    (row) => ({ id: String(row.id), name: String(row.name), color: String(row.color) }),
-  );
+  const items = planningResult.rows.map(mapPlanningItem);
+  const categories: PlanningCategory[] = categoriesResult.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+  }));
 
   return {
     household: {

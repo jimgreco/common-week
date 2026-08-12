@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createHouseholdFromForm } from "@/app/actions/settings";
 import { BrandMark } from "@/components/brand-mark";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isDemoMode } from "@/lib/env";
 import { getUserContext } from "@/lib/server/auth";
 
 export const metadata: Metadata = { title: "Set up household" };
 export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage({ searchParams }: PageProps<"/onboarding">) {
-  if (!isSupabaseConfigured) redirect("/planner");
+  if (isDemoMode) redirect("/planner");
   const context = await getUserContext();
   if (!context) redirect("/");
   if (context.householdId) redirect("/planner");
