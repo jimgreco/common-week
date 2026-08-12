@@ -200,16 +200,20 @@ export async function getHouseholdCalendarEvents(
 }
 
 export async function getCurrentUserCalendarPreferences(userId: string): Promise<CalendarPreference[]> {
-  try {
-    const token = await getGoogleAccessToken(userId);
-    if (!token) return [];
-    const member = await query<{ household_id: string }>(
-      "select household_id from household_members where user_id = $1",
-      [userId],
-    );
-    if (!member.rows[0]) return [];
-    return ensurePreferences(member.rows[0].household_id, userId, token, true);
-  } catch {
-    return [];
-  }
+  const member = await query<{ household_id: string }>(
+    "select household_id from household_members where user_id = $1",
+    [userId],
+  );
+  if (!member.rows[0]) return [];
+  return mapPreferences((await readPreferences(member.rows[0].household_id, userId)).rows);
+}
+
+export async function refreshCurrentUserCalendarPreferences(
+  householdId: string,
+  userId: string,
+): Promise<{ calendars: CalendarPreference[]; connected: boolean }> {
+  const token = await getGoogleAccessToken(userId);
+  if (!token) return { calendars: [], connected: false };
+  const calendars = await ensurePreferences(householdId, userId, token, true);
+  return { calendars, connected: true };
 }

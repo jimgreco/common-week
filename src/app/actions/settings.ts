@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
+import { refreshCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
 import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
-import type { ActionResult } from "@/types/domain";
+import { isGoogleCalendarApiDisabled } from "@/lib/integrations/google-calendar";
+import type { ActionResult, CalendarPreference } from "@/types/domain";
 
 function errorResult(error: unknown, fallback: string): ActionResult {
   if (error instanceof z.ZodError || postgresErrorCode(error)) return { ok: false, error: fallback };
@@ -193,5 +195,38 @@ export async function updateCalendarPreferenceAction(input: {
     return { ok: true };
   } catch (error) {
     return errorResult(error, "Calendar preference could not be saved.");
+  }
+}
+
+export async function refreshGoogleCalendarsAction(): Promise<ActionResult<{
+  calendars: CalendarPreference[];
+  connected: boolean;
+}>> {
+  try {
+    const context = await requireHouseholdContext();
+    const refreshed = await refreshCurrentUserCalendarPreferences(context.householdId, context.userId);
+    if (!refreshed.connected) {
+      return {
+        ok: false,
+        error: "Reconnect Google Calendar to refresh your calendars.",
+        data: refreshed,
+      };
+    }
+    return { ok: true, data: refreshed };
+  } catch (error) {
+    if (isGoogleCalendarApiDisabled(error)) {
+      console.warn("Google Calendar discovery failed because the Calendar API is disabled.");
+      return {
+        ok: false,
+        error: "Google Calendar API needs to be enabled by the app owner. Your planner is still available.",
+      };
+    }
+    console.warn("Google Calendar discovery failed", {
+      name: error instanceof Error ? error.name : "UnknownError",
+    });
+    return {
+      ok: false,
+      error: "Google calendars could not be refreshed. Your planner is still available.",
+    };
   }
 }

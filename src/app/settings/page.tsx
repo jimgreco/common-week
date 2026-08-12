@@ -17,13 +17,13 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   if (isDemoMode) {
     const data = getDemoPlannerData();
-    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={[]} isDemo /></SettingsScaffold>;
+    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={[]} calendarConnected={false} isDemo /></SettingsScaffold>;
   }
 
   const context = await getUserContext();
   if (!context) redirect("/");
   if (!context.householdId) redirect("/onboarding");
-  const [householdResult, membersResult, locationsResult, invitationsResult, calendars] = await Promise.all([
+  const [householdResult, membersResult, locationsResult, invitationsResult, calendars, connectionResult] = await Promise.all([
     query<{ id: string; name: string; timezone: string; temperature_unit: "fahrenheit" | "celsius"; default_location_id: string | null }>(
       "select id, name, timezone, temperature_unit, default_location_id from households where id = $1",
       [context.householdId],
@@ -43,12 +43,13 @@ export default async function SettingsPage() {
       [context.householdId],
     ),
     getCurrentUserCalendarPreferences(context.userId),
+    query("select 1 from google_connections where user_id = $1", [context.userId]),
   ]);
   const household = householdResult.rows[0];
   if (!household) throw new Error("Settings could not be loaded.");
   const members: HouseholdMember[] = membersResult.rows.map((member) => ({ id: member.id, userId: member.user_id, displayName: member.display_name, email: member.email, role: member.role }));
   const locations: HouseholdLocation[] = locationsResult.rows.map((location) => ({ id: location.id, name: location.name, latitude: Number(location.latitude), longitude: Number(location.longitude), timezone: location.timezone, isSaved: location.is_saved, isDefault: location.id === household.default_location_id }));
-  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString() }))} locations={locations} calendars={calendars} isDemo={false} /></SettingsScaffold>;
+  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString() }))} locations={locations} calendars={calendars} calendarConnected={Boolean(connectionResult.rowCount)} isDemo={false} /></SettingsScaffold>;
 }
 
 function SettingsScaffold({ children }: { children: React.ReactNode }) {

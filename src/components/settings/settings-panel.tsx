@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Check, LoaderCircle, MapPin, Plus, Search, Trash2, UserPlus } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { AlertTriangle, Check, LoaderCircle, MapPin, Plus, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 import {
   addLocationAction,
   inviteMemberAction,
+  refreshGoogleCalendarsAction,
   removeLocationAction,
   setDefaultLocationAction,
   updateCalendarPreferenceAction,
@@ -22,6 +23,7 @@ export function SettingsPanel({
   invitations,
   locations: initialLocations,
   calendars: initialCalendars,
+  calendarConnected: initialCalendarConnected,
   isDemo,
 }: {
   household: HouseholdSummary;
@@ -29,16 +31,38 @@ export function SettingsPanel({
   invitations: Invitation[];
   locations: HouseholdLocation[];
   calendars: CalendarPreference[];
+  calendarConnected: boolean;
   isDemo: boolean;
 }) {
   const [locations, setLocations] = useState(initialLocations);
   const [calendars, setCalendars] = useState(initialCalendars);
+  const [calendarConnected, setCalendarConnected] = useState(initialCalendarConnected);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResults] = useState<GeocodingResult[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const attemptedCalendarRefresh = useRef(false);
 
-  const showMessage = (value: string) => { setMessage(value); window.setTimeout(() => setMessage(null), 4000); };
+  const showMessage = useCallback((value: string) => { setMessage(value); window.setTimeout(() => setMessage(null), 4000); }, []);
+  const refreshCalendars = useCallback(() => {
+    if (isDemo) return;
+    startTransition(async () => {
+      const result = await refreshGoogleCalendarsAction();
+      if (result.data) {
+        setCalendars(result.data.calendars);
+        setCalendarConnected(result.data.connected);
+      }
+      setCalendarError(result.ok ? null : result.error ?? "Google calendars could not be refreshed.");
+      if (result.ok) showMessage("Google calendars refreshed");
+    });
+  }, [isDemo, showMessage]);
+
+  useEffect(() => {
+    if (isDemo || !calendarConnected || calendars.length || attemptedCalendarRefresh.current) return;
+    attemptedCalendarRefresh.current = true;
+    refreshCalendars();
+  }, [calendarConnected, calendars.length, isDemo, refreshCalendars]);
 
   return (
     <div className="settings-layout">
@@ -62,13 +86,15 @@ export function SettingsPanel({
 
         <section className="settings-section" id="calendars">
           <header><p className="eyebrow">Calendars</p><h2>Choose the scheduled commitments you see</h2><p>Read-only. Common Week never creates, edits, or deletes Google Calendar events.</p></header>
+          {calendarError && <div className="calendar-provider-error" role="status"><AlertTriangle size={15} /><span>{calendarError}</span></div>}
           {calendars.length ? <div className="calendar-settings-list">{calendars.map((calendar) => (
             <div className="calendar-setting" key={calendar.id}>
               <button className={`toggle ${calendar.isSelected ? "is-on" : ""}`} type="button" aria-label={`${calendar.isSelected ? "Hide" : "Show"} ${calendar.calendarName}`} onClick={() => { const next = calendars.map((candidate) => candidate.id === calendar.id ? { ...candidate, isSelected: !candidate.isSelected } : candidate); setCalendars(next); if (!isDemo) startTransition(async () => { const result = await updateCalendarPreferenceAction({ id: calendar.id, isSelected: !calendar.isSelected, displayAlias: calendar.displayAlias }); if (!result.ok) { setCalendars(calendars); showMessage(result.error ?? "Calendar save failed"); } }); }}><i /></button>
               <span className="calendar-color" style={{ background: calendar.color }} /><div><strong>{calendar.calendarName}</strong>{calendar.isPrimary && <small>Primary</small>}</div>
               <input value={calendar.displayAlias ?? ""} placeholder="Display alias" aria-label={`Alias for ${calendar.calendarName}`} onChange={(event) => setCalendars((current) => current.map((candidate) => candidate.id === calendar.id ? { ...candidate, displayAlias: event.target.value || null } : candidate))} onBlur={(event) => { if (!isDemo) startTransition(async () => { await updateCalendarPreferenceAction({ id: calendar.id, isSelected: calendar.isSelected, displayAlias: event.target.value.trim() || null }); }); }} />
             </div>
-          ))}</div> : <div className="empty-settings-state"><p>No Google Calendars are connected yet.</p>{!isDemo && <form action={signInWithGoogle}><button className="button button-primary" type="submit">Connect Google Calendar</button></form>} {isDemo && <span>Calendars appear here after Google setup.</span>}</div>}
+          ))}</div> : <div className="empty-settings-state"><p>{calendarConnected ? "Google is connected, but calendars are not available yet." : "No Google Calendars are connected yet."}</p>{!isDemo && (calendarConnected ? <button className="button button-secondary" type="button" disabled={pending} onClick={refreshCalendars}><RefreshCw className={pending ? "spin" : ""} size={14} />Try Calendar again</button> : <form action={signInWithGoogle}><button className="button button-primary" type="submit">Connect Google Calendar</button></form>)} {isDemo && <span>Calendars appear here after Google setup.</span>}</div>}
+          {calendars.length > 0 && !isDemo && <div className="calendar-refresh-row"><button className="text-button" type="button" disabled={pending} onClick={refreshCalendars}><RefreshCw className={pending ? "spin" : ""} size={13} />Refresh calendars</button></div>}
         </section>
 
         <section className="settings-section" id="locations">

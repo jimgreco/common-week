@@ -46,6 +46,30 @@ interface GoogleEventsResponse {
   nextPageToken?: string;
 }
 
+interface GoogleErrorResponse {
+  error?: {
+    status?: string;
+    errors?: Array<{ reason?: string }>;
+  };
+}
+
+export class GoogleCalendarApiError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly reason: string | null,
+    public readonly googleStatus: string | null,
+  ) {
+    super(`Google Calendar returned ${statusCode}.`);
+    this.name = "GoogleCalendarApiError";
+  }
+}
+
+export function isGoogleCalendarApiDisabled(error: unknown): boolean {
+  return error instanceof GoogleCalendarApiError &&
+    error.statusCode === 403 &&
+    (error.reason === "accessNotConfigured" || error.googleStatus === "SERVICE_DISABLED");
+}
+
 async function googleFetch<T>(url: URL, accessToken: string): Promise<T> {
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
@@ -56,7 +80,14 @@ async function googleFetch<T>(url: URL, accessToken: string): Promise<T> {
   if (response.status === 401) {
     throw new Error("GOOGLE_AUTH_REQUIRED");
   }
-  if (!response.ok) throw new Error(`Google Calendar returned ${response.status}.`);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as GoogleErrorResponse;
+    throw new GoogleCalendarApiError(
+      response.status,
+      payload.error?.errors?.[0]?.reason ?? null,
+      payload.error?.status ?? null,
+    );
+  }
   return (await response.json()) as T;
 }
 
