@@ -185,24 +185,30 @@ jobs:
           compose pull common-week
           compose up -d db
           for attempt in $(seq 1 30); do
-            if compose exec -T db pg_isready -U admin >/dev/null 2>&1; then break; fi
+            if compose exec -T db pg_isready -U admin </dev/null >/dev/null 2>&1; then break; fi
             if [ "$attempt" = "30" ]; then compose logs --tail=100 db; exit 1; fi
             sleep 2
           done
           if ! compose exec -T db psql -U admin -d postgres -tAc \
-            "select 1 from pg_roles where rolname = 'common_week_app'" | grep -qx 1; then
-            compose exec -T db createuser -U admin common_week_app
+            "select 1 from pg_roles where rolname = 'common_week_app'" </dev/null | grep -qx 1; then
+            compose exec -T db createuser -U admin common_week_app </dev/null
           fi
           compose exec -T db psql -U admin -d postgres -v ON_ERROR_STOP=1 \
-            -c "alter role common_week_app login password '$common_week_db_password'"
+            -c "alter role common_week_app login password '$common_week_db_password'" </dev/null
           if ! compose exec -T db psql -U admin -d postgres -tAc \
-            "select 1 from pg_database where datname = 'common_week'" | grep -qx 1; then
-            compose exec -T db createdb -U admin -O common_week_app common_week
+            "select 1 from pg_database where datname = 'common_week'" </dev/null | grep -qx 1; then
+            compose exec -T db createdb -U admin -O common_week_app common_week </dev/null
           fi
           compose exec -T db psql -U admin -d postgres -v ON_ERROR_STOP=1 \
-            -c "alter database common_week owner to common_week_app"
-          compose run --rm --no-deps common-week node scripts/migrate.mjs
+            -c "alter database common_week owner to common_week_app" </dev/null
+          compose run --rm --no-deps -T common-week node scripts/migrate.mjs </dev/null
           compose up -d --force-recreate --no-build common-week
+
+          running_image="$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q common-week)")"
+          if [ "$running_image" != "$COMMON_WEEK_IMAGE" ]; then
+            echo "Expected $COMMON_WEEK_IMAGE but Compose started $running_image."
+            exit 1
+          fi
 
           for attempt in $(seq 1 60); do
             if compose exec -T common-week node -e '
