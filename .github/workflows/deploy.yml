@@ -51,7 +51,9 @@ jobs:
           context: .
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:latest
           build-args: |
             APP_BUILD=${{ github.sha }}
             NEXT_PUBLIC_APP_URL=${{ vars.PRODUCTION_BASE_URL || 'https://common-week.jim-greco.com' }}
@@ -137,8 +139,8 @@ jobs:
             "COMMON_WEEK_APP_BUILD='$GITHUB_SHA' COMMON_WEEK_IMAGE='ghcr.io/$GITHUB_REPOSITORY:$GITHUB_SHA' bash -se" <<'REMOTE'
           set -euo pipefail
           cd "$HOME/deploy"
-          cp "$HOME/common-week/deploy/docker-compose.common-week.yml" ./docker-compose.common-week.yml
           export COMMON_WEEK_APP_BUILD COMMON_WEEK_IMAGE
+          export COMPOSE_PROFILES=common-week
           export DOCKER_CONFIG="$HOME/common-week/.docker"
 
           cleanup() {
@@ -147,7 +149,7 @@ jobs:
           trap cleanup EXIT
 
           compose() {
-            docker-compose -f docker-compose.yml -f docker-compose.common-week.yml "$@"
+            docker-compose "$@"
           }
 
           compose pull common-week

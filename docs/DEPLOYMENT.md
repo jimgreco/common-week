@@ -2,7 +2,9 @@
 
 ## Consolidated EC2 server
 
-Every push to `main` runs `.github/workflows/deploy.yml`. After application checks pass, the workflow builds an ARM64 production image on a native GitHub-hosted ARM runner, publishes that exact commit image to GitHub Container Registry, syncs the Compose overlay to `~/common-week`, pulls the image into the existing `~/deploy` stack, and verifies that `/api/health` reports the exact pushed commit. The shared host never performs the resource-intensive Next.js image build.
+Every push to `main` runs `.github/workflows/deploy.yml`. After application checks pass, the workflow builds an ARM64 production image on a native GitHub-hosted ARM runner, publishes exact-commit and `latest` tags to GitHub Container Registry, activates the canonical `common-week` service in `~/deploy/docker-compose.yml`, and verifies that `/api/health` reports the exact pushed commit. The shared host never performs the resource-intensive Next.js image build.
+
+Common Week is registered in the consolidated deploy repository alongside the other applications. It uses the `common-week` Compose profile so an unrelated infrastructure deployment does not replace the exact image pinned by the application workflow.
 
 Create a `production` GitHub environment and add these repository or environment secrets:
 
