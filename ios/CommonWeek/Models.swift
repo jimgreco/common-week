@@ -1,0 +1,275 @@
+import Foundation
+
+struct APIEnvelope<Value: Decodable>: Decodable {
+    let ok: Bool
+    let data: Value?
+    let error: String?
+}
+
+struct EmptyResponse: Codable {}
+
+struct NativeSession: Codable {
+    let token: String
+    let expiresAt: String
+}
+
+struct SessionIdentity: Codable, Equatable {
+    let userId: String
+    let email: String
+    let displayName: String
+    let householdId: String?
+    let role: String?
+}
+
+struct PlannerPayload: Codable {
+    let planner: WeeklyPlannerData
+    let user: SessionIdentity
+}
+
+struct WeeklyPlannerData: Codable {
+    var household: HouseholdSummary
+    let members: [HouseholdMember]
+    let weekStart: String
+    var days: [DayPlan]
+    var weeklyItems: [PlanningItem]
+    let locations: [HouseholdLocation]
+    let categories: [PlanningCategory]
+    let editableCalendars: [EditableCalendar]
+    let calendarState: PlannerSourceState
+    let weatherState: PlannerSourceState
+    let isDemo: Bool
+}
+
+struct HouseholdSummary: Codable, Equatable {
+    let id: String
+    var name: String
+    var timezone: String
+    var temperatureUnit: TemperatureUnit
+}
+
+enum TemperatureUnit: String, Codable, CaseIterable, Identifiable {
+    case fahrenheit
+    case celsius
+    var id: String { rawValue }
+    var symbol: String { self == .fahrenheit ? "°F" : "°C" }
+}
+
+struct HouseholdMember: Codable, Identifiable, Hashable {
+    let id: String
+    let userId: String
+    let displayName: String
+    let email: String
+    let role: String
+}
+
+struct PlanningCategory: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let color: String
+}
+
+struct PlanningItem: Codable, Identifiable, Hashable {
+    let id: String
+    var planningDate: String?
+    var weekStartDate: String
+    var type: PlanningItemType
+    var categoryId: String?
+    var categoryName: String?
+    var categoryColor: String?
+    var text: String
+    var isCompleted: Bool
+    var sortOrder: Int
+    let createdBy: String
+    let createdByName: String?
+    let updatedAt: String
+    let saveState: String?
+}
+
+enum PlanningItemType: String, Codable, CaseIterable, Identifiable {
+    case note
+    case task
+    var id: String { rawValue }
+    var title: String { self == .note ? "Plan" : "Task" }
+}
+
+struct HouseholdLocation: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let latitude: Double
+    let longitude: Double
+    let timezone: String
+    let isSaved: Bool
+    let isDefault: Bool?
+}
+
+struct DayPlan: Codable, Identifiable, Hashable {
+    var id: String { date }
+    let date: String
+    var location: HouseholdLocation?
+    let weather: DailyWeather?
+    var events: [CalendarEvent]
+    var items: [PlanningItem]
+}
+
+struct DailyWeather: Codable, Hashable {
+    let date: String
+    let locationId: String
+    let conditionCode: Int
+    let highF: Double
+    let lowF: Double
+    let precipitationProbability: Int
+    let precipitationAmount: Double
+    let windSpeedMph: Double
+    let sunrise: String
+    let sunset: String
+    let hourly: [HourlyWeather]
+    let status: String
+    let errorMessage: String?
+}
+
+struct HourlyWeather: Codable, Hashable, Identifiable {
+    var id: String { time }
+    let time: String
+    let temperatureF: Double
+    let precipitationProbability: Int
+    let precipitationAmount: Double
+    let windSpeedMph: Double
+    let conditionCode: Int
+}
+
+struct CalendarEvent: Codable, Identifiable, Hashable {
+    let id: String
+    let providerEventId: String?
+    let sourceUserId: String?
+    let calendarPreferenceId: String?
+    let etag: String?
+    let recurringEventId: String?
+    let originalStartTime: String?
+    let canEdit: Bool?
+    let title: String
+    let description: String?
+    let location: String?
+    let googleUrl: String?
+    let start: String
+    let end: String
+    let allDay: Bool
+    let calendarId: String
+    let calendarName: String
+    let calendarAlias: String
+    let calendarColor: String
+    let attribution: String
+    let sectionGroup: String
+    let isConflict: Bool?
+}
+
+struct EditableCalendar: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let color: String
+    let sectionGroup: String
+}
+
+struct PlannerSourceState: Codable {
+    let status: String
+    let message: String?
+}
+
+struct CalendarEventDraft: Encodable {
+    let requestId: String
+    let calendarPreferenceId: String
+    let providerEventId: String?
+    let etag: String?
+    let title: String
+    let description: String
+    let location: String
+    let allDay: Bool
+    let startDate: String
+    let endDate: String
+    let startTime: String
+    let endTime: String
+}
+
+struct PlanningItemDraft: Encodable {
+    let id: String?
+    let text: String
+    let type: PlanningItemType
+    let planningDate: String?
+    let weekStartDate: String
+    let categoryId: String?
+}
+
+struct SearchResponse: Codable {
+    let items: [PlanningItem]?
+}
+
+enum WeekDate {
+    private static let utc = TimeZone(secondsFromGMT: 0)!
+
+    static let dateOnly: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static func formatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = utc
+        formatter.dateFormat = format
+        return formatter
+    }
+
+    private static let monthDay = formatter("MMMM d")
+    private static let dayOnly = formatter("d")
+    private static let longDayStyle = formatter("EEEE, MMMM d")
+    private static let shortDayStyle = formatter("EEE d")
+
+    static let iso8601 = ISO8601DateFormatter()
+
+    static func parse(_ value: String) -> Date {
+        dateOnly.date(from: String(value.prefix(10))) ?? Date()
+    }
+
+    static func string(_ date: Date) -> String { dateOnly.string(from: date) }
+
+    static func monday(containing date: Date = Date()) -> Date {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = .current
+        return calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+    }
+
+    static func addDays(_ days: Int, to value: String) -> String {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = utc
+        let date = calendar.date(byAdding: .day, value: days, to: parse(value)) ?? parse(value)
+        return string(date)
+    }
+
+    static func weekTitle(_ value: String) -> String {
+        let start = parse(value)
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = utc
+        let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
+        let sameMonth = calendar.component(.month, from: start) == calendar.component(.month, from: end)
+        let first = monthDay.string(from: start)
+        let second = sameMonth ? dayOnly.string(from: end) : monthDay.string(from: end)
+        return "\(first)–\(second)"
+    }
+
+    static func longDay(_ value: String) -> String {
+        longDayStyle.string(from: parse(value))
+    }
+
+    static func shortDay(_ value: String) -> String {
+        shortDayStyle.string(from: parse(value))
+    }
+
+    static func eventTime(_ value: String) -> String {
+        guard let date = iso8601.date(from: value) else { return value }
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+}

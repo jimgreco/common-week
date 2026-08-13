@@ -7,11 +7,13 @@ import {
   GOOGLE_CALENDAR_WRITE_SCOPE,
   GOOGLE_SCOPES,
   googleOAuthClient,
+  OAUTH_CLIENT_STATE_COOKIE,
   OAUTH_MODE_COOKIE,
+  OAUTH_PLATFORM_COOKIE,
   OAUTH_STATE_COOKIE,
   OAUTH_VERIFIER_COOKIE,
 } from "@/lib/server/google-oauth";
-import { createDatabaseSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/server/session";
+import { createDatabaseSession, createNativeAuthorizationCode, SESSION_COOKIE, sessionCookieOptions } from "@/lib/server/session";
 import { encryptProviderToken } from "@/lib/server/token-crypto";
 
 export const runtime = "nodejs";
@@ -27,10 +29,20 @@ function clearOAuthCookies(response: NextResponse) {
   response.cookies.delete(OAUTH_STATE_COOKIE);
   response.cookies.delete(OAUTH_VERIFIER_COOKIE);
   response.cookies.delete(OAUTH_MODE_COOKIE);
+  response.cookies.delete(OAUTH_PLATFORM_COOKIE);
+  response.cookies.delete(OAUTH_CLIENT_STATE_COOKIE);
 }
 
-function authFailure(reason: string) {
-  const response = NextResponse.redirect(new URL(`/?auth_error=${encodeURIComponent(reason)}`, applicationOrigin()));
+function authFailure(reason: string, platform?: string, clientState?: string) {
+  const destination = platform === "ios" && clientState
+    ? (() => {
+        const callback = new URL("commonweek://auth");
+        callback.searchParams.set("error", reason);
+        callback.searchParams.set("state", clientState);
+        return callback;
+      })()
+    : new URL(`/?auth_error=${encodeURIComponent(reason)}`, applicationOrigin());
+  const response = NextResponse.redirect(destination);
   clearOAuthCookies(response);
   return response;
 }
@@ -41,7 +53,9 @@ export async function GET(request: NextRequest) {
   const expectedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
   const codeVerifier = request.cookies.get(OAUTH_VERIFIER_COOKIE)?.value;
   const oauthMode = request.cookies.get(OAUTH_MODE_COOKIE)?.value;
-  if (!code || !codeVerifier || !equalState(expectedState, state)) return authFailure("state");
+  const oauthPlatform = request.cookies.get(OAUTH_PLATFORM_COOKIE)?.value;
+  const clientState = request.cookies.get(OAUTH_CLIENT_STATE_COOKIE)?.value;
+  if (!code || !codeVerifier || !equalState(expectedState, state)) return authFailure("state", oauthPlatform, clientState);
 
   try {
     const client = googleOAuthClient();
@@ -122,7 +136,10 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      return { ...(await createDatabaseSession(database, userId)), householdId, userId };
+      const authorization = oauthPlatform === "ios" && clientState
+        ? { kind: "native" as const, ...(await createNativeAuthorizationCode(database, userId, clientState)) }
+        : { kind: "web" as const, ...(await createDatabaseSession(database, userId)) };
+      return { ...authorization, householdId, userId };
     });
 
     if (oauthMode === "calendar-write" && session.householdId) {
@@ -135,6 +152,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    if (session.kind === "native") {
+      if (!clientState) return authFailure("state", oauthPlatform, clientState);
+      const callback = new URL("commonweek://auth");
+      callback.searchParams.set("code", session.code);
+      callback.searchParams.set("state", clientState);
+      const response = NextResponse.redirect(callback);
+      clearOAuthCookies(response);
+      return response;
+    }
+
     const destination = session.householdId
       ? oauthMode === "calendar-write" ? "/settings?calendar_editing=enabled#calendars" : "/planner"
       : "/onboarding";
@@ -144,6 +171,6 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (error) {
     console.error("Google OAuth callback failed", error instanceof Error ? error.name : "UnknownError");
-    return authFailure("callback");
+    return authFailure("callback", oauthPlatform, clientState);
   }
 }
