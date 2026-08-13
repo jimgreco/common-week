@@ -22,6 +22,38 @@ enum PlannerSheet: Identifiable {
     }
 }
 
+private enum PlannerDestination: String, CaseIterable, Identifiable {
+    case calendar
+    case plans
+    case tasks
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .calendar: "Calendar"
+        case .plans: "Plans"
+        case .tasks: "Tasks"
+        }
+    }
+
+    var accessibilityTitle: String {
+        switch self {
+        case .calendar: "Daily calendar"
+        case .plans: "Weekly plans"
+        case .tasks: "Weekly tasks"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .calendar: "calendar"
+        case .plans: "list.bullet"
+        case .tasks: "checkmark.square"
+        }
+    }
+}
+
 struct PlannerView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var auth: AuthStore
@@ -29,6 +61,7 @@ struct PlannerView: View {
     @State private var sheet: PlannerSheet?
     @State private var selectedDayDate = ""
     @State private var dayMoveDirection = 1
+    @State private var selectedDestination: PlannerDestination = .calendar
     @GestureState private var dayDragOffset: CGFloat = 0
 
     var body: some View {
@@ -46,6 +79,11 @@ struct PlannerView: View {
                         .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
                         .padding(.bottom, 18)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if viewModel.data != nil {
+                    PlannerGlassTabBar(selection: $selectedDestination)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -86,16 +124,30 @@ struct PlannerView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(CWTheme.mint.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
                     }
-                    dayPager(data)
-                    WeeklyCard(data: data, viewModel: viewModel, sheet: $sheet)
+                    destinationContent(data)
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 18)
-                .padding(.bottom, 48)
+                .padding(.bottom, 24)
             }
+            .id(selectedDestination)
+            .transition(.opacity)
             .refreshable { await viewModel.load(week: data.weekStart, quietly: true) }
             .onAppear { synchronizeSelectedDay(with: data) }
             .onChange(of: data.weekStart) { _, _ in synchronizeSelectedDay(with: data) }
+            .animation(.easeInOut(duration: 0.2), value: selectedDestination)
+        }
+    }
+
+    @ViewBuilder
+    private func destinationContent(_ data: WeeklyPlannerData) -> some View {
+        switch selectedDestination {
+        case .calendar:
+            dayPager(data)
+        case .plans:
+            WeeklyItemsCard(type: .note, data: data, viewModel: viewModel, sheet: $sheet)
+        case .tasks:
+            WeeklyItemsCard(type: .task, data: data, viewModel: viewModel, sheet: $sheet)
         }
     }
 
@@ -244,6 +296,46 @@ struct PlannerView: View {
     }
 }
 
+private struct PlannerGlassTabBar: View {
+    @Binding var selection: PlannerDestination
+
+    var body: some View {
+        tabs
+        .padding(5)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 4) {
+            ForEach(PlannerDestination.allCases) { destination in
+                let isSelected = destination == selection
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { selection = destination }
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: destination.icon)
+                            .font(.system(size: 17, weight: isSelected ? .semibold : .medium))
+                        Text(destination.title)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(isSelected ? CWTheme.accentStrong : CWTheme.secondaryInk)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(isSelected ? CWTheme.mint.opacity(0.88) : Color.clear, in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(destination.accessibilityTitle)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+    }
+}
+
 private struct ProfileAvatar: View {
     let user: SessionIdentity
 
@@ -289,36 +381,46 @@ private struct LoadingWeekView: View {
     }
 }
 
-private struct WeeklyCard: View {
+private struct WeeklyItemsCard: View {
+    let type: PlanningItemType
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
     @Binding var sheet: PlannerSheet?
+
+    private var items: [PlanningItem] { data.weeklyItems.filter { $0.type == type } }
+    private var isPlans: Bool { type == .note }
 
     var body: some View {
         CardSurface {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("This week").font(CWTheme.display(28)).tracking(-0.7)
-                    Text("Notes and tasks that don’t belong to one day").font(.caption).foregroundStyle(.secondary)
+                    Text(isPlans ? "Weekly plans" : "Weekly tasks")
+                        .font(CWTheme.display(28))
+                        .tracking(-0.7)
+                    Text(isPlans ? "Notes and plans that belong to the whole week" : "Tasks that don’t belong to a specific day")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                section(title: "Plans & notes", type: .note)
-                Divider()
-                section(title: "Tasks", type: .task)
+                Eyebrow(text: isPlans ? "Plans & notes" : "Tasks")
+                if items.isEmpty {
+                    Text(isPlans ? "No weekly plans yet" : "No weekly tasks yet")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                } else {
+                    ForEach(items) { item in
+                        PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: nil, type: item.type) }
+                    }
+                }
+                Button { sheet = .item(nil, date: nil, type: type) } label: {
+                    Label(isPlans ? "Add a weekly plan" : "Add a weekly task", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(CWTheme.accent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 44)
+                }
+                .buttonStyle(.plain)
             }.padding(20)
-        }
-    }
-
-    private func section(title: String, type: PlanningItemType) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Eyebrow(text: title)
-            ForEach(data.weeklyItems.filter { $0.type == type }) { item in
-                PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: nil, type: item.type) }
-            }
-            Button { sheet = .item(nil, date: nil, type: type) } label: {
-                Label("Add \(type == .note ? "a plan" : "a task")", systemImage: "plus")
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(CWTheme.accent)
-                    .frame(maxWidth: .infinity, alignment: .leading).frame(height: 44)
-            }.buttonStyle(.plain)
         }
     }
 }

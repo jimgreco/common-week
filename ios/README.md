@@ -30,7 +30,7 @@ xcodebuild -project CommonWeek.xcodeproj \
   test
 ```
 
-The app targets iOS 17 and the bundle identifier is `com.jimgreco.commonweek`.
+The app targets iOS 26 and the bundle identifier is `com.jimgreco.commonweek`.
 
 ## TestFlight releases
 

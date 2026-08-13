@@ -73,7 +73,7 @@ struct DayCardView: View {
                         }
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("High \(temperature(weather.highF)) degrees, low \(temperature(weather.lowF)) degrees, \(weather.precipitationProbability) percent chance of rain")
@@ -153,31 +153,32 @@ struct CalendarEventRow: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 11) {
-                Text(event.attribution)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Color(hex: event.calendarColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(event.allDay ? "All day" : eventTimeRange(event))
-                        .font(.caption2).foregroundStyle(.secondary)
-                    Text(event.title)
-                        .font(.subheadline.weight(isSupplemental ? .regular : .semibold))
-                        .foregroundStyle(isSupplemental ? CWTheme.secondaryInk : CWTheme.ink)
-                    if let location = event.location, !location.isEmpty {
-                        Text(location).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    }
+        HStack(alignment: .top, spacing: 11) {
+            Text(event.attribution)
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Color(hex: event.calendarColor), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.allDay ? "All day" : eventTimeRange(event))
+                    .font(.caption2).foregroundStyle(.secondary)
+                Text(event.title)
+                    .font(.subheadline.weight(isSupplemental ? .regular : .semibold))
+                    .foregroundStyle(isSupplemental ? CWTheme.secondaryInk : CWTheme.ink)
+                if let location = event.location, !location.isEmpty {
+                    Text(location).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
-                Spacer()
-                if event.isConflict == true { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red) }
-                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
             }
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
+            Spacer()
+            if event.isConflict == true { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+            Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(.tertiary)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, action)
     }
 }
 

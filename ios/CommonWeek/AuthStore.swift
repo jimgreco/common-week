@@ -88,10 +88,15 @@ final class AuthStore: NSObject, ObservableObject, ASWebAuthenticationPresentati
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes
+        let scenes = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+        if let keyWindow = scenes.flatMap(\.windows).first(where: \.isKeyWindow) {
+            return keyWindow
+        }
+        guard let scene = scenes.first else {
+            preconditionFailure("Google sign-in requires an active window scene.")
+        }
+        return ASPresentationAnchor(windowScene: scene)
     }
 
     private static func secureState() -> String {
