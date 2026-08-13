@@ -21,7 +21,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jimgreco.commonweek
-        PRODUCT_NAME: Common Week
+        PRODUCT_NAME: Week of Us
         PRODUCT_MODULE_NAME: CommonWeek
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: CommonWeek/Info.plist
@@ -45,5 +45,5 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jimgreco.commonweek.tests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Common Week.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Common Week"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Week of Us.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Week of Us"
         BUNDLE_LOADER: "$(TEST_HOST)"

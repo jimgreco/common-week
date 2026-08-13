@@ -113,12 +113,12 @@ export function EventDetailDialog({
           {event.isConflict && <div className="event-conflict-detail"><dt><AlertTriangle size={15} /><span className="sr-only">Conflict</span></dt><dd><strong>Time conflict</strong><span>This event overlaps another scheduled event.</span></dd></div>}
         </dl>
         {event.description && <div className="event-description"><h4>Notes</h4><p>{event.description}</p></div>}
-        {!event.canEdit && <p className="event-edit-note">{event.recurringEventId ? "Recurring events remain read-only in Common Week. Open this event in Google Calendar to change the series." : "This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only."}</p>}
-        <p className="event-hide-note">Hiding affects Common Week for the household. It does not change Google Calendar, and you can restore the event in Settings.</p>
+        {!event.canEdit && <p className="event-edit-note">{event.recurringEventId ? "Recurring events remain read-only in Week of Us. Open this event in Google Calendar to change the series." : "This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only."}</p>}
+        <p className="event-hide-note">Hiding affects Week of Us for the household. It does not change Google Calendar, and you can restore the event in Settings.</p>
         {error && <p className="location-picker-error" role="alert">{error}</p>}
       </div>
       <footer className="modal-footer split-footer">
-        <button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Common Week"}</button>
+        <button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Week of Us"}</button>
         <span>{event.googleUrl && <a className="button button-secondary" href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={13} /></a>}{event.canEdit && <button className="button button-secondary" type="button" onClick={() => onEdit(event)}><Pencil size={13} />Edit event</button>}<button className="button button-primary" type="button" onClick={onClose}>Done</button></span>
       </footer>
     </Modal>
@@ -225,7 +225,7 @@ export function CalendarEventEditorDialog({
           <label>Notes<textarea value={draft.description} maxLength={8192} placeholder="Optional" onChange={(change) => setDraft({ ...draft, description: change.target.value })} /></label>
           <p className="event-timezone-note">Times use the household timezone: {timeZone}</p>
           {error && <p className="location-picker-error" role="alert">{error}</p>}
-          {confirmDelete && <div className="delete-confirmation" role="alert"><strong>Delete this event from Google Calendar?</strong><span>This cannot be undone from Common Week.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
+          {confirmDelete && <div className="delete-confirmation" role="alert"><strong>Delete this event from Google Calendar?</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
             if (!event) return;
             setDeleting(true);
             setError(null);

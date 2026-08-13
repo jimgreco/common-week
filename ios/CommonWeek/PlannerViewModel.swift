@@ -103,13 +103,13 @@ final class PlannerViewModel: ObservableObject {
             guard var planner = data else { return false }
             for index in planner.days.indices { planner.days[index].events.removeAll { $0.id == event.id } }
             data = planner
-            show("Event hidden from Common Week")
+            show("Event hidden from Week of Us")
             return true
         }
         do {
             _ = try await api.hideEvent(event)
             await load(week: data?.weekStart, quietly: true)
-            show("Event hidden from Common Week")
+            show("Event hidden from Week of Us")
             return true
         } catch { show(error.localizedDescription); return false }
     }

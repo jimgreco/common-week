@@ -137,9 +137,9 @@ struct EventDetailView: View {
                     if let description = event.description, !description.isEmpty {
                         Divider(); Eyebrow(text: "Notes"); Text(description).font(.body).foregroundStyle(CWTheme.secondaryInk)
                     }
-                    Text(event.canEdit == true ? "This event can be edited in Common Week." : "This calendar is read-only here. You can still hide the event from the shared planner.")
+                    Text(event.canEdit == true ? "This event can be edited in Week of Us." : "This calendar is read-only here. You can still hide the event from the shared planner.")
                         .font(.footnote).foregroundStyle(.secondary).padding(14).background(CWTheme.mint.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-                    Button(role: .destructive) { Task { if await viewModel.hideEvent(event) { dismiss() } } } label: { Label("Hide from Common Week", systemImage: "eye.slash") }
+                    Button(role: .destructive) { Task { if await viewModel.hideEvent(event) { dismiss() } } } label: { Label("Hide from Week of Us", systemImage: "eye.slash") }
                         .buttonStyle(.bordered)
                 }.padding(22)
             }

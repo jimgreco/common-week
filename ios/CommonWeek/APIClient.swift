@@ -8,7 +8,7 @@ enum APIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: "Common Week returned an unexpected response."
+        case .invalidResponse: "Week of Us returned an unexpected response."
         case .server(let message): message
         case .unauthorized: "Your session expired. Sign in again."
         }
@@ -128,7 +128,7 @@ final class APIClient {
         let envelope = try decoder.decode(APIEnvelope<Response>.self, from: data)
         guard envelope.ok, let value = envelope.data else {
             if Response.self == EmptyResponse.self, envelope.ok { return EmptyResponse() as! Response }
-            throw APIError.server(envelope.error ?? "Common Week could not complete that request.")
+            throw APIError.server(envelope.error ?? "Week of Us could not complete that request.")
         }
         return value
     }

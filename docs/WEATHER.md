@@ -1,6 +1,6 @@
 # Weather and geocoding
 
-Common Week uses Open-Meteo without a client-side API key. All provider calls happen through server modules and are normalized into internal domain types.
+Week of Us uses Open-Meteo without a client-side API key. All provider calls happen through server modules and are normalized into internal domain types.
 
 ## Provider boundaries
 

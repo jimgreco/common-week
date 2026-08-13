@@ -228,7 +228,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       events: day.events.filter((candidate) => candidate.id !== event.id),
     })));
     setSelectedEvent(null);
-    setNotice(`“${event.title}” is hidden from Common Week. Restore it in Settings.`);
+    setNotice(`“${event.title}” is hidden from Week of Us. Restore it in Settings.`);
     return null;
   }, [initialData.isDemo]);
 

@@ -83,7 +83,7 @@ function mutationFailure(error: unknown): ActionResult {
 }
 
 function rejectRecurring(event: { recurringEventId?: string }) {
-  if (event.recurringEventId) throw new Error("Recurring events are read-only in Common Week. Open this event in Google Calendar to change the series.");
+  if (event.recurringEventId) throw new Error("Recurring events are read-only in Week of Us. Open this event in Google Calendar to change the series.");
 }
 
 export async function createCalendarEventAction(input: CalendarEventDraft): Promise<ActionResult> {

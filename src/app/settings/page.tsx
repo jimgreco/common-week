@@ -76,5 +76,5 @@ export default async function SettingsPage() {
 }
 
 function SettingsScaffold({ children }: { children: React.ReactNode }) {
-  return <main className="app-frame"><header className="app-topbar"><BrandMark compact /><Link className="topbar-link back-to-planner" href="/planner"><ArrowLeft size={15} />Back to planner</Link></header><section className="settings-shell"><header className="settings-title"><p className="eyebrow">Common Week</p><h1>Settings</h1></header>{children}</section></main>;
+  return <main className="app-frame"><header className="app-topbar"><BrandMark compact /><Link className="topbar-link back-to-planner" href="/planner"><ArrowLeft size={15} />Back to planner</Link></header><section className="settings-shell"><header className="settings-title"><p className="eyebrow">Week of Us</p><h1>Settings</h1></header>{children}</section></main>;
 }

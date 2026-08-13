@@ -1,6 +1,6 @@
-# Common Week
+# Week of Us
 
-Common Week is a shared Monday-through-Sunday family planner. It keeps scheduled Google Calendar commitments, daily location, location-specific weather, and flexible household notes/tasks legible in one view.
+Week of Us is a shared Monday-through-Sunday family planner. It keeps scheduled Google Calendar commitments, daily location, location-specific weather, and flexible household notes/tasks legible in one view.
 
 The production application uses the existing self-hosted PostgreSQL 16 service. It does not use DynamoDB or Supabase. With no database configuration, it opens as a polished interactive demo so the product can still be evaluated locally.
 

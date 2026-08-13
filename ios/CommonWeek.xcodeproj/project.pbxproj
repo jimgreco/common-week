@@ -365,7 +365,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Common Week.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Common Week";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Week of Us.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Week of Us";
 			};
 			name = Release;
 		};
@@ -382,7 +382,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Common Week.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Common Week";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Week of Us.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Week of Us";
 			};
 			name = Debug;
 		};
@@ -401,7 +401,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek;
 				PRODUCT_MODULE_NAME = CommonWeek;
-				PRODUCT_NAME = "Common Week";
+				PRODUCT_NAME = "Week of Us";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -423,7 +423,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek;
 				PRODUCT_MODULE_NAME = CommonWeek;
-				PRODUCT_NAME = "Common Week";
+				PRODUCT_NAME = "Week of Us";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
 				TARGETED_DEVICE_FAMILY = 1;

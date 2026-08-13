@@ -161,7 +161,7 @@ jobs:
             "$EC2_USER@$EC2_HOST" \
             'chmod 600 "$HOME/common-week/.env.production.pending"'
 
-      - name: Pull and restart Common Week
+      - name: Pull and restart Week of Us
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -261,7 +261,7 @@ jobs:
                 })
                 .catch(() => process.exit(1));
             ' </dev/null; then
-              echo "Common Week is healthy at build $COMMON_WEEK_APP_BUILD."
+              echo "Week of Us is healthy at build $COMMON_WEEK_APP_BUILD."
               docker images ghcr.io/jimgreco/common-week --format '{{.Repository}}:{{.Tag}}' \
                 | grep -Fvx "$COMMON_WEEK_IMAGE" \
                 | xargs -r docker image rm || true

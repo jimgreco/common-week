@@ -55,7 +55,7 @@ struct BrandMark: View {
             .frame(width: compact ? 30 : 42, height: compact ? 30 : 42)
 
             if !compact {
-                Text("Common Week")
+                Text("Week of Us")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
                     .tracking(-0.4)
             }

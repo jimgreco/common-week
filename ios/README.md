@@ -1,6 +1,6 @@
-# Common Week for iPhone
+# Week of Us for iPhone
 
-The iPhone app is a native SwiftUI companion to the Common Week web app. It uses the same household, planner, weather, location, and Google Calendar data while keeping its opaque session token in the iOS Keychain.
+The iPhone app is a native SwiftUI companion to the Week of Us web app. It uses the same household, planner, weather, location, and Google Calendar data while keeping its opaque session token in the iOS Keychain.
 
 ## Open and run
 
@@ -48,6 +48,6 @@ Configure these GitHub Actions secrets before the first release:
 - `APP_STORE_CONNECT_ISSUER_ID`
 - `APP_STORE_CONNECT_API_KEY` — PEM text or base64-encoded PEM
 
-App Store Connect must also contain a Common Week app record for `com.jimgreco.commonweek`, and the provisioning profile must be an active App Store distribution profile for that identifier.
+App Store Connect must also contain a Week of Us app record for `com.jimgreco.commonweek`, and the provisioning profile must be an active App Store distribution profile for that identifier.
 
 The optional repository variable `IOS_API_BASE_URL` can override the production API URL. It must use HTTPS and defaults to `https://common-week.jim-greco.com`.

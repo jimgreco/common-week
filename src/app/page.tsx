@@ -22,7 +22,7 @@ export default async function Home() {
     <main className="landing-shell">
       <nav className="landing-nav" aria-label="Primary navigation">
         <BrandMark />
-        <span className="landing-nav-note">A shared weekly planner for two</span>
+        <span className="landing-nav-note">The week you share</span>
       </nav>
 
       <section className="landing-hero">
@@ -85,7 +85,7 @@ export default async function Home() {
       </section>
 
       <footer className="landing-footer">
-        <span>Common Week</span>
+        <span>Week of Us</span>
         <span>Calendar · Location · Weather · Plans</span>
       </footer>
     </main>

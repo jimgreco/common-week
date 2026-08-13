@@ -8,7 +8,7 @@ Every push to `main` runs `.github/workflows/deploy.yml`. The workflow:
 2. Builds an ARM64 image and publishes exact-commit plus `latest` tags to GitHub Container Registry.
 3. Connects to the shared server and uses the canonical `common-week` service in `~/deploy/docker-compose.yml`.
 4. Starts the existing `db` service, creates the dedicated `common_week_app` login and `common_week` database if absent, and runs application migrations from the exact image.
-5. Restarts Common Week and requires `/api/health` to report the exact Git SHA and a ready PostgreSQL connection.
+5. Restarts Week of Us and requires `/api/health` to report the exact Git SHA and a ready PostgreSQL connection.
 6. Checks the public endpoint when `PRODUCTION_BASE_URL` is configured.
 
 The service uses the `common-week` Compose profile so an unrelated infrastructure deployment does not replace the application image pinned by its own workflow. It uses the same PostgreSQL container as the other server apps but a separate database and restricted login. DynamoDB is not used.
@@ -34,7 +34,7 @@ COMMON_WEEK_APP_URL=https://common-week.jim-greco.com
 COMMON_WEEK_ENABLE_DEMO=false
 ```
 
-Do not copy another app's OAuth client unless its Google configuration intentionally includes Common Week's callback. The authorized production redirect URI must be:
+Do not copy another app's OAuth client unless its Google configuration intentionally includes the Week of Us callback. The authorized production redirect URI must be:
 
 ```text
 https://common-week.jim-greco.com/auth/callback

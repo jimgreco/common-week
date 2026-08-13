@@ -120,7 +120,7 @@ describe("EventDetailDialog", () => {
     expect(screen.getByText("This event overlaps another scheduled event.")).toBeInTheDocument();
     expect(screen.getByText("Patio table requested.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Hide from Common Week" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide from Week of Us" }));
     await waitFor(() => expect(onHide).toHaveBeenCalledWith(event));
   });
 });
