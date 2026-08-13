@@ -94,6 +94,7 @@ export interface CalendarPreference {
   googleCalendarId: string;
   calendarName: string;
   displayAlias: string | null;
+  displayAbbreviation: string | null;
   color: string;
   isSelected: boolean;
   isPrimary: boolean;

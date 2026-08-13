@@ -13,6 +13,7 @@ import {
 } from "@/app/actions/settings";
 import { signInWithGoogle } from "@/app/actions/auth";
 import { searchLocationsAction } from "@/app/actions/planner";
+import { calendarAbbreviation, normalizeCalendarAbbreviation } from "@/lib/calendar-utils";
 import type { CalendarPreference, GeocodingResult, HouseholdLocation, HouseholdMember, HouseholdSummary } from "@/types/domain";
 
 interface Invitation { id: string; email: string; status: string; expiresAt: string; }
@@ -85,15 +86,20 @@ export function SettingsPanel({
         </section>
 
         <section className="settings-section" id="calendars">
-          <header><p className="eyebrow">Calendars</p><h2>Choose the scheduled commitments you see</h2><p>Read-only. Common Week never creates, edits, or deletes Google Calendar events.</p></header>
+          <header><p className="eyebrow">Calendars</p><h2>Choose the scheduled commitments you see</h2><p>Read-only. Set a shorter display name or override the two-character badge shown in your week.</p></header>
           {calendarError && <div className="calendar-provider-error" role="status"><AlertTriangle size={15} /><span>{calendarError}</span></div>}
-          {calendars.length ? <div className="calendar-settings-list">{calendars.map((calendar) => (
-            <div className="calendar-setting" key={calendar.id}>
-              <button className={`toggle ${calendar.isSelected ? "is-on" : ""}`} type="button" aria-label={`${calendar.isSelected ? "Hide" : "Show"} ${calendar.calendarName}`} onClick={() => { const next = calendars.map((candidate) => candidate.id === calendar.id ? { ...candidate, isSelected: !candidate.isSelected } : candidate); setCalendars(next); if (!isDemo) startTransition(async () => { const result = await updateCalendarPreferenceAction({ id: calendar.id, isSelected: !calendar.isSelected, displayAlias: calendar.displayAlias }); if (!result.ok) { setCalendars(calendars); showMessage(result.error ?? "Calendar save failed"); } }); }}><i /></button>
-              <span className="calendar-color" style={{ background: calendar.color }} /><div><strong>{calendar.calendarName}</strong>{calendar.isPrimary && <small>Primary</small>}</div>
-              <input value={calendar.displayAlias ?? ""} placeholder="Display alias" aria-label={`Alias for ${calendar.calendarName}`} onChange={(event) => setCalendars((current) => current.map((candidate) => candidate.id === calendar.id ? { ...candidate, displayAlias: event.target.value || null } : candidate))} onBlur={(event) => { if (!isDemo) startTransition(async () => { await updateCalendarPreferenceAction({ id: calendar.id, isSelected: calendar.isSelected, displayAlias: event.target.value.trim() || null }); }); }} />
-            </div>
-          ))}</div> : <div className="empty-settings-state"><p>{calendarConnected ? "Google is connected, but calendars are not available yet." : "No Google Calendars are connected yet."}</p>{!isDemo && (calendarConnected ? <button className="button button-secondary" type="button" disabled={pending} onClick={refreshCalendars}><RefreshCw className={pending ? "spin" : ""} size={14} />Try Calendar again</button> : <form action={signInWithGoogle}><button className="button button-primary" type="submit">Connect Google Calendar</button></form>)} {isDemo && <span>Calendars appear here after Google setup.</span>}</div>}
+          {calendars.length ? <div className="calendar-settings-list">{calendars.map((calendar) => {
+            const defaultAbbreviation = calendarAbbreviation(calendar.displayAlias ?? calendar.calendarName);
+            return (
+              <div className="calendar-setting" key={calendar.id}>
+                <button className={`toggle ${calendar.isSelected ? "is-on" : ""}`} type="button" aria-label={`${calendar.isSelected ? "Hide" : "Show"} ${calendar.calendarName}`} onClick={() => { const next = calendars.map((candidate) => candidate.id === calendar.id ? { ...candidate, isSelected: !candidate.isSelected } : candidate); setCalendars(next); if (!isDemo) startTransition(async () => { const result = await updateCalendarPreferenceAction({ id: calendar.id, isSelected: !calendar.isSelected, displayAlias: calendar.displayAlias, displayAbbreviation: calendar.displayAbbreviation }); if (!result.ok) { setCalendars(calendars); showMessage(result.error ?? "Calendar save failed"); } }); }}><i /></button>
+                <span className="calendar-badge-preview" style={{ background: calendar.color }}>{calendar.displayAbbreviation ?? defaultAbbreviation}</span>
+                <div><strong>{calendar.calendarName}</strong>{calendar.isPrimary && <small>Primary</small>}</div>
+                <input className="calendar-alias-input" value={calendar.displayAlias ?? ""} placeholder="Display alias" aria-label={`Alias for ${calendar.calendarName}`} onChange={(event) => setCalendars((current) => current.map((candidate) => candidate.id === calendar.id ? { ...candidate, displayAlias: event.target.value || null } : candidate))} onBlur={(event) => { if (!isDemo) startTransition(async () => { const result = await updateCalendarPreferenceAction({ id: calendar.id, isSelected: calendar.isSelected, displayAlias: event.target.value.trim() || null, displayAbbreviation: calendar.displayAbbreviation }); if (!result.ok) showMessage(result.error ?? "Calendar alias could not be saved"); }); }} />
+                <input className="calendar-abbreviation-input" value={calendar.displayAbbreviation ?? ""} maxLength={2} placeholder={defaultAbbreviation} aria-label={`Badge abbreviation for ${calendar.calendarName}`} title="Two-character calendar badge" onChange={(event) => { const value = normalizeCalendarAbbreviation(event.target.value); setCalendars((current) => current.map((candidate) => candidate.id === calendar.id ? { ...candidate, displayAbbreviation: value || null } : candidate)); }} onBlur={(event) => { if (!isDemo) startTransition(async () => { const value = normalizeCalendarAbbreviation(event.target.value); const result = await updateCalendarPreferenceAction({ id: calendar.id, isSelected: calendar.isSelected, displayAlias: calendar.displayAlias, displayAbbreviation: value || null }); if (!result.ok) showMessage(result.error ?? "Calendar badge could not be saved"); }); }} />
+              </div>
+            );
+          })}</div> : <div className="empty-settings-state"><p>{calendarConnected ? "Google is connected, but calendars are not available yet." : "No Google Calendars are connected yet."}</p>{!isDemo && (calendarConnected ? <button className="button button-secondary" type="button" disabled={pending} onClick={refreshCalendars}><RefreshCw className={pending ? "spin" : ""} size={14} />Try Calendar again</button> : <form action={signInWithGoogle}><button className="button button-primary" type="submit">Connect Google Calendar</button></form>)} {isDemo && <span>Calendars appear here after Google setup.</span>}</div>}
           {calendars.length > 0 && !isDemo && <div className="calendar-refresh-row"><button className="text-button" type="button" disabled={pending} onClick={refreshCalendars}><RefreshCw className={pending ? "spin" : ""} size={13} />Refresh calendars</button></div>}
         </section>
 

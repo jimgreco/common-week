@@ -1,4 +1,5 @@
 import { addDateDays, currentWeekStart, weekDates } from "@/lib/date";
+import { calendarAbbreviation } from "@/lib/calendar-utils";
 import type {
   CalendarEvent,
   DailyWeather,
@@ -125,7 +126,7 @@ function event(
     calendarName: names[owner],
     calendarAlias: names[owner],
     calendarColor: colors[owner],
-    attribution: owner,
+    attribution: calendarAbbreviation(names[owner]),
   };
 }
 

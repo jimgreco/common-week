@@ -169,7 +169,7 @@ export async function getPlannerData(
     : await Promise.all([
       getHouseholdCalendarEvents(
         context.householdId,
-        members.map((member) => ({ userId: member.userId, displayName: member.displayName })),
+        members.map((member) => ({ userId: member.userId })),
         weekStart,
         household.timezone,
       ),

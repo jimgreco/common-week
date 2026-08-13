@@ -1,5 +1,37 @@
 import { addDateDays } from "@/lib/date";
-import type { CalendarEvent } from "@/types/domain";
+import type { CalendarEvent, CalendarPreference } from "@/types/domain";
+
+export function normalizeCalendarAbbreviation(value: string): string {
+  return Array.from(value.toLocaleUpperCase())
+    .filter((character) => /[\p{L}\p{N}]/u.test(character))
+    .slice(0, 2)
+    .join("");
+}
+
+export function calendarAbbreviation(name: string): string {
+  return normalizeCalendarAbbreviation(name) || "•";
+}
+
+export function decorateCalendarEvents(
+  events: CalendarEvent[],
+  preferences: CalendarPreference[],
+): CalendarEvent[] {
+  const preferenceByCalendar = new Map(
+    preferences.map((preference) => [preference.googleCalendarId, preference]),
+  );
+  return events.map((event) => {
+    const preference = preferenceByCalendar.get(event.calendarId);
+    if (!preference) return event;
+    return {
+      ...event,
+      calendarName: preference.calendarName,
+      calendarAlias: preference.displayAlias ?? preference.calendarName,
+      calendarColor: preference.color,
+      attribution: preference.displayAbbreviation
+        ?? calendarAbbreviation(preference.displayAlias ?? preference.calendarName),
+    };
+  });
+}
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;

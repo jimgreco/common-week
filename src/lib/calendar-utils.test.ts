@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { eventFallsOnDate, markCalendarConflicts, sortCalendarEvents } from "@/lib/calendar-utils";
-import type { CalendarEvent } from "@/types/domain";
+import {
+  calendarAbbreviation,
+  decorateCalendarEvents,
+  eventFallsOnDate,
+  markCalendarConflicts,
+  normalizeCalendarAbbreviation,
+  sortCalendarEvents,
+} from "@/lib/calendar-utils";
+import type { CalendarEvent, CalendarPreference } from "@/types/domain";
 
 function event(id: string, start: string, end: string, allDay = false): CalendarEvent {
   return {
@@ -18,6 +25,37 @@ function event(id: string, start: string, end: string, allDay = false): Calendar
 }
 
 describe("calendar event placement", () => {
+  it("derives compact calendar badges and normalizes overrides", () => {
+    expect(calendarAbbreviation("Family")).toBe("FA");
+    expect(calendarAbbreviation("House / Staff")).toBe("HO");
+    expect(normalizeCalendarAbbreviation(" f! ")).toBe("F");
+    expect(normalizeCalendarAbbreviation("école")).toBe("ÉC");
+    expect(calendarAbbreviation("🎉")).toBe("•");
+  });
+
+  it("redecorates cached events from current calendar preferences", () => {
+    const cached = { ...event("cached", "2026-08-10T09:00:00-04:00", "2026-08-10T10:00:00-04:00"), attribution: "JG" };
+    const preference: CalendarPreference = {
+      id: "preference",
+      googleCalendarId: "calendar",
+      calendarName: "Family",
+      displayAlias: "Our family",
+      displayAbbreviation: null,
+      color: "#123456",
+      isSelected: true,
+      isPrimary: false,
+    };
+
+    expect(decorateCalendarEvents([cached], [preference])).toEqual([
+      expect.objectContaining({
+        attribution: "OU",
+        calendarAlias: "Our family",
+        calendarColor: "#123456",
+      }),
+    ]);
+    expect(decorateCalendarEvents([cached], [{ ...preference, displayAbbreviation: "FA" }])[0].attribution).toBe("FA");
+  });
+
   it("interleaves calendars chronologically with all-day events first", () => {
     const jimAfternoon = { ...event("jim-afternoon", "2026-08-10T13:05:00-04:00", "2026-08-10T14:00:00-04:00"), calendarAlias: "Jim" };
     const familyAllDay = { ...event("family-all-day", "2026-08-10", "2026-08-11", true), calendarAlias: "Family" };

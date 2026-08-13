@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { normalizeCalendarAbbreviation } from "@/lib/calendar-utils";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
 import { refreshCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
 import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
@@ -176,18 +177,31 @@ export async function updateCalendarPreferenceAction(input: {
   id: string;
   isSelected: boolean;
   displayAlias: string | null;
+  displayAbbreviation: string | null;
 }): Promise<ActionResult> {
   try {
     const parsed = z.object({
       id: z.string().uuid(),
       isSelected: z.boolean(),
       displayAlias: z.string().trim().min(1).max(40).nullable(),
+      displayAbbreviation: z.string().trim().min(1).max(2)
+        .regex(/^[\p{L}\p{N}]{1,2}$/u)
+        .transform(normalizeCalendarAbbreviation)
+        .nullable(),
     }).parse(input);
     const context = await requireHouseholdContext();
     const result = await query(
-      `update calendar_preferences set is_selected = $4, display_alias = $5
+      `update calendar_preferences set
+         is_selected = $4, display_alias = $5, display_abbreviation = $6
         where id = $1 and household_id = $2 and user_id = $3`,
-      [parsed.id, context.householdId, context.userId, parsed.isSelected, parsed.displayAlias],
+      [
+        parsed.id,
+        context.householdId,
+        context.userId,
+        parsed.isSelected,
+        parsed.displayAlias,
+        parsed.displayAbbreviation,
+      ],
     );
     if (!result.rowCount) throw new Error("That calendar is not available.");
     revalidatePath("/settings");

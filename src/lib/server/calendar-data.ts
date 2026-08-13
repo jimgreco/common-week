@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { fromZonedTime } from "date-fns-tz";
+import { calendarAbbreviation, decorateCalendarEvents } from "@/lib/calendar-utils";
 import { addDateDays } from "@/lib/date";
 import { googleCalendarService, type GoogleCalendarListEntry } from "@/lib/integrations/google-calendar";
 import { query, withTransaction } from "@/lib/server/database";
@@ -10,7 +11,6 @@ import type { CalendarEvent, CalendarPreference, PlannerSourceState } from "@/ty
 
 interface MemberIdentity {
   userId: string;
-  displayName: string;
 }
 
 interface CalendarBundle {
@@ -23,14 +23,15 @@ interface PreferenceRow {
   google_calendar_id: string;
   calendar_name: string;
   display_alias: string | null;
+  display_abbreviation: string | null;
   color: string;
   is_selected: boolean;
   is_primary: boolean;
 }
 
-function attributionFor(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return (parts.length > 1 ? `${parts[0][0]}${parts.at(-1)![0]}` : parts[0]?.slice(0, 1) ?? "•").toUpperCase();
+function attributionFor(preference: CalendarPreference): string {
+  return preference.displayAbbreviation
+    ?? calendarAbbreviation(preference.displayAlias ?? preference.calendarName);
 }
 
 function preferenceFromGoogle(
@@ -44,6 +45,7 @@ function preferenceFromGoogle(
     googleCalendarId: calendar.id,
     calendarName: calendar.summary,
     displayAlias: null,
+    displayAbbreviation: null,
     color: calendar.backgroundColor,
     isSelected: true,
     isPrimary: calendar.primary,
@@ -56,6 +58,7 @@ function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
     googleCalendarId: row.google_calendar_id,
     calendarName: row.calendar_name,
     displayAlias: row.display_alias,
+    displayAbbreviation: row.display_abbreviation,
     color: row.color,
     isSelected: row.is_selected,
     isPrimary: row.is_primary,
@@ -64,7 +67,8 @@ function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
 
 async function readPreferences(householdId: string, userId: string) {
   return query<PreferenceRow>(
-    `select id, google_calendar_id, calendar_name, display_alias, color, is_selected, is_primary
+    `select id, google_calendar_id, calendar_name, display_alias, display_abbreviation,
+            color, is_selected, is_primary
        from calendar_preferences
       where household_id = $1 and user_id = $2
       order by is_primary desc, calendar_name`,
@@ -88,8 +92,8 @@ async function ensurePreferences(
         await database.query(
           `insert into calendar_preferences (
              household_id, user_id, google_calendar_id, calendar_name, display_alias,
-             color, is_selected, is_primary
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8)
+             display_abbreviation, color, is_selected, is_primary
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            on conflict (user_id, google_calendar_id) do update set
              calendar_name = excluded.calendar_name,
              color = excluded.color,
@@ -100,6 +104,7 @@ async function ensurePreferences(
             preference.googleCalendarId,
             preference.calendarName,
             preference.displayAlias,
+            preference.displayAbbreviation,
             preference.color,
             preference.isSelected,
             preference.isPrimary,
@@ -137,16 +142,22 @@ async function eventsForMember(
       [member.userId, cacheKey],
     );
     if (cached.rows[0] && cached.rows[0].expires_at.getTime() > Date.now()) {
-      return { events: cached.rows[0].events, connected: true };
+      return { events: decorateCalendarEvents(cached.rows[0].events, preferences), connected: true };
     }
 
-    const attribution = attributionFor(member.displayName);
     const eventGroups = await Promise.all(
       preferences.map((preference) =>
-        googleCalendarService.listEvents(accessToken, preference, timeMin, timeMax, timeZone, attribution),
+        googleCalendarService.listEvents(
+          accessToken,
+          preference,
+          timeMin,
+          timeMax,
+          timeZone,
+          attributionFor(preference),
+        ),
       ),
     );
-    const events = eventGroups.flat();
+    const events = decorateCalendarEvents(eventGroups.flat(), preferences);
     await query(
       `insert into calendar_event_cache (
          user_id, cache_key, window_start, window_end, events, expires_at
