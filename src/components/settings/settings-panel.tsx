@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { AlertTriangle, Check, LoaderCircle, LockKeyhole, MapPin, Plus, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 import {
@@ -49,6 +50,7 @@ export function SettingsPanel({
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResults] = useState<GeocodingResult[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [accountDeletionRequested, setAccountDeletionRequested] = useState(false);
   const [pending, startTransition] = useTransition();
   const attemptedCalendarRefresh = useRef(false);
 
@@ -76,7 +78,7 @@ export function SettingsPanel({
     <div className="settings-layout">
       {message && <div className="settings-toast" role="status"><Check size={14} />{message}</div>}
       <aside className="settings-index" aria-label="Settings sections">
-        <a href="#household">Household</a><a href="#calendars">Calendars</a><a href="#locations">Locations</a><a href="#preferences">Preferences</a>
+        <a href="#household">Household</a><a href="#calendars">Calendars</a><a href="#locations">Locations</a><a href="#preferences">Preferences</a><a href="#privacy">Privacy</a>
       </aside>
       <div className="settings-sections">
         <section className="settings-section" id="household">
@@ -94,7 +96,7 @@ export function SettingsPanel({
 
         <section className="settings-section" id="calendars">
           <header><p className="eyebrow">Calendars</p><h2>Choose calendars to share</h2><p>Only calendars you select here appear in the shared workspace. Calendars left private—including their names and events—are not shown to other household members.</p></header>
-          <div className="calendar-privacy-note"><LockKeyhole size={17} /><div><strong>Private by default</strong><p>New Google calendars stay off until you explicitly share them. You can make a shared calendar private again at any time.</p></div></div>
+          <div className="calendar-privacy-note"><LockKeyhole size={17} /><div><strong>Private by default</strong><p>New Google calendars stay off until you explicitly share them. You can make a shared calendar private again at any time. <Link href="/privacy">Read how Google data is handled.</Link></p></div></div>
           {!isDemo && calendarConnected && (
             <div className={`calendar-editing-access ${calendarWriteEnabled ? "is-enabled" : ""}`}>
               <div><strong>{calendarWriteEnabled ? "Single-event editing enabled" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "You can create, edit, and delete single events on calendars where Google gives you write access." : "Enable this separately to keep the default Google connection read-only."}</p></div>
@@ -137,6 +139,23 @@ export function SettingsPanel({
             <label>Week starts<select disabled><option>Monday</option></select></label>
             <button className="button button-primary" disabled={pending}>Save preferences</button>
           </form>
+          {!isDemo && (
+            <div className="account-privacy-controls" id="privacy">
+              <div>
+                <strong>Privacy and account</strong>
+                <p>Review how your Google data is handled or request deletion of your account and associated personal data.</p>
+              </div>
+              <span>
+                <Link className="button button-secondary" href="/privacy">Privacy Policy</Link>
+                <a
+                  className="button button-secondary"
+                  href="mailto:jgreco@gmail.com?subject=Week%20of%20Us%20account%20deletion%20request"
+                  onClick={() => setAccountDeletionRequested(true)}
+                >Request account deletion</a>
+              </span>
+              {accountDeletionRequested && <small>Your email app should open with a deletion request addressed to support. Send it from the Google email used for Week of Us so the account can be verified.</small>}
+            </div>
+          )}
         </section>
       </div>
     </div>

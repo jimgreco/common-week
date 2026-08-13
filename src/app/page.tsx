@@ -36,7 +36,14 @@ export default async function Home() {
             {!isDemoMode && isGoogleOAuthConfigured ? (
               <form action={signInWithGoogle}>
                 <button className="button button-primary button-large" type="submit">
-                  <span className="google-g" aria-hidden="true">G</span>
+                  <span className="google-g" aria-hidden="true">
+                    <svg viewBox="0 0 18 18" role="img">
+                      <path fill="#4285F4" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.716v2.258h2.909c1.702-1.567 2.684-3.876 2.684-6.615Z" />
+                      <path fill="#34A853" d="M9 18c2.43 0 4.468-.806 5.956-2.18l-2.909-2.258c-.806.54-1.836.86-3.047.86-2.344 0-4.328-1.585-5.037-3.714H.955v2.332A9 9 0 0 0 9 18Z" />
+                      <path fill="#FBBC05" d="M3.963 10.708A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.169.281-1.708V4.96H.955A9 9 0 0 0 0 9c0 1.453.348 2.827.955 4.04l3.008-2.332Z" />
+                      <path fill="#EA4335" d="M9 3.578c1.322 0 2.508.454 3.441 1.346l2.582-2.582C13.464.891 11.426 0 9 0A9 9 0 0 0 .955 4.96l3.008 2.332C4.672 5.163 6.656 3.578 9 3.578Z" />
+                    </svg>
+                  </span>
                   Continue with Google
                 </button>
               </form>
@@ -86,7 +93,11 @@ export default async function Home() {
 
       <footer className="landing-footer">
         <span>Week of Us</span>
-        <span>Calendar · Location · Weather · Plans</span>
+        <nav aria-label="Legal links">
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
+          <a href="mailto:jgreco@gmail.com">Contact</a>
+        </nav>
       </footer>
     </main>
   );
