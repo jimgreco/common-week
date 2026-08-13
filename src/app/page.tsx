@@ -28,11 +28,15 @@ export default async function Home() {
       <section className="landing-hero">
         <div className="landing-copy">
           <p className="eyebrow">Your week, held together</p>
-          <h1>Week of Us — plan the life between the calendar events.</h1>
+          <h1>Week of Us</h1>
           <p className="landing-lede">
-            Week of Us is a shared weekly family planner for calendars, locations,
-            weather, notes, and tasks—so you can see where you’ll be, what’s already
-            scheduled, and what you still need to decide together.
+            A shared weekly family planner for calendars, locations, weather, notes,
+            and tasks. Connect Google Calendar to view events from calendars you
+            choose alongside the plans your household makes together.
+          </p>
+          <p className="landing-lede">
+            Google Calendar access is read-only by default. Event editing is
+            requested separately only when you choose to enable it.
           </p>
           <div className="landing-actions">
             {!isDemoMode && isGoogleOAuthConfigured ? (
