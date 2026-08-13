@@ -15,6 +15,7 @@ export interface SessionIdentity {
   userId: string;
   email: string;
   displayName: string;
+  avatarUrl: string | null;
   householdId: string | null;
   role: "owner" | "member" | "viewer" | null;
 }
@@ -77,10 +78,11 @@ export async function sessionIdentityForToken(token: string | undefined): Promis
     user_id: string;
     email: string;
     display_name: string;
+    avatar_url: string | null;
     household_id: string | null;
     role: SessionIdentity["role"];
   }>(
-    `select u.id as user_id, u.email::text, u.display_name,
+    `select u.id as user_id, u.email::text, u.display_name, u.avatar_url,
             hm.household_id, hm.role
        from auth_sessions s
        join users u on u.id = s.user_id
@@ -94,6 +96,7 @@ export async function sessionIdentityForToken(token: string | undefined): Promis
     userId: row.user_id,
     email: row.email,
     displayName: row.display_name,
+    avatarUrl: row.avatar_url,
     householdId: row.household_id,
     role: row.role,
   };

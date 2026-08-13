@@ -27,6 +27,9 @@ struct PlannerView: View {
     @ObservedObject var auth: AuthStore
     let user: SessionIdentity
     @State private var sheet: PlannerSheet?
+    @State private var selectedDayDate = ""
+    @State private var dayMoveDirection = 1
+    @GestureState private var dayDragOffset: CGFloat = 0
 
     var body: some View {
         NavigationStack {
@@ -52,7 +55,7 @@ struct PlannerView: View {
                     Button { sheet = .search } label: { Image(systemName: "magnifyingglass") }
                         .accessibilityLabel("Search")
                     Button { sheet = .settings } label: {
-                        Text(user.displayName.prefix(1)).font(.caption.bold()).frame(width: 30, height: 30).background(CWTheme.mint, in: Circle())
+                        ProfileAvatar(user: user)
                     }
                     .accessibilityLabel("Settings")
                 }
@@ -83,9 +86,7 @@ struct PlannerView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(CWTheme.mint.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
                     }
-                    ForEach(data.days) { day in
-                        DayCardView(day: day, data: data, viewModel: viewModel, sheet: $sheet)
-                    }
+                    dayPager(data)
                     WeeklyCard(data: data, viewModel: viewModel, sheet: $sheet)
                 }
                 .padding(.horizontal, 14)
@@ -93,7 +94,96 @@ struct PlannerView: View {
                 .padding(.bottom, 48)
             }
             .refreshable { await viewModel.load(week: data.weekStart, quietly: true) }
+            .onAppear { synchronizeSelectedDay(with: data) }
+            .onChange(of: data.weekStart) { _, _ in synchronizeSelectedDay(with: data) }
         }
+    }
+
+    private func dayPager(_ data: WeeklyPlannerData) -> some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 5) {
+                ForEach(data.days) { day in
+                    let isSelected = day.date == selectedDay(in: data).date
+                    Button { selectDay(day.date, in: data) } label: {
+                        VStack(spacing: 3) {
+                            Text(WeekDate.shortDay(day.date).split(separator: " ").first.map(String.init) ?? "")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                            Text(WeekDate.shortDay(day.date).split(separator: " ").last.map(String.init) ?? "")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(isSelected ? Color.white : CWTheme.secondaryInk)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .background(isSelected ? CWTheme.brand : Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(WeekDate.longDay(day.date))
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(.horizontal, 2)
+
+            ZStack(alignment: .top) {
+                let day = selectedDay(in: data)
+                DayCardView(day: day, data: data, viewModel: viewModel, sheet: $sheet)
+                    .id(day.date)
+                    .offset(x: dayDragOffset)
+                    .transition(dayTransition)
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(daySwipeGesture(in: data))
+            .animation(.snappy(duration: 0.3), value: selectedDayDate)
+        }
+    }
+
+    private func selectedDay(in data: WeeklyPlannerData) -> DayPlan {
+        data.days.first(where: { $0.date == selectedDayDate })
+            ?? data.days.first(where: { WeekDate.isToday($0.date, timeZoneIdentifier: data.household.timezone) })
+            ?? data.days[0]
+    }
+
+    private func synchronizeSelectedDay(with data: WeeklyPlannerData) {
+        guard !data.days.isEmpty else { return }
+        if !data.days.contains(where: { $0.date == selectedDayDate }) {
+            selectedDayDate = selectedDay(in: data).date
+        }
+    }
+
+    private func selectDay(_ date: String, in data: WeeklyPlannerData) {
+        guard let current = data.days.firstIndex(where: { $0.date == selectedDay(in: data).date }),
+              let target = data.days.firstIndex(where: { $0.date == date }), current != target else { return }
+        dayMoveDirection = target > current ? 1 : -1
+        selectedDayDate = date
+    }
+
+    private func moveDay(by offset: Int, in data: WeeklyPlannerData) {
+        guard let current = data.days.firstIndex(where: { $0.date == selectedDay(in: data).date }) else { return }
+        let target = current + offset
+        guard data.days.indices.contains(target) else { return }
+        dayMoveDirection = offset
+        selectedDayDate = data.days[target].date
+    }
+
+    private func daySwipeGesture(in data: WeeklyPlannerData) -> some Gesture {
+        DragGesture(minimumDistance: 18)
+            .updating($dayDragOffset) { value, state, _ in
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
+                state = value.translation.width * 0.18
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.2,
+                      abs(value.translation.width) > 44 else { return }
+                moveDay(by: value.translation.width < 0 ? 1 : -1, in: data)
+            }
+    }
+
+    private var dayTransition: AnyTransition {
+        let insertion: Edge = dayMoveDirection > 0 ? .trailing : .leading
+        let removal: Edge = dayMoveDirection > 0 ? .leading : .trailing
+        return .asymmetric(
+            insertion: .move(edge: insertion).combined(with: .opacity),
+            removal: .move(edge: removal).combined(with: .opacity)
+        )
     }
 
     private func weekHeader(_ data: WeeklyPlannerData) -> some View {
@@ -151,6 +241,38 @@ struct PlannerView: View {
         } else {
             EmptyView()
         }
+    }
+}
+
+private struct ProfileAvatar: View {
+    let user: SessionIdentity
+
+    var body: some View {
+        ZStack {
+            Circle().fill(CWTheme.mint)
+            if let url = user.avatarUrl {
+                AsyncImage(url: url) { phase in
+                    if case .success(let image) = phase {
+                        image.resizable().scaledToFill()
+                    } else if case .empty = phase {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: 30, height: 30)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(CWTheme.accent.opacity(0.18), lineWidth: 1))
+    }
+
+    private var fallback: some View {
+        Text(user.displayName.prefix(1))
+            .font(.caption.bold())
+            .foregroundStyle(CWTheme.accentStrong)
     }
 }
 

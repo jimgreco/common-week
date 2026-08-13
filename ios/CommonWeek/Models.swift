@@ -17,6 +17,7 @@ struct SessionIdentity: Codable, Equatable {
     let userId: String
     let email: String
     let displayName: String
+    let avatarUrl: URL?
     let householdId: String?
     let role: String?
 }
@@ -235,6 +236,15 @@ enum WeekDate {
     }
 
     static func string(_ date: Date) -> String { dateOnly.string(from: date) }
+
+    static func isToday(_ value: String, timeZoneIdentifier: String? = nil) -> Bool {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return String(value.prefix(10)) == formatter.string(from: Date())
+    }
 
     static func monday(containing date: Date = Date()) -> Date {
         var calendar = Calendar(identifier: .iso8601)

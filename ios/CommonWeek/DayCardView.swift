@@ -6,27 +6,17 @@ struct DayCardView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @Binding var sheet: PlannerSheet?
 
-    private var isToday: Bool { Calendar.current.isDateInToday(WeekDate.parse(day.date)) }
+    private var isToday: Bool { WeekDate.isToday(day.date, timeZoneIdentifier: data.household.timezone) }
     private var plans: [PlanningItem] { day.items.filter { $0.type == .note } }
     private var tasks: [PlanningItem] { day.items.filter { $0.type == .task } }
+    private var criticalEvents: [CalendarEvent] { day.events.filter { $0.sectionGroup != "supplemental" } }
+    private var supplementalEvents: [CalendarEvent] { day.events.filter { $0.sectionGroup == "supplemental" } }
 
     var body: some View {
         CardSurface {
             VStack(spacing: 0) {
                 header
-                section(title: "Calendar") {
-                    if day.events.isEmpty {
-                        Text(data.calendarState.status == "loading" ? "Loading calendar…" : "No events")
-                            .font(.subheadline).foregroundStyle(.secondary).italic()
-                    } else {
-                        ForEach(day.events) { event in
-                            CalendarEventRow(event: event) { sheet = .event(event) }
-                        }
-                    }
-                    if !data.editableCalendars.isEmpty {
-                        addButton("Add event", icon: "calendar.badge.plus") { sheet = .newEvent(day.date) }
-                    }
-                }
+                calendarSection
                 Divider().overlay(CWTheme.rule)
                 section(title: "Plans") {
                     ForEach(plans) { item in
@@ -61,25 +51,32 @@ struct DayCardView: View {
                         .foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 5).background(CWTheme.brand, in: Capsule())
                 }
             }
-            HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 Button { sheet = .location(day) } label: {
                     Label(day.location?.name ?? "Set location", systemImage: "location.fill")
                         .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
-                Spacer(minLength: 4)
                 if let weather = day.weather, weather.status == "available" {
                     Button { sheet = .weather(day) } label: {
-                        HStack(spacing: 5) {
+                        HStack(spacing: 6) {
                             Image(systemName: weatherIcon(weather.conditionCode)).symbolRenderingMode(.multicolor)
                             Text("\(temperature(weather.highF))°")
                                 .fontWeight(.bold)
                             Text("/ \(temperature(weather.lowF))°").foregroundStyle(.secondary)
                             if weather.precipitationProbability >= 35 {
-                                Label("\(weather.precipitationProbability)%", systemImage: "umbrella.fill").foregroundStyle(.blue)
+                                Label("\(weather.precipitationProbability)%", systemImage: "umbrella.fill")
+                                    .labelStyle(.titleAndIcon)
+                                    .foregroundStyle(.blue)
                             }
                         }
-                    }.buttonStyle(.plain)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("High \(temperature(weather.highF)) degrees, low \(temperature(weather.lowF)) degrees, \(weather.precipitationProbability) percent chance of rain")
                 }
             }
             .font(.subheadline.weight(.semibold))
@@ -87,6 +84,43 @@ struct DayCardView: View {
         }
         .padding(18)
         .background(LinearGradient(colors: [CWTheme.mint.opacity(isToday ? 0.9 : 0.5), CWTheme.cream.opacity(0.45)], startPoint: .topLeading, endPoint: .bottomTrailing))
+    }
+
+    private var calendarSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if day.events.isEmpty {
+                Eyebrow(text: "Calendar")
+                Text(data.calendarState.status == "loading" ? "Loading calendar…" : "No events")
+                    .font(.subheadline).foregroundStyle(.secondary).italic()
+            } else {
+                if !criticalEvents.isEmpty {
+                    calendarGroup(title: "Critical", events: criticalEvents, supplemental: false)
+                }
+                if !criticalEvents.isEmpty && !supplementalEvents.isEmpty {
+                    Divider().overlay(CWTheme.rule.opacity(0.7))
+                }
+                if !supplementalEvents.isEmpty {
+                    calendarGroup(title: "Supplemental", events: supplementalEvents, supplemental: true)
+                }
+            }
+            if !data.editableCalendars.isEmpty {
+                addButton("Add event", icon: "calendar.badge.plus") { sheet = .newEvent(day.date) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+    }
+
+    private func calendarGroup(title: String, events: [CalendarEvent], supplemental: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .tracking(1.7)
+                .foregroundStyle(supplemental ? Color.secondary : CWTheme.accent)
+            ForEach(events) { event in
+                CalendarEventRow(event: event, isSupplemental: supplemental) { sheet = .event(event) }
+            }
+        }
     }
 
     private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -115,6 +149,7 @@ struct DayCardView: View {
 
 struct CalendarEventRow: View {
     let event: CalendarEvent
+    var isSupplemental = false
     let action: () -> Void
 
     var body: some View {
@@ -128,7 +163,9 @@ struct CalendarEventRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(event.allDay ? "All day" : eventTimeRange(event))
                         .font(.caption2).foregroundStyle(.secondary)
-                    Text(event.title).font(.subheadline.weight(.semibold)).foregroundStyle(CWTheme.ink)
+                    Text(event.title)
+                        .font(.subheadline.weight(isSupplemental ? .regular : .semibold))
+                        .foregroundStyle(isSupplemental ? CWTheme.secondaryInk : CWTheme.ink)
                     if let location = event.location, !location.isEmpty {
                         Text(location).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }

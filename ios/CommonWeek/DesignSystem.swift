@@ -51,24 +51,52 @@ struct BrandMark: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: compact ? 8 : 11, style: .continuous)
-                    .fill(LinearGradient(colors: [CWTheme.brand, CWTheme.brandStrong], startPoint: .topLeading, endPoint: .bottomTrailing))
-                HStack(alignment: .bottom, spacing: 3) {
-                    Capsule().frame(width: 3, height: 8)
-                    Capsule().frame(width: 3, height: 15)
-                    Capsule().frame(width: 3, height: 11)
-                }
-                .foregroundStyle(.white)
-            }
+            BrandGlyph(compact: compact)
             .frame(width: compact ? 30 : 42, height: compact ? 30 : 42)
-            .shadow(color: CWTheme.accent.opacity(0.22), radius: 8, y: 4)
 
-            Text("Common Week")
-                .font(.system(size: compact ? 16 : 20, weight: .bold, design: .rounded))
-                .tracking(-0.4)
+            if !compact {
+                Text("Common Week")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .tracking(-0.4)
+            }
         }
         .foregroundStyle(CWTheme.ink)
+    }
+}
+
+private struct BrandGlyph: View {
+    let compact: Bool
+
+    var body: some View {
+        VStack(spacing: compact ? 3 : 5) {
+            slider(dotColor: Color(red: 0.89, green: 0.67, blue: 0.25), position: 0.22)
+            slider(dotColor: Color(red: 0.63, green: 0.72, blue: 0.67), position: 0.68)
+            slider(dotColor: Color(red: 0.80, green: 0.47, blue: 0.40), position: 0.42)
+        }
+        .padding(compact ? 3 : 8)
+        .background {
+            if !compact {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(Color(red: 0.09, green: 0.16, blue: 0.14))
+                    .shadow(color: CWTheme.accent.opacity(0.22), radius: 8, y: 4)
+            }
+        }
+    }
+
+    private func slider(dotColor: Color, position: CGFloat) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(compact ? CWTheme.accentStrong.opacity(0.52) : CWTheme.cream)
+                    .frame(height: compact ? 2 : 3)
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: compact ? 6 : 8, height: compact ? 6 : 8)
+                    .offset(x: max(0, (proxy.size.width - (compact ? 6 : 8)) * position))
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .frame(height: compact ? 6 : 8)
     }
 }
 
