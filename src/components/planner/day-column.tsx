@@ -19,18 +19,26 @@ interface DayColumnProps {
   onWeather: (day: DayPlan) => void;
 }
 
-function QuickAdd({
+function InlinePlanningAdd({
   date,
+  type,
   categories,
   onAdd,
 }: {
   date: string;
+  type: "note" | "task";
   categories: PlanningCategory[];
   onAdd: DayColumnProps["onAdd"];
 }) {
+  const label = type === "note" ? "plan" : "task";
   return (
     <form
-      className="quick-add"
+      className={`inline-planning-add inline-${type}-add`}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("select, button")) return;
+        const input = event.currentTarget.elements.namedItem("text");
+        if (input instanceof HTMLInputElement) input.focus();
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         const form = event.currentTarget;
@@ -40,23 +48,29 @@ function QuickAdd({
         onAdd(
           date,
           text,
-          data.get("type") === "task" ? "task" : "note",
+          type,
           String(data.get("category") || "") || null,
         );
         form.reset();
       }}
     >
-      <Plus size={13} aria-hidden="true" />
-      <input aria-label={`Add a plan for ${formatMobileDate(date)}`} name="text" placeholder="Add a plan…" maxLength={1000} />
-      <select aria-label="Item category" name="category" defaultValue="">
+      {type === "note"
+        ? <Plus className="inline-add-symbol" size={13} aria-hidden="true" />
+        : <span className="inline-task-checkbox" aria-hidden="true" />}
+      <input
+        aria-label={`Add a ${label} for ${formatMobileDate(date)}`}
+        name="text"
+        placeholder={`Add a ${label}…`}
+        maxLength={1000}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") event.currentTarget.blur();
+        }}
+      />
+      <select aria-label={`${type === "note" ? "Plan" : "Task"} category`} name="category" defaultValue="">
         <option value="">No category</option>
         {categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}
       </select>
-      <select aria-label="Item type" name="type" defaultValue="note">
-        <option value="note">Note</option>
-        <option value="task">Task</option>
-      </select>
-      <button type="submit" aria-label="Save item">Add</button>
+      <button type="submit" aria-label={`Save ${label}`}>Add</button>
     </form>
   );
 }
@@ -184,22 +198,22 @@ export function DayColumn({
       <section className="day-section plans-section" aria-label={`Plans for ${formatMobileDate(day.date)}`}>
         <h2>Plans</h2>
         <div className="section-content">
-          {notes.length ? notes.map((item) => (
+          {notes.map((item) => (
             <PlanningItemRow item={item} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
-          )) : <p className="empty-section">Nothing planned yet</p>}
+          ))}
+          <InlinePlanningAdd date={day.date} type="note" categories={categories} onAdd={onAdd} />
         </div>
       </section>
 
       <section className="day-section tasks-section" aria-label={`Tasks for ${formatMobileDate(day.date)}`}>
         <h2>Tasks</h2>
         <div className="section-content">
-          {tasks.length ? tasks.map((item) => (
+          {tasks.map((item) => (
             <PlanningItemRow item={item} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
-          )) : <p className="empty-section">No tasks</p>}
+          ))}
+          <InlinePlanningAdd date={day.date} type="task" categories={categories} onAdd={onAdd} />
         </div>
       </section>
-
-      <QuickAdd date={day.date} categories={categories} onAdd={onAdd} />
     </article>
   );
 }
