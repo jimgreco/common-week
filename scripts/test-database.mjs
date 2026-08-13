@@ -85,6 +85,24 @@ try {
   assert.equal(foreignLocation.rowCount, 0, "foreign locations are rejected");
   assert.equal(ownLocation.rowCount, 1, "own locations are accepted");
 
+  const hiddenEvent = (await client.query(
+    `insert into hidden_calendar_events (
+       household_id, event_id, title, calendar_name, event_start, hidden_by
+     ) values ($1, 'family:event-1', 'Private family event', 'Family', '2026-08-15T19:00:00-04:00', $2)
+     returning id`,
+    [householdA, userA],
+  )).rows[0].id;
+  const ownHiddenEvent = await client.query(
+    "select id from hidden_calendar_events where id = $1 and household_id = $2",
+    [hiddenEvent, householdA],
+  );
+  const foreignHiddenEvent = await client.query(
+    "select id from hidden_calendar_events where id = $1 and household_id = $2",
+    [hiddenEvent, householdB],
+  );
+  assert.equal(ownHiddenEvent.rowCount, 1, "a household can manage its hidden events");
+  assert.equal(foreignHiddenEvent.rowCount, 0, "hidden events cannot cross household boundaries");
+
   const sessionToken = randomBytes(32).toString("base64url");
   const sessionHash = createHash("sha256").update(sessionToken).digest();
   await client.query(

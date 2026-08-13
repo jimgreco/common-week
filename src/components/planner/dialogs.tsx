@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, CloudRain, LoaderCircle, MapPin, Search, Sunrise, Sunset, Trash2, Wind, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, Clock, CloudRain, ExternalLink, EyeOff, LoaderCircle, MapPin, Search, Sunrise, Sunset, Trash2, Wind, X } from "lucide-react";
 import { searchLocationsAction } from "@/app/actions/planner";
-import { formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
+import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { DayPlan, GeocodingResult, HouseholdLocation, PlanningCategory, PlanningItem } from "@/types/domain";
+import type { CalendarEvent, DayPlan, GeocodingResult, HouseholdLocation, PlanningCategory, PlanningItem } from "@/types/domain";
 
 export type LocationSelection =
   | { kind: "saved"; location: HouseholdLocation }
@@ -64,6 +64,61 @@ function Modal({ title, onClose, children, wide = false }: { title: string; onCl
         {children}
       </section>
     </div>
+  );
+}
+
+function eventSchedule(event: CalendarEvent, timeZone: string): string {
+  if (event.allDay) {
+    const firstDay = event.start.slice(0, 10);
+    const lastDay = addDateDays(event.end.slice(0, 10), -1);
+    return firstDay === lastDay
+      ? `All day · ${formatMobileDate(firstDay)}`
+      : `All day · ${formatMobileDate(firstDay)}–${formatMobileDate(lastDay)}`;
+  }
+  const eventDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(event.start));
+  return `${formatMobileDate(eventDate)} · ${formatEventTime(event.start, timeZone)}–${formatEventTime(event.end, timeZone)}`;
+}
+
+export function EventDetailDialog({
+  event,
+  timeZone,
+  onClose,
+  onHide,
+}: {
+  event: CalendarEvent;
+  timeZone: string;
+  onClose: () => void;
+  onHide: (event: CalendarEvent) => Promise<string | null>;
+}) {
+  const [hiding, setHiding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Modal title="Calendar event" onClose={onClose}>
+      <div className="modal-body event-detail-body">
+        <div className="event-detail-heading">
+          <span className="calendar-attribution event-detail-badge" style={{ background: event.calendarColor }}>{event.attribution}</span>
+          <div><h3>{event.title}</h3><span>{event.calendarAlias}</span></div>
+        </div>
+        <dl className="event-detail-list">
+          <div><dt><Clock size={15} /><span className="sr-only">Time</span></dt><dd>{eventSchedule(event, timeZone)}</dd></div>
+          {event.location && <div><dt><MapPin size={15} /><span className="sr-only">Location</span></dt><dd>{event.location}</dd></div>}
+          <div><dt><CalendarDays size={15} /><span className="sr-only">Calendar</span></dt><dd>{event.calendarAlias}</dd></div>
+          {event.isConflict && <div className="event-conflict-detail"><dt><AlertTriangle size={15} /><span className="sr-only">Conflict</span></dt><dd><strong>Time conflict</strong><span>This event overlaps another scheduled event.</span></dd></div>}
+        </dl>
+        {event.description && <div className="event-description"><h4>Notes</h4><p>{event.description}</p></div>}
+        <p className="event-hide-note">Hiding affects Common Week for the household. It does not change Google Calendar, and you can restore the event in Settings.</p>
+        {error && <p className="location-picker-error" role="alert">{error}</p>}
+      </div>
+      <footer className="modal-footer split-footer">
+        <button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Common Week"}</button>
+        <span>{event.googleUrl && <a className="button button-secondary" href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={13} /></a>}<button className="button button-primary" type="button" onClick={onClose}>Done</button></span>
+      </footer>
+    </Modal>
   );
 }
 

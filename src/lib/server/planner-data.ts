@@ -89,7 +89,7 @@ export async function getPlannerData(
   options: { includeExternal?: boolean } = {},
 ): Promise<WeeklyPlannerData> {
   const dates = weekDates(weekStart);
-  const [householdResult, locationsResult, settingsResult, planningResult, categoriesResult, membersResult] =
+  const [householdResult, locationsResult, settingsResult, planningResult, categoriesResult, membersResult, hiddenEventsResult] =
     await Promise.all([
       query<HouseholdRow>(
         `select h.id, h.name, h.timezone, h.temperature_unit, h.default_location_id
@@ -140,6 +140,10 @@ export async function getPlannerData(
           order by hm.created_at`,
         [context.householdId],
       ),
+      query<{ event_id: string }>(
+        "select event_id from hidden_calendar_events where household_id = $1",
+        [context.householdId],
+      ),
     ]);
 
   const household = householdResult.rows[0];
@@ -182,6 +186,7 @@ export async function getPlannerData(
     name: row.name,
     color: row.color,
   }));
+  const hiddenEventIds = new Set(hiddenEventsResult.rows.map((row) => row.event_id));
 
   return {
     household: {
@@ -198,7 +203,9 @@ export async function getPlannerData(
       weather: location ? weatherBundle.forecasts.get(`${location.id}:${date}`) ?? null : null,
       events: markCalendarConflicts(
         sortCalendarEvents(
-          calendarBundle.events.filter((event) => eventFallsOnDate(event, date, household.timezone)),
+          calendarBundle.events.filter(
+            (event) => !hiddenEventIds.has(event.id) && eventFallsOnDate(event, date, household.timezone),
+          ),
         ),
       ),
       items: items.filter((item) => item.planningDate === date),

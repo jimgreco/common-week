@@ -6,6 +6,7 @@ import { getDemoPlannerData } from "@/lib/demo-data";
 describe("DayColumn", () => {
   it("keeps scheduled events, plans, and tasks semantically distinct", () => {
     const data = getDemoPlannerData();
+    const onEvent = vi.fn();
     render(
       <DayColumn
         day={data.days[0]}
@@ -20,6 +21,7 @@ describe("DayColumn", () => {
         onRetry={vi.fn()}
         onLocation={vi.fn()}
         onWeather={vi.fn()}
+        onEvent={onEvent}
       />,
     );
 
@@ -27,6 +29,10 @@ describe("DayColumn", () => {
     expect(screen.getByRole("heading", { name: "Plans" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tasks" })).toBeInTheDocument();
     expect(screen.getByText("Camp")).toBeInTheDocument();
+    expect(screen.getByText("Miriam's school")).toBeInTheDocument();
+    const camp = screen.getByRole("button", { name: /Camp, 9:15–10:15 AM/ });
+    fireEvent.click(camp);
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ id: "e1", title: "Camp" }));
     expect(screen.getByText("Dinner: Pasta")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Complete: Groceries/ })).toBeInTheDocument();
   });
@@ -49,6 +55,7 @@ describe("DayColumn", () => {
         onRetry={vi.fn()}
         onLocation={vi.fn()}
         onWeather={vi.fn()}
+        onEvent={vi.fn()}
       />,
     );
 
@@ -82,6 +89,7 @@ describe("DayColumn", () => {
         onRetry={vi.fn()}
         onLocation={vi.fn()}
         onWeather={vi.fn()}
+        onEvent={vi.fn()}
       />,
     );
 

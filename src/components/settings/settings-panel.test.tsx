@@ -4,12 +4,14 @@ import { SettingsPanel } from "@/components/settings/settings-panel";
 
 const refreshGoogleCalendarsAction = vi.fn();
 const updateCalendarPreferenceAction = vi.fn();
+const restoreCalendarEventAction = vi.fn();
 
 vi.mock("@/app/actions/settings", () => ({
   addLocationAction: vi.fn(),
   inviteMemberAction: vi.fn(),
   refreshGoogleCalendarsAction: (...args: unknown[]) => refreshGoogleCalendarsAction(...args),
   removeLocationAction: vi.fn(),
+  restoreCalendarEventAction: (...args: unknown[]) => restoreCalendarEventAction(...args),
   setDefaultLocationAction: vi.fn(),
   updateCalendarPreferenceAction: (...args: unknown[]) => updateCalendarPreferenceAction(...args),
   updateHouseholdAction: vi.fn(),
@@ -21,6 +23,7 @@ describe("SettingsPanel calendar degradation", () => {
   beforeEach(() => {
     refreshGoogleCalendarsAction.mockReset();
     updateCalendarPreferenceAction.mockReset();
+    restoreCalendarEventAction.mockReset();
   });
 
   it("keeps settings usable when connected Calendar discovery fails", async () => {
@@ -80,5 +83,31 @@ describe("SettingsPanel calendar degradation", () => {
       displayAlias: null,
       displayAbbreviation: "FM",
     }));
+  });
+
+  it("restores an event hidden from the household planner", async () => {
+    restoreCalendarEventAction.mockResolvedValue({ ok: true });
+    render(<SettingsPanel
+      household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
+      members={[]}
+      invitations={[]}
+      locations={[]}
+      calendars={[]}
+      hiddenEvents={[{
+        id: "00000000-0000-4000-8000-000000000002",
+        eventId: "family:event-1",
+        title: "Dinner reservation",
+        calendarName: "Family",
+        eventStart: "2026-08-15T19:00:00-04:00",
+        hiddenAt: "2026-08-12T21:00:00Z",
+      }]}
+      calendarConnected={false}
+      isDemo={false}
+    />);
+
+    expect(screen.getByText("Dinner reservation")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => expect(restoreCalendarEventAction).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000002"));
+    expect(screen.queryByText("Dinner reservation")).not.toBeInTheDocument();
   });
 });

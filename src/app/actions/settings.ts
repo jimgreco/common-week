@@ -212,6 +212,23 @@ export async function updateCalendarPreferenceAction(input: {
   }
 }
 
+export async function restoreCalendarEventAction(hiddenEventId: string): Promise<ActionResult> {
+  try {
+    const parsedId = z.string().uuid().parse(hiddenEventId);
+    const context = await requireHouseholdContext();
+    const result = await query(
+      "delete from hidden_calendar_events where id = $1 and household_id = $2",
+      [parsedId, context.householdId],
+    );
+    if (!result.rowCount) throw new Error("That hidden event is not available.");
+    revalidatePath("/settings");
+    revalidatePath("/planner");
+    return { ok: true };
+  } catch (error) {
+    return errorResult(error, "The event could not be restored.");
+  }
+}
+
 export async function refreshGoogleCalendarsAction(): Promise<ActionResult<{
   calendars: CalendarPreference[];
   connected: boolean;

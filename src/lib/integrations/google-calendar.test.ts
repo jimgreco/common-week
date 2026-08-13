@@ -7,6 +7,7 @@ import {
   GoogleCalendarApiService,
   isGoogleCalendarApiDisabled,
 } from "@/lib/integrations/google-calendar";
+import type { CalendarPreference } from "@/types/domain";
 
 describe("GoogleCalendarApiService", () => {
   afterEach(() => {
@@ -49,5 +50,45 @@ describe("GoogleCalendarApiService", () => {
       backgroundColor: "#123456",
       accessRole: "reader",
     }]);
+  });
+
+  it("normalizes event details including location and end time", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{
+        id: "event-1",
+        summary: "Dinner reservation",
+        description: "Patio table requested.",
+        location: "177 Main Street",
+        htmlLink: "https://calendar.google.com/event?eid=example",
+        start: { dateTime: "2026-08-15T19:00:00-04:00" },
+        end: { dateTime: "2026-08-15T21:00:00-04:00" },
+      }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    const preference: CalendarPreference = {
+      id: "preference",
+      googleCalendarId: "family@example.com",
+      calendarName: "Family",
+      displayAlias: null,
+      displayAbbreviation: null,
+      color: "#688173",
+      isSelected: true,
+      isPrimary: false,
+    };
+
+    await expect(new GoogleCalendarApiService().listEvents(
+      "opaque-token",
+      preference,
+      "2026-08-10T04:00:00Z",
+      "2026-08-17T04:00:00Z",
+      "America/New_York",
+      "FA",
+    )).resolves.toEqual([expect.objectContaining({
+      id: "family@example.com:event-1",
+      title: "Dinner reservation",
+      description: "Patio table requested.",
+      location: "177 Main Street",
+      googleUrl: "https://calendar.google.com/event?eid=example",
+      end: "2026-08-15T21:00:00-04:00",
+    })]);
   });
 });

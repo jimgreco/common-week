@@ -8,6 +8,7 @@ import { signOut } from "@/app/actions/auth";
 import {
   createPlanningItemAction,
   deletePlanningItemAction,
+  hideCalendarEventAction,
   loadPlannerSourcesAction,
   searchPlanningItemsAction,
   setDailyLocationAction,
@@ -17,9 +18,9 @@ import {
 } from "@/app/actions/planner";
 import { BrandMark } from "@/components/brand-mark";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
-import { ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
+import { EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
-import type { DayPlan, HouseholdLocation, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
+import type { CalendarEvent, DayPlan, HouseholdLocation, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
 export function WeeklyPlanner({ initialData, currentUserName }: { initialData: WeeklyPlannerData; currentUserName: string }) {
   const router = useRouter();
@@ -28,6 +29,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
   const [locationDate, setLocationDate] = useState<string | null>(null);
   const [weatherDay, setWeatherDay] = useState<DayPlan | null>(null);
   const [editingItem, setEditingItem] = useState<PlanningItem | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlanningItem[]>([]);
@@ -209,6 +211,25 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     }
   }, [initialData.isDemo, placeItem]);
 
+  const hideEvent = useCallback(async (event: CalendarEvent): Promise<string | null> => {
+    if (!initialData.isDemo) {
+      const result = await hideCalendarEventAction({
+        eventId: event.id,
+        title: event.title,
+        calendarName: event.calendarAlias,
+        eventStart: event.start,
+      });
+      if (!result.ok) return result.error ?? "The event could not be hidden.";
+    }
+    setDays((current) => current.map((day) => ({
+      ...day,
+      events: day.events.filter((candidate) => candidate.id !== event.id),
+    })));
+    setSelectedEvent(null);
+    setNotice(`“${event.title}” is hidden from Common Week. Restore it in Settings.`);
+    return null;
+  }, [initialData.isDemo]);
+
   const setLocation = useCallback(async (selection: LocationSelection, scope: "day" | "through-sunday" | "week"): Promise<string | null> => {
     if (!locationDate) return "Choose a day before setting its location.";
     let location: HouseholdLocation;
@@ -318,6 +339,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
               onRetry={retryItem}
               onLocation={setLocationDate}
               onWeather={setWeatherDay}
+              onEvent={setSelectedEvent}
               key={day.date}
             />
           ))}
@@ -334,6 +356,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
 
       {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
+      {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} />}
       {editingItem && <ItemEditorDialog item={editingItem} weekDates={weekDates(initialData.weekStart)} categories={initialData.categories} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
       {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
     </main>

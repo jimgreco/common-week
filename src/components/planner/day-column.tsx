@@ -1,8 +1,8 @@
-import { AlertCircle, Check, CloudOff, MapPin, Plus, Umbrella } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, CloudOff, MapPin, Plus, Umbrella } from "lucide-react";
 import { formatDayName, formatDayNumber, formatEventTime, formatMobileDate, isToday } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { DayPlan, PlanningCategory, PlanningItem, PlannerSourceState } from "@/types/domain";
+import type { CalendarEvent, DayPlan, PlanningCategory, PlanningItem, PlannerSourceState } from "@/types/domain";
 
 interface DayColumnProps {
   day: DayPlan;
@@ -17,6 +17,17 @@ interface DayColumnProps {
   onRetry: (item: PlanningItem) => void;
   onLocation: (date: string) => void;
   onWeather: (day: DayPlan) => void;
+  onEvent: (event: CalendarEvent) => void;
+}
+
+function eventTimeLabel(event: CalendarEvent, timeZone: string): string {
+  if (event.allDay) return "All day";
+  const start = formatEventTime(event.start, timeZone);
+  const end = formatEventTime(event.end, timeZone);
+  const period = end.match(/ (AM|PM)$/)?.[0];
+  return period && start.endsWith(period)
+    ? `${start.slice(0, -period.length)}–${end}`
+    : `${start}–${end}`;
 }
 
 function InlinePlanningAdd({
@@ -127,6 +138,7 @@ export function DayColumn({
   onRetry,
   onLocation,
   onWeather,
+  onEvent,
 }: DayColumnProps) {
   const notes = day.items.filter((item) => item.type === "note");
   const tasks = day.items.filter((item) => item.type === "task");
@@ -183,14 +195,13 @@ export function DayColumn({
         <h2>Calendar</h2>
         <div className="section-content event-list">
           {day.events.length ? day.events.map((event) => (
-            <div className={`calendar-event ${event.isConflict ? "has-conflict" : ""}`} key={event.id}>
+            <button className={`calendar-event ${event.isConflict ? "has-conflict" : ""}`} type="button" onClick={() => onEvent(event)} aria-label={`${event.title}, ${eventTimeLabel(event, timeZone)}. Open details.`} key={event.id}>
               <span className="calendar-attribution" style={{ background: event.calendarColor }} title={event.calendarAlias}>
                 {event.attribution}
               </span>
-              <span className="event-time">{event.allDay ? "All day" : formatEventTime(event.start, timeZone)}</span>
-              <span className="event-title" title={event.title}>{event.title}</span>
-              {event.isConflict && <span className="conflict-mark" title="Overlaps another event">!</span>}
-            </div>
+              <span className="event-copy"><span className="event-time">{eventTimeLabel(event, timeZone)}</span><span className="event-title" title={event.title}>{event.title}</span>{event.location && <span className="event-location">{event.location}</span>}</span>
+              {event.isConflict && <span className="conflict-mark" title="Time conflict: overlaps another event" aria-label="Time conflict"><AlertTriangle size={10} aria-hidden="true" /></span>}
+            </button>
           )) : <p className="empty-section">{calendarState.status === "loading" ? "Loading calendar" : "No events"}</p>}
         </div>
       </section>

@@ -84,6 +84,47 @@ export async function loadPlannerSourcesAction(weekStartDate: string): Promise<A
   }
 }
 
+export async function hideCalendarEventAction(input: {
+  eventId: string;
+  title: string;
+  calendarName: string;
+  eventStart: string;
+}): Promise<ActionResult> {
+  try {
+    const parsed = z.object({
+      eventId: z.string().trim().min(1).max(2048),
+      title: z.string().trim().min(1).max(2048),
+      calendarName: z.string().trim().min(1).max(1000),
+      eventStart: z.string().trim().min(1).max(100),
+    }).parse(input);
+    const context = await requireHouseholdContext();
+    await query(
+      `insert into hidden_calendar_events (
+         household_id, event_id, title, calendar_name, event_start, hidden_by
+       ) values ($1, $2, $3, $4, $5, $6)
+       on conflict (household_id, event_id) do update set
+         title = excluded.title,
+         calendar_name = excluded.calendar_name,
+         event_start = excluded.event_start,
+         hidden_by = excluded.hidden_by,
+         hidden_at = now()`,
+      [
+        context.householdId,
+        parsed.eventId,
+        parsed.title,
+        parsed.calendarName,
+        parsed.eventStart,
+        context.userId,
+      ],
+    );
+    revalidatePath("/planner");
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (error) {
+    return actionError(error, "The event could not be hidden.");
+  }
+}
+
 export async function createPlanningItemAction(input: {
   text: string;
   type: PlanningItemType;

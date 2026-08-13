@@ -39,6 +39,9 @@ interface GoogleEventsResponse {
   items?: Array<{
     id: string;
     summary?: string;
+    description?: string;
+    location?: string;
+    htmlLink?: string;
     status?: string;
     start?: { date?: string; dateTime?: string };
     end?: { date?: string; dateTime?: string };
@@ -147,6 +150,9 @@ export class GoogleCalendarApiService implements GoogleCalendarService {
         events.push({
           id: `${preference.googleCalendarId}:${item.id}`,
           title: item.summary?.trim() || "Busy",
+          description: item.description?.trim() || undefined,
+          location: item.location?.trim() || undefined,
+          googleUrl: item.htmlLink?.startsWith("https://") ? item.htmlLink : undefined,
           start,
           end,
           allDay,

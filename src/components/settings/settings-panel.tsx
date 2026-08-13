@@ -7,6 +7,7 @@ import {
   inviteMemberAction,
   refreshGoogleCalendarsAction,
   removeLocationAction,
+  restoreCalendarEventAction,
   setDefaultLocationAction,
   updateCalendarPreferenceAction,
   updateHouseholdAction,
@@ -14,7 +15,8 @@ import {
 import { signInWithGoogle } from "@/app/actions/auth";
 import { searchLocationsAction } from "@/app/actions/planner";
 import { calendarAbbreviation, normalizeCalendarAbbreviation } from "@/lib/calendar-utils";
-import type { CalendarPreference, GeocodingResult, HouseholdLocation, HouseholdMember, HouseholdSummary } from "@/types/domain";
+import { formatMobileDate } from "@/lib/date";
+import type { CalendarPreference, GeocodingResult, HiddenCalendarEvent, HouseholdLocation, HouseholdMember, HouseholdSummary } from "@/types/domain";
 
 interface Invitation { id: string; email: string; status: string; expiresAt: string; }
 
@@ -24,6 +26,7 @@ export function SettingsPanel({
   invitations,
   locations: initialLocations,
   calendars: initialCalendars,
+  hiddenEvents: initialHiddenEvents = [],
   calendarConnected: initialCalendarConnected,
   isDemo,
 }: {
@@ -32,11 +35,13 @@ export function SettingsPanel({
   invitations: Invitation[];
   locations: HouseholdLocation[];
   calendars: CalendarPreference[];
+  hiddenEvents?: HiddenCalendarEvent[];
   calendarConnected: boolean;
   isDemo: boolean;
 }) {
   const [locations, setLocations] = useState(initialLocations);
   const [calendars, setCalendars] = useState(initialCalendars);
+  const [hiddenEvents, setHiddenEvents] = useState(initialHiddenEvents);
   const [calendarConnected, setCalendarConnected] = useState(initialCalendarConnected);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [locationQuery, setLocationQuery] = useState("");
@@ -101,6 +106,7 @@ export function SettingsPanel({
             );
           })}</div> : <div className="empty-settings-state"><p>{calendarConnected ? "Google is connected, but calendars are not available yet." : "No Google Calendars are connected yet."}</p>{!isDemo && (calendarConnected ? <button className="button button-secondary" type="button" disabled={pending} onClick={refreshCalendars}><RefreshCw className={pending ? "spin" : ""} size={14} />Try Calendar again</button> : <form action={signInWithGoogle}><button className="button button-primary" type="submit">Connect Google Calendar</button></form>)} {isDemo && <span>Calendars appear here after Google setup.</span>}</div>}
           {calendars.length > 0 && !isDemo && <div className="calendar-refresh-row"><button className="text-button" type="button" disabled={pending} onClick={refreshCalendars}><RefreshCw className={pending ? "spin" : ""} size={13} />Refresh calendars</button></div>}
+          {hiddenEvents.length > 0 && <div className="hidden-calendar-events"><h3>Hidden events</h3><p>These events are hidden from the shared planner only. Google Calendar is unchanged.</p>{hiddenEvents.map((event) => <div className="hidden-calendar-event" key={event.id}><div><strong>{event.title}</strong><small>{event.calendarName} · {formatMobileDate(event.eventStart.slice(0, 10))}</small></div><button className="text-button" type="button" disabled={pending} onClick={() => { if (isDemo) { setHiddenEvents((current) => current.filter((candidate) => candidate.id !== event.id)); return; } startTransition(async () => { const result = await restoreCalendarEventAction(event.id); if (result.ok) { setHiddenEvents((current) => current.filter((candidate) => candidate.id !== event.id)); showMessage("Event restored to the planner"); } else showMessage(result.error ?? "Event could not be restored"); }); }}>Restore</button></div>)}</div>}
         </section>
 
         <section className="settings-section" id="locations">

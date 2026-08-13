@@ -119,6 +119,8 @@ function event(
   return {
     id,
     title,
+    description: id === "e1" ? "Camp drop-off and morning activities." : undefined,
+    location: owner === "F" ? "East Hampton, New York" : owner === "M" ? "Miriam's school" : undefined,
     start: start.toISOString(),
     end: end.toISOString(),
     allDay: false,

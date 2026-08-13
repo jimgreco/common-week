@@ -78,6 +78,9 @@ export interface DailyWeather {
 export interface CalendarEvent {
   id: string;
   title: string;
+  description?: string;
+  location?: string;
+  googleUrl?: string;
   start: string;
   end: string;
   allDay: boolean;
@@ -87,6 +90,15 @@ export interface CalendarEvent {
   calendarColor: string;
   attribution: string;
   isConflict?: boolean;
+}
+
+export interface HiddenCalendarEvent {
+  id: string;
+  eventId: string;
+  title: string;
+  calendarName: string;
+  eventStart: string;
+  hiddenAt: string;
 }
 
 export interface CalendarPreference {

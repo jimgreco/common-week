@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LocationDialog } from "@/components/planner/dialogs";
+import { EventDetailDialog, LocationDialog } from "@/components/planner/dialogs";
+import type { CalendarEvent } from "@/types/domain";
 
 const searchLocationsAction = vi.fn();
 
@@ -85,5 +86,40 @@ describe("LocationDialog", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Location changes could not be saved.");
     expect(screen.getByRole("dialog", { name: "Set location · Monday" })).toBeInTheDocument();
+  });
+});
+
+describe("EventDetailDialog", () => {
+  it("shows event details, explains conflicts, and supports hiding", async () => {
+    const event: CalendarEvent = {
+      id: "family:event-1",
+      title: "Dinner reservation",
+      description: "Patio table requested.",
+      location: "177 Main Street",
+      googleUrl: "https://calendar.google.com/event?eid=example",
+      start: "2026-08-15T19:00:00-04:00",
+      end: "2026-08-15T21:00:00-04:00",
+      allDay: false,
+      calendarId: "family",
+      calendarName: "Family",
+      calendarAlias: "Family",
+      calendarColor: "#688173",
+      attribution: "FA",
+      isConflict: true,
+    };
+    const onHide = vi.fn().mockResolvedValue(null);
+
+    render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={onHide} />);
+
+    expect(screen.getByRole("dialog", { name: "Calendar event" })).toBeInTheDocument();
+    expect(screen.getByText("Dinner reservation")).toBeInTheDocument();
+    expect(screen.getByText("Saturday, August 15 · 7:00 PM–9:00 PM")).toBeInTheDocument();
+    expect(screen.getByText("177 Main Street")).toBeInTheDocument();
+    expect(screen.getByText("Time conflict")).toBeInTheDocument();
+    expect(screen.getByText("This event overlaps another scheduled event.")).toBeInTheDocument();
+    expect(screen.getByText("Patio table requested.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide from Common Week" }));
+    await waitFor(() => expect(onHide).toHaveBeenCalledWith(event));
   });
 });
