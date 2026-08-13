@@ -6,7 +6,7 @@ import { searchLocationsAction } from "@/app/actions/planner";
 import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, CalendarEventDraft, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, PlanningCategory, PlanningItem } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, PlanningItem } from "@/types/domain";
 
 export type LocationSelection =
   | { kind: "saved"; location: HouseholdLocation }
@@ -474,14 +474,12 @@ export function WeatherDialog({ day, timeZone, temperatureUnit, onClose }: { day
 export function ItemEditorDialog({
   item,
   weekDates,
-  categories,
   onClose,
   onSave,
   onDelete,
 }: {
   item: PlanningItem;
   weekDates: string[];
-  categories: PlanningCategory[];
   onClose: () => void;
   onSave: (item: PlanningItem) => void;
   onDelete: (item: PlanningItem) => void;
@@ -500,7 +498,6 @@ export function ItemEditorDialog({
           <label>Text<textarea autoFocus value={draft.text} maxLength={1000} onChange={(event) => setDraft({ ...draft, text: event.target.value })} /></label>
           <div className="form-row">
             <label>Type<select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as "note" | "task" })}><option value="note">Note</option><option value="task">Task</option></select></label>
-            <label>Category<select value={draft.categoryId ?? ""} onChange={(event) => setDraft({ ...draft, categoryId: event.target.value || null })}><option value="">No category</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
           </div>
           <label>When<select value={draft.planningDate ?? "weekly"} onChange={(event) => setDraft({ ...draft, planningDate: event.target.value === "weekly" ? null : event.target.value })}><option value="weekly">This week</option>{weekDates.map((date) => <option value={date} key={date}>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(parseDateOnly(date))}</option>)}</select></label>
           {item.createdByName && <p className="attribution-note">Added by {item.createdByName}</p>}
@@ -537,7 +534,7 @@ export function SearchDialog({
           {results.map((item) => (
             <a href={`/planner?week=${item.weekStartDate}`} className="search-result" key={item.id}>
               <span>{item.type === "task" ? (item.isCompleted ? "☑" : "□") : "•"}</span>
-              <div><strong>{item.text}</strong><small>{item.planningDate ? formatMobileDate(item.planningDate) : `Week of ${item.weekStartDate}`}{item.categoryName ? ` · ${item.categoryName}` : ""}</small></div>
+              <div><strong>{item.text}</strong><small>{item.planningDate ? formatMobileDate(item.planningDate) : `Week of ${item.weekStartDate}`}</small></div>
             </a>
           ))}
         </div>

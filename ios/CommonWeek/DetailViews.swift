@@ -85,7 +85,7 @@ struct PlannerSearchView: View {
                     List(viewModel.searchResults) { item in
                         HStack(spacing: 12) {
                             Image(systemName: item.type == .task ? (item.isCompleted ? "checkmark.square.fill" : "square") : "circle.fill")
-                                .foregroundStyle(item.type == .task ? CWTheme.accent : Color(hex: item.categoryColor ?? "#7B8983"))
+                                .foregroundStyle(item.type == .task ? CWTheme.accent : Color(hex: "#7B8983"))
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(item.text).font(.body)
                                 Text(item.planningDate.map(WeekDate.longDay) ?? "Week of \(item.weekStartDate)").font(.caption).foregroundStyle(.secondary)

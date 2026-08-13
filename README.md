@@ -11,7 +11,7 @@ The production application uses the existing self-hosted PostgreSQL 16 service. 
 - Explicitly selected primary, additional, and shared calendars; newly discovered calendars stay private until their owner shares them with the household
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
 - Native SwiftUI iPhone companion with Keychain sessions, Google OAuth handoff, and full planner editing
-- Daily and weekly notes/tasks, categories, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
+- Daily and weekly notes/tasks, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
 - Saved/default/travel locations, day/through-Sunday/whole-week assignment, and Open-Meteo geocoding
 - Location-specific daily/hourly weather with honest forecast-unavailable states and PostgreSQL caching
 - Prompt collaboration through PostgreSQL `LISTEN/NOTIFY`, server-sent events, automatic reconnect, and a polling fallback
@@ -67,7 +67,7 @@ Key paths:
 - [`src/lib/server/session.ts`](src/lib/server/session.ts) — opaque PostgreSQL sessions
 - [`ios/CommonWeek`](ios/CommonWeek) — native SwiftUI application
 - [`src/lib/integrations`](src/lib/integrations) — normalized provider adapters
-- [`db/migrations/001_initial_common_week.sql`](db/migrations/001_initial_common_week.sql) — PostgreSQL schema, indexes, triggers, and default categories
+- [`db/migrations`](db/migrations) — PostgreSQL schema, indexes, triggers, and incremental data-model changes
 - [`scripts/test-database.mjs`](scripts/test-database.mjs) — real-PostgreSQL isolation and constraint checks
 
 ## Setup and deployment

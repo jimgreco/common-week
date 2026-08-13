@@ -8,7 +8,6 @@ struct ItemEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text: String
     @State private var type: PlanningItemType
-    @State private var categoryId: String?
     @State private var isSaving = false
 
     init(item: PlanningItem?, planningDate: String?, defaultType: PlanningItemType, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
@@ -18,7 +17,6 @@ struct ItemEditorView: View {
         self.viewModel = viewModel
         _text = State(initialValue: item?.text ?? "")
         _type = State(initialValue: item?.type ?? defaultType)
-        _categoryId = State(initialValue: item?.categoryId)
     }
 
     var body: some View {
@@ -29,11 +27,7 @@ struct ItemEditorView: View {
                         .lineLimit(3...7)
                     Picker("Type", selection: $type) { Text("Plan or note").tag(PlanningItemType.note); Text("Task").tag(PlanningItemType.task) }
                 }
-                Section("Organize") {
-                    Picker("Category", selection: $categoryId) {
-                        Text("No category").tag(String?.none)
-                        ForEach(data.categories) { Text($0.name).tag(Optional($0.id)) }
-                    }
+                Section("Schedule") {
                     LabeledContent("When", value: planningDate.map(WeekDate.longDay) ?? "This week")
                 }
                 if let item {
@@ -48,7 +42,7 @@ struct ItemEditorView: View {
                     Button(isSaving ? "Saving…" : "Save") {
                         Task {
                             isSaving = true
-                            let draft = PlanningItemDraft(id: item?.id, text: text.trimmingCharacters(in: .whitespacesAndNewlines), type: type, planningDate: item?.planningDate ?? planningDate, weekStartDate: data.weekStart, categoryId: categoryId)
+                            let draft = PlanningItemDraft(id: item?.id, text: text.trimmingCharacters(in: .whitespacesAndNewlines), type: type, planningDate: item?.planningDate ?? planningDate, weekStartDate: data.weekStart)
                             if await viewModel.saveItem(draft) { dismiss() }
                             isSaving = false
                         }

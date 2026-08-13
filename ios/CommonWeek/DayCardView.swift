@@ -198,7 +198,7 @@ struct PlanningItemRow: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(item.isCompleted ? "Mark incomplete" : "Complete")
             } else {
-                Circle().fill(Color(hex: item.categoryColor ?? "#7B8983")).frame(width: 7, height: 7).padding(.top, 7).padding(.horizontal, 6)
+                Circle().fill(Color(hex: "#7B8983")).frame(width: 7, height: 7).padding(.top, 7).padding(.horizontal, 6)
             }
             Button(action: action) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -208,9 +208,6 @@ struct PlanningItemRow: View {
                         .strikethrough(item.isCompleted)
                         .opacity(item.isCompleted ? 0.55 : 1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    if let category = item.categoryName {
-                        Text(category.uppercased()).font(.system(size: 8, weight: .bold, design: .monospaced)).tracking(0.8).foregroundStyle(.secondary)
-                    }
                 }.frame(minHeight: 38, alignment: .top)
             }.buttonStyle(.plain)
         }

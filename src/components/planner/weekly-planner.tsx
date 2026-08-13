@@ -120,17 +120,13 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     });
   }, []);
 
-  const addItem = useCallback(async (date: string | null, text: string, type: PlanningItemType, categoryId: string | null) => {
-    const category = initialData.categories.find((candidate) => candidate.id === categoryId);
+  const addItem = useCallback(async (date: string | null, text: string, type: PlanningItemType) => {
     const temporaryId = `draft-${crypto.randomUUID()}`;
     const optimistic: PlanningItem = {
       id: temporaryId,
       planningDate: date,
       weekStartDate: initialData.weekStart,
       type,
-      categoryId,
-      categoryName: category?.name ?? null,
-      categoryColor: category?.color ?? null,
       text,
       isCompleted: false,
       sortOrder: 0,
@@ -141,14 +137,14 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     };
     placeItem(optimistic);
     if (initialData.isDemo) return;
-    const result = await createPlanningItemAction({ text, type, planningDate: date, weekStartDate: initialData.weekStart, categoryId });
+    const result = await createPlanningItemAction({ text, type, planningDate: date, weekStartDate: initialData.weekStart });
     if (result.ok && result.data) {
-      placeItem({ ...result.data, categoryName: category?.name ?? null, categoryColor: category?.color ?? null, createdByName: currentUserName }, temporaryId);
+      placeItem({ ...result.data, createdByName: currentUserName }, temporaryId);
     } else {
       placeItem({ ...optimistic, saveState: "failed" });
       setNotice(result.error ?? "Save failed. Your text is still here.");
     }
-  }, [currentUserName, initialData.categories, initialData.isDemo, initialData.weekStart, placeItem]);
+  }, [currentUserName, initialData.isDemo, initialData.weekStart, placeItem]);
 
   const retryItem = useCallback(async (item: PlanningItem) => {
     if (!item.id.startsWith("draft-")) {
@@ -161,9 +157,8 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       type: item.type,
       planningDate: item.planningDate,
       weekStartDate: item.weekStartDate,
-      categoryId: item.categoryId,
     });
-    if (result.ok && result.data) placeItem({ ...result.data, categoryName: item.categoryName, categoryColor: item.categoryColor }, item.id);
+    if (result.ok && result.data) placeItem(result.data, item.id);
     else placeItem({ ...item, saveState: "failed" });
   }, [placeItem]);
 
@@ -179,8 +174,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
 
   const saveEditedItem = useCallback(async (item: PlanningItem) => {
     const original = allItems.find((candidate) => candidate.id === item.id);
-    const category = initialData.categories.find((candidate) => candidate.id === item.categoryId);
-    const optimistic = { ...item, categoryName: category?.name ?? null, categoryColor: category?.color ?? null, saveState: initialData.isDemo ? "saved" as const : "saving" as const };
+    const optimistic = { ...item, saveState: initialData.isDemo ? "saved" as const : "saving" as const };
     placeItem(optimistic);
     setEditingItem(null);
     if (initialData.isDemo || item.id.startsWith("draft-")) return;
@@ -190,7 +184,6 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       type: item.type,
       planningDate: item.planningDate,
       weekStartDate: item.weekStartDate,
-      categoryId: item.categoryId,
     });
     if (!result.ok) {
       placeItem({ ...optimistic, saveState: "failed" });
@@ -199,7 +192,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       placeItem({ ...optimistic, saveState: "saved" });
     }
     if (!original) router.refresh();
-  }, [allItems, initialData.categories, initialData.isDemo, placeItem, router]);
+  }, [allItems, initialData.isDemo, placeItem, router]);
 
   const deleteItem = useCallback(async (item: PlanningItem) => {
     setDays((current) => current.map((day) => ({ ...day, items: day.items.filter((candidate) => candidate.id !== item.id) })));
@@ -373,7 +366,6 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
           {days.map((day) => (
             <DayColumn
               day={day}
-              categories={initialData.categories}
               timeZone={initialData.household.timezone}
               temperatureUnit={initialData.household.temperatureUnit}
               calendarState={calendarState}
@@ -395,8 +387,8 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
         <section className="weekly-section" aria-label="Weekly notes and tasks">
           <header><span>This week</span><small>Notes and tasks that don’t belong to one day</small></header>
           <div className="weekly-columns">
-            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note").map((item) => <PlanningItemRow item={item} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" categories={initialData.categories} onAdd={addItem} /></div>
-            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task").map((item) => <PlanningItemRow item={item} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" categories={initialData.categories} onAdd={addItem} /></div>
+            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note").map((item) => <PlanningItemRow item={item} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
+            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task").map((item) => <PlanningItemRow item={item} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" onAdd={addItem} /></div>
           </div>
         </section>
       </section>
@@ -405,17 +397,16 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
       {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
       {calendarEditor && <CalendarEventEditorDialog date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
-      {editingItem && <ItemEditorDialog item={editingItem} weekDates={weekDates(initialData.weekStart)} categories={initialData.categories} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
+      {editingItem && <ItemEditorDialog item={editingItem} weekDates={weekDates(initialData.weekStart)} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
       {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
     </main>
   );
 }
 
-function WeeklyQuickAdd({ type, categories, onAdd }: { type: PlanningItemType; categories: WeeklyPlannerData["categories"]; onAdd: (date: string | null, text: string, type: PlanningItemType, categoryId: string | null) => void }) {
+function WeeklyQuickAdd({ type, onAdd }: { type: PlanningItemType; onAdd: (date: string | null, text: string, type: PlanningItemType) => void }) {
   return (
-    <form className="weekly-quick-add" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const text = String(data.get("text") ?? "").trim(); if (!text) return; onAdd(null, text, type, String(data.get("category") || "") || null); form.reset(); }}>
+    <form className="weekly-quick-add" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const text = String(data.get("text") ?? "").trim(); if (!text) return; onAdd(null, text, type); form.reset(); }}>
       <input name="text" aria-label={`Add weekly ${type}`} placeholder={`Add weekly ${type}…`} maxLength={1000} />
-      <select name="category" aria-label="Category"><option value="">No category</option>{categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select>
       <button type="submit">Add</button>
     </form>
   );

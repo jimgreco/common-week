@@ -4,21 +4,9 @@ import type {
   CalendarEvent,
   DailyWeather,
   HouseholdLocation,
-  PlanningCategory,
   PlanningItem,
   WeeklyPlannerData,
 } from "@/types/domain";
-
-export const DEMO_CATEGORIES: PlanningCategory[] = [
-  { id: "meals", name: "Meals", color: "#b87946" },
-  { id: "kids", name: "Kids", color: "#8a759f" },
-  { id: "house", name: "House", color: "#66867b" },
-  { id: "errands", name: "Errands", color: "#77756e" },
-  { id: "social", name: "Social", color: "#b06f65" },
-  { id: "travel", name: "Travel", color: "#657e9a" },
-  { id: "todo", name: "To Do", color: "#9a845d" },
-  { id: "other", name: "Other", color: "#85827c" },
-];
 
 const locations: HouseholdLocation[] = [
   {
@@ -40,26 +28,19 @@ const locations: HouseholdLocation[] = [
   },
 ];
 
-const category = (id: string) => DEMO_CATEGORIES.find((item) => item.id === id)!;
-
 function planningItem(
   id: string,
   weekStart: string,
   date: string | null,
   text: string,
   type: "note" | "task",
-  categoryId: string,
   completed = false,
 ): PlanningItem {
-  const selectedCategory = category(categoryId);
   return {
     id,
     planningDate: date,
     weekStartDate: weekStart,
     type,
-    categoryId,
-    categoryName: selectedCategory.name,
-    categoryColor: selectedCategory.color,
     text,
     isCompleted: completed,
     sortOrder: 0,
@@ -147,32 +128,32 @@ export function getDemoPlannerData(requestedWeek?: string): WeeklyPlannerData {
   const dailyItems: PlanningItem[][] = isCurrent
     ? [
         [
-          planningItem("demo-p1", weekStart, dates[0], "Dinner: Pasta", "note", "meals"),
-          planningItem("demo-p2", weekStart, dates[0], "Library after camp", "note", "kids"),
-          planningItem("demo-t1", weekStart, dates[0], "Groceries", "task", "errands"),
+          planningItem("demo-p1", weekStart, dates[0], "Dinner: Pasta", "note"),
+          planningItem("demo-p2", weekStart, dates[0], "Library after camp", "note"),
+          planningItem("demo-t1", weekStart, dates[0], "Groceries", "task"),
         ],
         [
-          planningItem("demo-p3", weekStart, dates[1], "Dinner: Tacos", "note", "meals"),
-          planningItem("demo-p4", weekStart, dates[1], "Pool after quiet time", "note", "kids"),
-          planningItem("demo-p5", weekStart, dates[1], "Pool guy 11–2", "note", "house"),
+          planningItem("demo-p3", weekStart, dates[1], "Dinner: Tacos", "note"),
+          planningItem("demo-p4", weekStart, dates[1], "Pool after quiet time", "note"),
+          planningItem("demo-p5", weekStart, dates[1], "Pool guy 11–2", "note"),
         ],
         [
-          planningItem("demo-p6", weekStart, dates[2], "Dinner: Thai", "note", "meals"),
-          planningItem("demo-t2", weekStart, dates[2], "Pack Miriam’s bag", "task", "travel"),
+          planningItem("demo-p6", weekStart, dates[2], "Dinner: Thai", "note"),
+          planningItem("demo-t2", weekStart, dates[2], "Pack Miriam’s bag", "task"),
         ],
         [
-          planningItem("demo-p7", weekStart, dates[3], "Dinner: Leftovers", "note", "meals"),
-          planningItem("demo-t3", weekStart, dates[3], "Pick up dry cleaning", "task", "errands"),
+          planningItem("demo-p7", weekStart, dates[3], "Dinner: Leftovers", "note"),
+          planningItem("demo-t3", weekStart, dates[3], "Pick up dry cleaning", "task"),
         ],
         [
-          planningItem("demo-p8", weekStart, dates[4], "Drive out after lunch", "note", "travel"),
-          planningItem("demo-t4", weekStart, dates[4], "Bring stroller", "task", "travel"),
+          planningItem("demo-p8", weekStart, dates[4], "Drive out after lunch", "note"),
+          planningItem("demo-t4", weekStart, dates[4], "Bring stroller", "task"),
         ],
         [
-          planningItem("demo-p9", weekStart, dates[5], "Maybe Wölffer in the afternoon", "note", "social"),
-          planningItem("demo-t5", weekStart, dates[5], "Confirm dinner reservation", "task", "social"),
+          planningItem("demo-p9", weekStart, dates[5], "Maybe Wölffer in the afternoon", "note"),
+          planningItem("demo-t5", weekStart, dates[5], "Confirm dinner reservation", "task"),
         ],
-        [planningItem("demo-p10", weekStart, dates[6], "Easy morning at home", "note", "other")],
+        [planningItem("demo-p10", weekStart, dates[6], "Easy morning at home", "note")],
       ]
     : dates.map(() => []);
 
@@ -190,10 +171,10 @@ export function getDemoPlannerData(requestedWeek?: string): WeeklyPlannerData {
 
   const weeklyItems = isCurrent
     ? [
-        planningItem("demo-w1", weekStart, null, "Confirm Saturday sitter", "task", "todo"),
-        planningItem("demo-w2", weekStart, null, "Order groceries", "task", "errands"),
-        planningItem("demo-w3", weekStart, null, "Decide Saturday dinner", "task", "meals"),
-        planningItem("demo-w4", weekStart, null, "Guests arriving Saturday afternoon.", "note", "social"),
+        planningItem("demo-w1", weekStart, null, "Confirm Saturday sitter", "task"),
+        planningItem("demo-w2", weekStart, null, "Order groceries", "task"),
+        planningItem("demo-w3", weekStart, null, "Decide Saturday dinner", "task"),
+        planningItem("demo-w4", weekStart, null, "Guests arriving Saturday afternoon.", "note"),
       ]
     : [];
 
@@ -222,7 +203,6 @@ export function getDemoPlannerData(requestedWeek?: string): WeeklyPlannerData {
     }),
     weeklyItems,
     locations,
-    categories: DEMO_CATEGORIES,
     calendarState: { status: "ready" },
     weatherState: { status: "ready" },
     editableCalendars: [

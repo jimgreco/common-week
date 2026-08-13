@@ -10,7 +10,6 @@ describe("DayColumn", () => {
     render(
       <DayColumn
         day={data.days[0]}
-        categories={data.categories}
         timeZone={data.household.timezone}
         temperatureUnit={data.household.temperatureUnit}
         calendarState={data.calendarState}
@@ -47,7 +46,6 @@ describe("DayColumn", () => {
     render(
       <DayColumn
         day={data.days[0]}
-        categories={data.categories}
         timeZone={data.household.timezone}
         temperatureUnit={data.household.temperatureUnit}
         calendarState={data.calendarState}
@@ -67,12 +65,13 @@ describe("DayColumn", () => {
     const planInput = screen.getByRole("textbox", { name: /Add a plan/ });
     fireEvent.change(planInput, { target: { value: "Call camp" } });
     fireEvent.submit(planInput.closest("form")!);
-    expect(onAdd).toHaveBeenCalledWith(data.days[0].date, "Call camp", "note", null);
+    expect(onAdd).toHaveBeenCalledWith(data.days[0].date, "Call camp", "note");
 
     const taskInput = screen.getByRole("textbox", { name: /Add a task/ });
     fireEvent.change(taskInput, { target: { value: "Pack towels" } });
     fireEvent.submit(taskInput.closest("form")!);
-    expect(onAdd).toHaveBeenCalledWith(data.days[0].date, "Pack towels", "task", null);
+    expect(onAdd).toHaveBeenCalledWith(data.days[0].date, "Pack towels", "task");
+    expect(screen.queryByRole("combobox", { name: /category/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Complete: Groceries/ }));
     expect(onToggle).toHaveBeenCalledWith(expect.objectContaining({ text: "Groceries" }), true);
@@ -83,7 +82,6 @@ describe("DayColumn", () => {
     render(
       <DayColumn
         day={data.days[0]}
-        categories={data.categories}
         timeZone={data.household.timezone}
         temperatureUnit={data.household.temperatureUnit}
         calendarState={data.calendarState}
@@ -114,7 +112,6 @@ describe("DayColumn", () => {
     render(
       <DayColumn
         day={data.days[0]}
-        categories={data.categories}
         timeZone={data.household.timezone}
         temperatureUnit={data.household.temperatureUnit}
         calendarState={data.calendarState}

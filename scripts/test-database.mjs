@@ -15,6 +15,14 @@ const client = new Client({
 await client.connect();
 await client.query("begin");
 try {
+  const categoryTable = await client.query("select to_regclass('public.categories') as table_name");
+  assert.equal(categoryTable.rows[0].table_name, null, "the retired category catalog is absent");
+  const categoryColumn = await client.query(
+    `select 1 from information_schema.columns
+      where table_schema = 'public' and table_name = 'planning_items' and column_name = 'category_id'`,
+  );
+  assert.equal(categoryColumn.rowCount, 0, "planning items no longer store a category");
+
   const suffix = randomBytes(6).toString("hex");
   const userA = (await client.query(
     `insert into users (google_subject, email, display_name)
@@ -43,10 +51,6 @@ try {
      values ($1, 'B Home', 41, -72, 'America/New_York') returning id`,
     [householdB],
   )).rows[0].id;
-  const categoryB = (await client.query(
-    "insert into categories (household_id, name, color) values ($1, 'Private B', '#123456') returning id",
-    [householdB],
-  )).rows[0].id;
   const itemA = (await client.query(
     `insert into planning_items (household_id, created_by, week_start_date, planning_date, type, text)
      values ($1, $2, '2026-08-10', '2026-08-11', 'task', 'Private A task') returning id`,
@@ -63,16 +67,6 @@ try {
     [itemA, householdB],
   );
   assert.equal(foreignUpdate.rowCount, 0, "a foreign household cannot update an item by ID");
-
-  const crossCategory = await client.query(
-    `insert into planning_items (household_id, created_by, week_start_date, type, category_id, text)
-     select $1, $2, '2026-08-10', 'note', $3, 'cross category'
-      where exists (
-        select 1 from categories where id = $3 and (household_id is null or household_id = $1)
-      ) returning id`,
-    [householdA, userA, categoryB],
-  );
-  assert.equal(crossCategory.rowCount, 0, "household-specific categories cannot cross household boundaries");
 
   const foreignLocation = await client.query(
     "select 1 from locations where id = $1 and household_id = $2",

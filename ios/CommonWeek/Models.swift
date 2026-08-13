@@ -34,7 +34,6 @@ struct WeeklyPlannerData: Codable {
     var days: [DayPlan]
     var weeklyItems: [PlanningItem]
     let locations: [HouseholdLocation]
-    let categories: [PlanningCategory]
     let editableCalendars: [EditableCalendar]
     let calendarState: PlannerSourceState
     let weatherState: PlannerSourceState
@@ -63,20 +62,11 @@ struct HouseholdMember: Codable, Identifiable, Hashable {
     let role: String
 }
 
-struct PlanningCategory: Codable, Identifiable, Hashable {
-    let id: String
-    let name: String
-    let color: String
-}
-
 struct PlanningItem: Codable, Identifiable, Hashable {
     let id: String
     var planningDate: String?
     var weekStartDate: String
     var type: PlanningItemType
-    var categoryId: String?
-    var categoryName: String?
-    var categoryColor: String?
     var text: String
     var isCompleted: Bool
     var sortOrder: Int
@@ -196,7 +186,6 @@ struct PlanningItemDraft: Encodable {
     let type: PlanningItemType
     let planningDate: String?
     let weekStartDate: String
-    let categoryId: String?
 }
 
 struct SearchResponse: Codable {

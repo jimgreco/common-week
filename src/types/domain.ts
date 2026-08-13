@@ -17,20 +17,11 @@ export interface HouseholdMember {
   role: "owner" | "member" | "viewer";
 }
 
-export interface PlanningCategory {
-  id: string;
-  name: string;
-  color: string;
-}
-
 export interface PlanningItem {
   id: string;
   planningDate: string | null;
   weekStartDate: string;
   type: PlanningItemType;
-  categoryId: string | null;
-  categoryName: string | null;
-  categoryColor: string | null;
   text: string;
   isCompleted: boolean;
   sortOrder: number;
@@ -173,7 +164,6 @@ export interface WeeklyPlannerData {
   days: DayPlan[];
   weeklyItems: PlanningItem[];
   locations: HouseholdLocation[];
-  categories: PlanningCategory[];
   editableCalendars: EditableCalendar[];
   calendarState: PlannerSourceState;
   weatherState: PlannerSourceState;

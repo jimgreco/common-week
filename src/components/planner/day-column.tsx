@@ -2,16 +2,15 @@ import { AlertCircle, AlertTriangle, Check, CloudOff, MapPin, Plus, Umbrella } f
 import { formatDayName, formatDayNumber, formatEventTime, formatMobileDate, isToday } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, DayPlan, PlanningCategory, PlanningItem, PlannerSourceState } from "@/types/domain";
+import type { CalendarEvent, DayPlan, PlanningItem, PlannerSourceState } from "@/types/domain";
 
 interface DayColumnProps {
   day: DayPlan;
-  categories: PlanningCategory[];
   timeZone: string;
   temperatureUnit: TemperatureUnit;
   calendarState: PlannerSourceState;
   weatherState: PlannerSourceState;
-  onAdd: (date: string, text: string, type: "note" | "task", categoryId: string | null) => void;
+  onAdd: (date: string, text: string, type: "note" | "task") => void;
   onToggle: (item: PlanningItem, completed: boolean) => void;
   onEdit: (item: PlanningItem) => void;
   onRetry: (item: PlanningItem) => void;
@@ -59,12 +58,10 @@ function CalendarEventRows({
 function InlinePlanningAdd({
   date,
   type,
-  categories,
   onAdd,
 }: {
   date: string;
   type: "note" | "task";
-  categories: PlanningCategory[];
   onAdd: DayColumnProps["onAdd"];
 }) {
   const label = type === "note" ? "plan" : "task";
@@ -72,7 +69,7 @@ function InlinePlanningAdd({
     <form
       className={`inline-planning-add inline-${type}-add`}
       onClick={(event) => {
-        if ((event.target as HTMLElement).closest("select, button")) return;
+        if ((event.target as HTMLElement).closest("button")) return;
         const input = event.currentTarget.elements.namedItem("text");
         if (input instanceof HTMLInputElement) input.focus();
       }}
@@ -82,12 +79,7 @@ function InlinePlanningAdd({
         const data = new FormData(form);
         const text = String(data.get("text") ?? "").trim();
         if (!text) return;
-        onAdd(
-          date,
-          text,
-          type,
-          String(data.get("category") || "") || null,
-        );
+        onAdd(date, text, type);
         form.reset();
       }}
     >
@@ -103,10 +95,6 @@ function InlinePlanningAdd({
           if (event.key === "Escape") event.currentTarget.blur();
         }}
       />
-      <select aria-label={`${type === "note" ? "Plan" : "Task"} category`} name="category" defaultValue="">
-        <option value="">No category</option>
-        {categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}
-      </select>
       <button type="submit" aria-label={`Save ${label}`}>Add</button>
     </form>
   );
@@ -135,11 +123,10 @@ export function PlanningItemRow({
           {item.isCompleted && <Check size={11} strokeWidth={3} aria-hidden="true" />}
         </button>
       ) : (
-        <span className="note-bullet" style={{ background: item.categoryColor ?? undefined }} aria-hidden="true" />
+        <span className="note-bullet" aria-hidden="true" />
       )}
       <button className="planning-row-body" type="button" onClick={() => onEdit(item)}>
         <span className="planning-row-text">{item.text}</span>
-        {item.categoryName && <span className="category-label">{item.categoryName}</span>}
       </button>
       {item.saveState === "saving" && <span className="save-indicator">Saving</span>}
       {item.saveState === "failed" && (
@@ -153,7 +140,6 @@ export function PlanningItemRow({
 
 export function DayColumn({
   day,
-  categories,
   timeZone,
   temperatureUnit,
   calendarState,
@@ -239,7 +225,7 @@ export function DayColumn({
           {notes.map((item) => (
             <PlanningItemRow item={item} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
           ))}
-          <InlinePlanningAdd date={day.date} type="note" categories={categories} onAdd={onAdd} />
+          <InlinePlanningAdd date={day.date} type="note" onAdd={onAdd} />
         </div>
       </section>
 
@@ -249,7 +235,7 @@ export function DayColumn({
           {tasks.map((item) => (
             <PlanningItemRow item={item} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
           ))}
-          <InlinePlanningAdd date={day.date} type="task" categories={categories} onAdd={onAdd} />
+          <InlinePlanningAdd date={day.date} type="task" onAdd={onAdd} />
         </div>
       </section>
     </article>

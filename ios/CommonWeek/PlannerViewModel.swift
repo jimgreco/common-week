@@ -54,11 +54,8 @@ final class PlannerViewModel: ObservableObject {
             if let id = draft.id { mutateItem(id: id) { item in
                 item.text = draft.text
                 item.type = draft.type
-                item.categoryId = draft.categoryId
-                item.categoryName = data?.categories.first(where: { $0.id == draft.categoryId })?.name
             }} else {
-                let category = data?.categories.first(where: { $0.id == draft.categoryId })
-                let item = PlanningItem(id: UUID().uuidString, planningDate: draft.planningDate, weekStartDate: draft.weekStartDate, type: draft.type, categoryId: draft.categoryId, categoryName: category?.name, categoryColor: category?.color, text: draft.text, isCompleted: false, sortOrder: 0, createdBy: "demo-jim", createdByName: "Jim", updatedAt: ISO8601DateFormatter().string(from: Date()), saveState: "saved")
+                let item = PlanningItem(id: UUID().uuidString, planningDate: draft.planningDate, weekStartDate: draft.weekStartDate, type: draft.type, text: draft.text, isCompleted: false, sortOrder: 0, createdBy: "demo-jim", createdByName: "Jim", updatedAt: ISO8601DateFormatter().string(from: Date()), saveState: "saved")
                 insert(item)
             }
             return true

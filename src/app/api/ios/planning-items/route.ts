@@ -16,7 +16,6 @@ const itemSchema = z.object({
   type: z.enum(["note", "task"]),
   planningDate: z.string().nullable(),
   weekStartDate: z.string(),
-  categoryId: z.string().uuid().nullable(),
 });
 
 async function isAuthorized(request: NextRequest) {

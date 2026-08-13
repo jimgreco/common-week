@@ -10,7 +10,6 @@ import { getWeatherForAssignments } from "@/lib/server/weather-data";
 import type {
   HouseholdLocation,
   HouseholdMember,
-  PlanningCategory,
   PlanningItem,
   PlannerSourceState,
   WeeklyPlannerData,
@@ -43,9 +42,6 @@ interface PlanningRow {
   planning_date: string | null;
   week_start_date: string;
   type: "note" | "task";
-  category_id: string | null;
-  category_name: string | null;
-  category_color: string | null;
   text: string;
   is_completed: boolean;
   sort_order: number;
@@ -72,9 +68,6 @@ function mapPlanningItem(row: PlanningRow): PlanningItem {
     planningDate: row.planning_date,
     weekStartDate: row.week_start_date,
     type: row.type,
-    categoryId: row.category_id,
-    categoryName: row.category_name,
-    categoryColor: row.category_color,
     text: row.text,
     isCompleted: row.is_completed,
     sortOrder: row.sort_order,
@@ -91,7 +84,7 @@ export async function getPlannerData(
   options: { includeExternal?: boolean } = {},
 ): Promise<WeeklyPlannerData> {
   const dates = weekDates(weekStart);
-  const [householdResult, locationsResult, settingsResult, planningResult, categoriesResult, membersResult, hiddenEventsResult, currentCalendarsResult, connectionResult] =
+  const [householdResult, locationsResult, settingsResult, planningResult, membersResult, hiddenEventsResult, currentCalendarsResult, connectionResult] =
     await Promise.all([
       query<HouseholdRow>(
         `select h.id, h.name, h.timezone, h.temperature_unit, h.default_location_id
@@ -112,21 +105,13 @@ export async function getPlannerData(
       ),
       query<PlanningRow>(
         `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
-                pi.category_id, c.name as category_name, c.color as category_color,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at
            from planning_items pi
            join users u on u.id = pi.created_by
-           left join categories c on c.id = pi.category_id
           where pi.household_id = $1 and pi.week_start_date = $2::date
           order by pi.sort_order, pi.created_at`,
         [context.householdId, weekStart],
-      ),
-      query<{ id: string; name: string; color: string }>(
-        `select id, name, color from categories
-          where household_id is null or household_id = $1
-          order by sort_order`,
-        [context.householdId],
       ),
       query<{
         id: string;
@@ -202,11 +187,6 @@ export async function getPlannerData(
     ]);
 
   const items = planningResult.rows.map(mapPlanningItem);
-  const categories: PlanningCategory[] = categoriesResult.rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    color: row.color,
-  }));
   const hiddenEventIds = new Set(hiddenEventsResult.rows.map((row) => row.event_id));
   const calendarWriteEnabled = hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE);
   const writablePreferenceIds = new Set(
@@ -244,7 +224,6 @@ export async function getPlannerData(
     })),
     weeklyItems: items.filter((item) => item.planningDate === null),
     locations,
-    categories,
     editableCalendars: currentCalendarsResult.rows
       .filter((calendar) => calendar.is_selected && calendarWriteEnabled && isWritableGoogleCalendarRole(calendar.access_role))
       .map((calendar) => ({

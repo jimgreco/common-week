@@ -20,7 +20,9 @@ export async function GET(request: NextRequest) {
       userId: session.identity.userId,
       householdId: session.identity.householdId,
     }, weekStart, { includeExternal: true });
-    return Response.json({ ok: true, data: { planner: data, user: session.identity } }, {
+    // Keep an empty key for already-installed native clients that predate category removal.
+    const planner = { ...data, categories: [] };
+    return Response.json({ ok: true, data: { planner, user: session.identity } }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch {

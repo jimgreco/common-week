@@ -240,7 +240,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .planning-row.has-save-error { background: #fbefec; }
 .planning-row-body { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .planning-row-text { overflow-wrap: anywhere; font-size: 11px; line-height: 1.38; }
-.category-label { color: var(--muted); font-size: 7px; font-weight: 680; letter-spacing: .05em; text-transform: uppercase; }
 .task-checkbox { flex: 0 0 auto; width: 14px; height: 14px; display: grid; place-items: center; margin-top: 0; padding: 0; border: 1px solid #aaa79d; border-radius: 3px; background: var(--white); cursor: pointer; }
 .task-checkbox.checked { border-color: var(--accent); background: var(--accent); color: #fff; }
 .note-bullet { flex: 0 0 auto; width: 5px; height: 5px; margin: 5px 4px 0 3px; border-radius: 50%; background: #7e7c74; }
@@ -250,9 +249,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .inline-planning-add { min-height: 30px; flex: 1; display: grid; grid-template-columns: 14px minmax(0, 1fr); align-content: start; align-items: center; gap: 4px; margin-top: 1px; padding: 3px 1px; border-radius: 3px; cursor: text; }
 .inline-planning-add input { min-width: 0; height: 24px; padding: 0; border: 0; background: transparent; font-size: 10px; }
 .inline-planning-add input::placeholder { color: #aaa79f; font-style: italic; opacity: 1; }
-.inline-planning-add select, .inline-planning-add button { display: none; }
-.inline-planning-add:focus-within { grid-template-columns: 14px minmax(0, 1fr) minmax(0, 68px) auto; padding: 3px 4px; background: #f7f5ef; }
-.inline-planning-add:focus-within select, .inline-planning-add:focus-within button { display: block; min-width: 0; height: 24px; border: 1px solid var(--rule); border-radius: 3px; background: var(--white); font-size: 8px; }
+.inline-planning-add button { display: none; }
+.inline-planning-add:focus-within { grid-template-columns: 14px minmax(0, 1fr) auto; padding: 3px 4px; background: #f7f5ef; }
+.inline-planning-add:focus-within button { display: block; min-width: 0; height: 24px; border: 1px solid var(--rule); border-radius: 3px; background: var(--white); font-size: 8px; }
 .inline-planning-add:focus-within button { padding: 0 6px; border-color: var(--ink); background: var(--ink); color: var(--white); cursor: pointer; }
 .inline-add-symbol { color: var(--muted); }
 .inline-task-checkbox { width: 12px; height: 12px; border: 1px solid #aaa79d; border-radius: 3px; background: var(--white); }
@@ -264,8 +263,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .weekly-columns { display: grid; grid-template-columns: 1fr 1fr; }
 .weekly-columns > div { min-height: 130px; padding: 14px 16px; }
 .weekly-columns > div:first-child { border-right: 1px solid var(--rule); }
-.weekly-quick-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px dotted var(--rule); }
-.weekly-quick-add input, .weekly-quick-add select { min-width: 0; height: 29px; padding: 4px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--white); font-size: 10px; }
+.weekly-quick-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px dotted var(--rule); }
+.weekly-quick-add input { min-width: 0; height: 29px; padding: 4px 7px; border: 1px solid var(--rule); border-radius: 4px; background: var(--white); font-size: 10px; }
 .weekly-quick-add button { padding: 4px 9px; border: 0; border-radius: 4px; background: var(--ink); color: var(--white); font-size: 9px; cursor: pointer; }
 
 /* Dialogs */
@@ -509,9 +508,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .planning-row { min-height: 38px; align-items: center; }
   .planning-row-text { font-size: 12px; }
   .note-bullet { margin-top: 0; }
-  .inline-planning-add { min-height: 42px; grid-template-columns: 18px minmax(0, 1fr) minmax(0, 88px) auto; margin-top: 3px; padding: 4px 0; }
+  .inline-planning-add { min-height: 42px; grid-template-columns: 18px minmax(0, 1fr) auto; margin-top: 3px; padding: 4px 0; }
   .inline-planning-add input { height: 34px; font-size: 12px; }
-  .inline-planning-add select, .inline-planning-add button { display: block; min-width: 0; height: 34px; border: 1px solid var(--rule); border-radius: 4px; background: var(--white); font-size: 9px; }
+  .inline-planning-add button { display: block; min-width: 0; height: 34px; border: 1px solid var(--rule); border-radius: 4px; background: var(--white); font-size: 9px; }
   .inline-planning-add button { padding: 0 9px; border-color: var(--ink); background: var(--ink); color: var(--white); }
   .weekly-columns { grid-template-columns: 1fr; }
   .weekly-columns > div:first-child { border-right: 0; border-bottom: 1px solid var(--rule); }
@@ -542,7 +541,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .weekly-section { margin-top: 12px; }
   .weekly-section > header { align-items: flex-start; flex-direction: column; gap: 3px; }
   .weekly-quick-add { grid-template-columns: 1fr auto; }
-  .weekly-quick-add select { display: none; }
   .modal-backdrop { align-items: end; padding: 0; }
   .modal-panel, .modal-panel.modal-wide { width: 100%; max-height: 92vh; border-radius: 12px 12px 0 0; }
   .modal-header { min-height: 57px; }
@@ -590,7 +588,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .week-header h1 { font-size: 24px; }
   .plan-next-link { font-size: 10px; }
   .weather-button span:last-child { display: none; }
-  .inline-planning-add, .inline-planning-add:focus-within { grid-template-columns: 16px minmax(0, 1fr) minmax(0, 66px) auto; }
+  .inline-planning-add, .inline-planning-add:focus-within { grid-template-columns: 16px minmax(0, 1fr) auto; }
   .inline-planning-add button { padding-inline: 7px; }
 }
 
@@ -751,7 +749,6 @@ textarea:focus-visible {
 .planning-row { gap: 7px; padding: 5px 4px; border-radius: 8px; }
 .planning-row:hover { background: var(--accent-wash); }
 .planning-row-text { font-size: 11px; line-height: 1.42; }
-.category-label { color: #76847e; font-size: 7px; font-weight: 760; letter-spacing: .07em; }
 .task-checkbox { width: 16px; height: 16px; border-color: #aab9b1; border-radius: 5px; }
 .note-bullet { width: 7px; height: 7px; margin: 6px 4px 0 3px; }
 .inline-planning-add { min-height: 34px; padding: 5px 4px; border-radius: 8px; }
@@ -766,8 +763,7 @@ textarea:focus-visible {
 .weekly-section > header small { font-size: 10px; }
 .weekly-columns > div { min-height: 150px; padding: 18px 19px; }
 .weekly-quick-add { gap: 8px; margin-top: 13px; padding-top: 11px; border-top-style: solid; }
-.weekly-quick-add input,
-.weekly-quick-add select { height: 36px; padding: 7px 10px; border-color: var(--rule-strong); border-radius: 9px; font-size: 10px; }
+.weekly-quick-add input { height: 36px; padding: 7px 10px; border-color: var(--rule-strong); border-radius: 9px; font-size: 10px; }
 .weekly-quick-add button { padding: 7px 12px; border-radius: 9px; background: var(--accent); font-size: 10px; font-weight: 700; }
 
 .modal-backdrop { padding: 24px; background: rgb(17 30 25 / 48%); backdrop-filter: blur(7px); }
@@ -882,9 +878,7 @@ textarea:focus-visible {
   .inline-planning-add,
   .inline-planning-add:focus-within { min-height: 52px; }
   .inline-planning-add input,
-  .inline-planning-add select,
   .inline-planning-add button,
-  .inline-planning-add:focus-within select,
   .inline-planning-add:focus-within button { height: 44px; }
   .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .settings-index { position: static; padding: 7px; border-radius: 12px; }
@@ -979,7 +973,6 @@ textarea:focus-visible {
   .settings-form input,
   .preference-grid select,
   .weekly-quick-add input,
-  .weekly-quick-add select,
   .member-list,
   .calendar-settings-list,
   .location-settings-list { background: #121b16; color: var(--ink); }

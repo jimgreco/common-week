@@ -26,7 +26,7 @@ Apply migrations:
 npm run db:migrate
 ```
 
-Migrations are recorded in `app_schema_migrations` and are safe to run again. The schema includes the household model, opaque sessions, planning data, locations, date constraints, provider caches, indexes, default categories, and collaboration notification triggers.
+Migrations are recorded in `app_schema_migrations` and are safe to run again. The schema includes the household model, opaque sessions, planning data, locations, date constraints, provider caches, indexes, and collaboration notification triggers.
 
 The production workflow creates the `common_week_app` role and `common_week` database on the existing shared PostgreSQL container if needed. It generates an independent database password on the server rather than sharing the administrator credential with the app.
 
@@ -89,7 +89,7 @@ Against a migrated disposable database:
 DATABASE_URL=postgresql://... npm run test:database
 ```
 
-This exercises household-scoped item reads/writes, cross-household category and location rejection, session-to-membership resolution, and date/week constraints against real PostgreSQL.
+This exercises household-scoped item reads/writes, cross-household location rejection, session-to-membership resolution, the retired category schema, and date/week constraints against real PostgreSQL.
 
 The browser never connects to PostgreSQL. Household identity comes from the server-side session, not form/query input, and every shared-data query includes that authenticated household boundary.
 
@@ -98,7 +98,7 @@ The browser never connects to PostgreSQL. Household identity comes from the serv
 - Sign in/out and exercise both the app session and Google access-token refresh.
 - Revoke Google authorization for one member and confirm only Calendar degrades to reconnect state.
 - Verify two members see each other's planning changes promptly.
-- Use a third account in a different household and attempt item IDs, category IDs, and location IDs from the first household; confirm no reads or writes succeed.
+- Use a third account in a different household and attempt item IDs and location IDs from the first household; confirm no reads or writes succeed.
 - Select primary, additional, and shared calendars; check timed, all-day, recurring-expanded, and multi-day events.
 - Leave one connected calendar private and confirm another household member cannot see its name or events; select it and confirm it appears through the live planner update.
 - Create, edit, and delete a single event on the signed-in member's writable calendar. Confirm a partner's calendar and recurring events stay read-only, and confirm Hide affects Week of Us without deleting from Google.

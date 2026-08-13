@@ -27,7 +27,6 @@ interface PlanningRow {
   planning_date: string | null;
   week_start_date: string;
   type: PlanningItemType;
-  category_id: string | null;
   text: string;
   is_completed: boolean;
   sort_order: number;
@@ -46,9 +45,6 @@ function mappedItem(row: PlanningRow): PlanningItem {
     planningDate: row.planning_date,
     weekStartDate: row.week_start_date,
     type: row.type,
-    categoryId: row.category_id,
-    categoryName: null,
-    categoryColor: null,
     text: row.text,
     isCompleted: row.is_completed,
     sortOrder: row.sort_order,
@@ -130,7 +126,6 @@ export async function createPlanningItemAction(input: {
   type: PlanningItemType;
   planningDate: string | null;
   weekStartDate: string;
-  categoryId: string | null;
 }): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
@@ -138,19 +133,15 @@ export async function createPlanningItemAction(input: {
       type: z.enum(["note", "task"]),
       planningDate: dateOnly.nullable(),
       weekStartDate: dateOnly,
-      categoryId: uuid.nullable(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
     const result = await query<PlanningRow>(
       `insert into planning_items (
-         household_id, created_by, planning_date, week_start_date, type, category_id, text
+         household_id, created_by, planning_date, week_start_date, type, text
        )
-       select $1, $2, $3::date, $4::date, $5::planning_item_type, $6::uuid, $7
-       where $6::uuid is null or exists (
-         select 1 from categories where id = $6 and (household_id is null or household_id = $1)
-       )
-       returning id, planning_date::text, week_start_date::text, type, category_id,
+       values ($1, $2, $3::date, $4::date, $5::planning_item_type, $6)
+       returning id, planning_date::text, week_start_date::text, type,
                  text, is_completed, sort_order, created_by, updated_at`,
       [
         context.householdId,
@@ -158,11 +149,9 @@ export async function createPlanningItemAction(input: {
         parsed.planningDate,
         parsed.weekStartDate,
         parsed.type,
-        parsed.categoryId,
         parsed.text,
       ],
     );
-    if (!result.rows[0]) throw new Error("That category is not available to this household.");
     revalidatePath("/planner");
     return { ok: true, data: mappedItem(result.rows[0]) };
   } catch (error) {
@@ -176,7 +165,6 @@ export async function updatePlanningItemAction(input: {
   type: PlanningItemType;
   planningDate: string | null;
   weekStartDate: string;
-  categoryId: string | null;
 }): Promise<ActionResult> {
   try {
     const parsed = z.object({
@@ -185,18 +173,14 @@ export async function updatePlanningItemAction(input: {
       type: z.enum(["note", "task"]),
       planningDate: dateOnly.nullable(),
       weekStartDate: dateOnly,
-      categoryId: uuid.nullable(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
     const result = await query(
       `update planning_items set
          text = $3, type = $4::planning_item_type, planning_date = $5::date,
-         week_start_date = $6::date, category_id = $7::uuid
-       where id = $1 and household_id = $2
-         and ($7::uuid is null or exists (
-           select 1 from categories where id = $7 and (household_id is null or household_id = $2)
-         ))`,
+         week_start_date = $6::date
+       where id = $1 and household_id = $2`,
       [
         parsed.id,
         context.householdId,
@@ -204,7 +188,6 @@ export async function updatePlanningItemAction(input: {
         parsed.type,
         parsed.planningDate,
         parsed.weekStartDate,
-        parsed.categoryId,
       ],
     );
     if (!result.rowCount) throw new Error("That item is not available to this household.");
@@ -371,7 +354,7 @@ export async function searchPlanningItemsAction(search: string): Promise<ActionR
     const context = await requireHouseholdContext();
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const result = await query<PlanningRow>(
-      `select id, planning_date::text, week_start_date::text, type, category_id,
+      `select id, planning_date::text, week_start_date::text, type,
               text, is_completed, sort_order, created_by, updated_at
          from planning_items
         where household_id = $1 and text ilike $2 escape '\\'
