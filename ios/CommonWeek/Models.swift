@@ -237,6 +237,36 @@ enum WeekDate {
 
     static func string(_ date: Date) -> String { dateOnly.string(from: date) }
 
+    static func calendarDate(
+        _ value: String,
+        hour: Int = 0,
+        minute: Int = 0,
+        timeZoneIdentifier: String? = nil
+    ) -> Date {
+        let values = String(value.prefix(10)).split(separator: "-").compactMap { Int($0) }
+        guard values.count == 3 else { return parse(value) }
+        var calendar = Calendar(identifier: .iso8601)
+        let timeZone = timeZoneIdentifier.flatMap(TimeZone.init(identifier:)) ?? .current
+        calendar.timeZone = timeZone
+        return calendar.date(from: DateComponents(
+            timeZone: timeZone,
+            year: values[0],
+            month: values[1],
+            day: values[2],
+            hour: hour,
+            minute: minute
+        )) ?? parse(value)
+    }
+
+    static func string(_ date: Date, timeZoneIdentifier: String) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
     static func isToday(_ value: String, timeZoneIdentifier: String? = nil) -> Bool {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .iso8601)

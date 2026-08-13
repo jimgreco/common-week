@@ -59,9 +59,16 @@ export default async function SettingsPage() {
     getCurrentUserCalendarPreferences(context.userId),
     query<{ scope: string | null }>("select scope from google_connections where user_id = $1", [context.userId]),
     query<{ id: string; event_id: string; title: string; calendar_name: string; event_start: string; hidden_at: Date }>(
-      `select id, event_id, title, calendar_name, event_start, hidden_at
-         from hidden_calendar_events
-        where household_id = $1
+      `select hce.id, hce.event_id, hce.title, hce.calendar_name, hce.event_start, hce.hidden_at
+         from hidden_calendar_events hce
+        where hce.household_id = $1
+          and exists (
+            select 1
+              from calendar_preferences cp
+             where cp.household_id = hce.household_id
+               and cp.is_selected
+               and left(hce.event_id, char_length(cp.google_calendar_id) + 1) = cp.google_calendar_id || ':'
+          )
         order by hidden_at desc
         limit 100`,
       [context.householdId],

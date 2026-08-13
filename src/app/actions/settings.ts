@@ -192,21 +192,45 @@ export async function updateCalendarPreferenceAction(input: {
       sectionGroup: z.enum(["critical", "supplemental"]),
     }).parse(input);
     const context = await requireHouseholdContext();
-    const result = await query(
-      `update calendar_preferences set
-         is_selected = $4, display_alias = $5, display_abbreviation = $6, section_group = $7
-        where id = $1 and household_id = $2 and user_id = $3`,
-      [
-        parsed.id,
-        context.householdId,
-        context.userId,
-        parsed.isSelected,
-        parsed.displayAlias,
-        parsed.displayAbbreviation,
-        parsed.sectionGroup,
-      ],
-    );
-    if (!result.rowCount) throw new Error("That calendar is not available.");
+    await withTransaction(async (database) => {
+      const result = await database.query<{ google_calendar_id: string }>(
+        `update calendar_preferences set
+           is_selected = $4, display_alias = $5, display_abbreviation = $6, section_group = $7
+          where id = $1 and household_id = $2 and user_id = $3
+          returning google_calendar_id`,
+        [
+          parsed.id,
+          context.householdId,
+          context.userId,
+          parsed.isSelected,
+          parsed.displayAlias,
+          parsed.displayAbbreviation,
+          parsed.sectionGroup,
+        ],
+      );
+      const calendar = result.rows[0];
+      if (!calendar) throw new Error("That calendar is not available.");
+
+      // A changed sharing decision receives a new cache boundary immediately.
+      // If nobody else shares the same Google calendar, also discard household
+      // hide records that contain provider event titles from that calendar.
+      await database.query("delete from calendar_event_cache where user_id = $1", [context.userId]);
+      if (!parsed.isSelected) {
+        await database.query(
+          `delete from hidden_calendar_events hce
+            where hce.household_id = $1
+              and left(hce.event_id, char_length($2) + 1) = $2 || ':'
+              and not exists (
+                select 1
+                  from calendar_preferences cp
+                 where cp.household_id = $1
+                   and cp.google_calendar_id = $2
+                   and cp.is_selected
+              )`,
+          [context.householdId, calendar.google_calendar_id],
+        );
+      }
+    });
     revalidatePath("/settings");
     revalidatePath("/planner");
     return { ok: true };

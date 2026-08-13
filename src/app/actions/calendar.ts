@@ -44,7 +44,8 @@ async function requireWritableCalendar(calendarPreferenceId: string) {
        from calendar_preferences cp
        join google_connections gc on gc.user_id = cp.user_id
        join households h on h.id = cp.household_id
-      where cp.id = $1 and cp.household_id = $2 and cp.user_id = $3`,
+      where cp.id = $1 and cp.household_id = $2 and cp.user_id = $3
+        and cp.is_selected`,
     [calendarPreferenceId, context.householdId, context.userId],
   );
   const calendar = result.rows[0];

@@ -50,6 +50,49 @@ describe("SettingsPanel calendar degradation", () => {
     expect(screen.getByRole("link", { name: "Enable calendar editing" })).toHaveAttribute("href", "/auth/google?calendar_write=1");
   });
 
+  it("shows that calendars are private until their owner shares them", async () => {
+    updateCalendarPreferenceAction.mockResolvedValue({ ok: true });
+
+    render(<SettingsPanel
+      household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
+      members={[{ id: "member", userId: "user", displayName: "Jim", email: "jim@example.com", role: "owner" }]}
+      invitations={[]}
+      locations={[]}
+      calendars={[{
+        id: "00000000-0000-4000-8000-000000000003",
+        userId: "user",
+        googleCalendarId: "personal@example.com",
+        calendarName: "Personal",
+        displayAlias: null,
+        displayAbbreviation: null,
+        color: "#345678",
+        isSelected: false,
+        isPrimary: true,
+        sectionGroup: "critical",
+        accessRole: "owner",
+      }]}
+      calendarConnected
+      calendarWriteEnabled={false}
+      isDemo={false}
+    />);
+
+    expect(screen.getByText("Private by default")).toBeInTheDocument();
+    expect(screen.getByText("Private · Primary")).toBeInTheDocument();
+    const sharingSwitch = screen.getByRole("switch", { name: "Share Personal with workspace" });
+    expect(sharingSwitch).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(sharingSwitch);
+
+    expect(screen.getByText("Shared with workspace · Primary")).toBeInTheDocument();
+    await waitFor(() => expect(updateCalendarPreferenceAction).toHaveBeenCalledWith({
+      id: "00000000-0000-4000-8000-000000000003",
+      isSelected: true,
+      displayAlias: null,
+      displayAbbreviation: null,
+      sectionGroup: "critical",
+    }));
+  });
+
   it("derives a calendar badge and saves a custom override", async () => {
     updateCalendarPreferenceAction.mockResolvedValue({ ok: true });
 

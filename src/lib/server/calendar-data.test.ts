@@ -1,0 +1,148 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CalendarEvent, CalendarPreference } from "@/types/domain";
+
+const mocks = vi.hoisted(() => ({
+  getGoogleAccessToken: vi.fn(),
+  listCalendars: vi.fn(),
+  listEvents: vi.fn(),
+  query: vi.fn(),
+  transactionQuery: vi.fn(),
+  withTransaction: vi.fn(),
+}));
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/lib/server/database", () => ({
+  query: mocks.query,
+  withTransaction: mocks.withTransaction,
+}));
+vi.mock("@/lib/server/google-tokens", () => ({
+  getGoogleAccessToken: (...args: unknown[]) => mocks.getGoogleAccessToken(...args),
+}));
+vi.mock("@/lib/integrations/google-calendar", () => ({
+  googleCalendarService: {
+    listCalendars: (...args: unknown[]) => mocks.listCalendars(...args),
+    listEvents: (...args: unknown[]) => mocks.listEvents(...args),
+  },
+}));
+
+import {
+  getHouseholdCalendarEvents,
+  refreshCurrentUserCalendarPreferences,
+} from "@/lib/server/calendar-data";
+
+function preferenceRow(input: {
+  id: string;
+  userId: string;
+  calendarId: string;
+  name: string;
+  selected: boolean;
+}) {
+  return {
+    id: input.id,
+    user_id: input.userId,
+    google_calendar_id: input.calendarId,
+    calendar_name: input.name,
+    display_alias: null,
+    display_abbreviation: null,
+    color: "#345678",
+    is_selected: input.selected,
+    is_primary: false,
+    section_group: "critical" as const,
+    access_role: "reader" as const,
+  };
+}
+
+describe("household calendar privacy", () => {
+  beforeEach(() => {
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    mocks.withTransaction.mockImplementation(async (
+      work: (database: { query: typeof mocks.transactionQuery }) => Promise<unknown>,
+    ) => work({ query: mocks.transactionQuery }));
+  });
+
+  it("discovers every Google calendar without sharing any by default", async () => {
+    const privateRow = preferenceRow({
+      id: "preference-private",
+      userId: "member-a",
+      calendarId: "personal@example.com",
+      name: "Personal",
+      selected: false,
+    });
+    mocks.getGoogleAccessToken.mockResolvedValue("token-a");
+    mocks.query
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [privateRow], rowCount: 1 });
+    mocks.listCalendars.mockResolvedValue([{
+      id: "personal@example.com",
+      summary: "Personal",
+      primary: true,
+      backgroundColor: "#345678",
+      accessRole: "owner",
+    }]);
+    mocks.transactionQuery.mockResolvedValue({ rows: [], rowCount: 1 });
+
+    const result = await refreshCurrentUserCalendarPreferences("household-a", "member-a");
+
+    expect(result).toMatchObject({ connected: true, calendars: [{ calendarName: "Personal", isSelected: false }] });
+    const [insertSql, insertValues] = mocks.transactionQuery.mock.calls[0] as [string, unknown[]];
+    expect(insertSql).toContain("insert into calendar_preferences");
+    expect(insertValues[7]).toBe(false);
+  });
+
+  it("fetches and returns only calendars each member selected for the shared workspace", async () => {
+    const rowsByUser = new Map([
+      ["member-a", [
+        preferenceRow({ id: "shared-a", userId: "member-a", calendarId: "family-a@example.com", name: "Family A", selected: true }),
+        preferenceRow({ id: "private-a", userId: "member-a", calendarId: "personal-a@example.com", name: "Personal A", selected: false }),
+      ]],
+      ["member-b", [
+        preferenceRow({ id: "shared-b", userId: "member-b", calendarId: "family-b@example.com", name: "Family B", selected: true }),
+        preferenceRow({ id: "private-b", userId: "member-b", calendarId: "work-b@example.com", name: "Work B", selected: false }),
+      ]],
+    ]);
+    mocks.getGoogleAccessToken.mockImplementation(async (userId: string) => `token-${userId}`);
+    mocks.query.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes("from calendar_preferences")) {
+        const rows = rowsByUser.get(String(values[1])) ?? [];
+        return { rows, rowCount: rows.length };
+      }
+      if (sql.includes("from calendar_event_cache")) return { rows: [], rowCount: 0 };
+      if (sql.includes("insert into calendar_event_cache")) return { rows: [], rowCount: 1 };
+      throw new Error(`Unexpected query in calendar privacy test: ${sql}`);
+    });
+    mocks.listEvents.mockImplementation(async (
+      _accessToken: string,
+      preference: CalendarPreference,
+    ): Promise<CalendarEvent[]> => [{
+      id: `${preference.googleCalendarId}:event-1`,
+      title: `${preference.calendarName} event`,
+      start: "2026-08-10T10:00:00-04:00",
+      end: "2026-08-10T11:00:00-04:00",
+      allDay: false,
+      calendarId: preference.googleCalendarId,
+      calendarName: preference.calendarName,
+      calendarAlias: preference.calendarName,
+      calendarColor: preference.color,
+      attribution: "FA",
+      sectionGroup: preference.sectionGroup,
+    }]);
+
+    const result = await getHouseholdCalendarEvents(
+      "household-a",
+      [{ userId: "member-a" }, { userId: "member-b" }],
+      "2026-08-10",
+      "America/New_York",
+    );
+
+    expect(result.state).toEqual({ status: "ready" });
+    expect(result.events.map((event) => event.title)).toEqual(expect.arrayContaining([
+      "Family A event",
+      "Family B event",
+    ]));
+    expect(result.events).toHaveLength(2);
+    expect(mocks.listEvents).toHaveBeenCalledTimes(2);
+    expect(mocks.listEvents.mock.calls.map((call) => (call[1] as CalendarPreference).calendarName)).not.toEqual(
+      expect.arrayContaining(["Personal A", "Work B"]),
+    );
+  });
+});

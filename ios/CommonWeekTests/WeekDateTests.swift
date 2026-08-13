@@ -19,6 +19,35 @@ final class WeekDateTests: XCTestCase {
         XCTAssertFalse(WeekDate.isToday(WeekDate.addDays(1, to: today), timeZoneIdentifier: "America/New_York"))
     }
 
+    func testCalendarDateKeepsTheSelectedDayInTheHouseholdTimeZone() {
+        let date = WeekDate.calendarDate(
+            "2026-08-15",
+            hour: 9,
+            timeZoneIdentifier: "America/New_York"
+        )
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+
+        XCTAssertEqual(calendar.component(.day, from: date), 15)
+        XCTAssertEqual(calendar.component(.hour, from: date), 9)
+        XCTAssertEqual(
+            WeekDate.string(date, timeZoneIdentifier: "America/New_York"),
+            "2026-08-15"
+        )
+    }
+
+    func testCalendarDateRoundTripsAheadOfUTC() {
+        let date = WeekDate.calendarDate(
+            "2026-08-15",
+            timeZoneIdentifier: "Asia/Tokyo"
+        )
+
+        XCTAssertEqual(
+            WeekDate.string(date, timeZoneIdentifier: "Asia/Tokyo"),
+            "2026-08-15"
+        )
+    }
+
     func testPreviewContainsACompleteWeek() {
         XCTAssertEqual(PreviewData.planner.days.count, 7)
         XCTAssertFalse(PreviewData.planner.editableCalendars.isEmpty)

@@ -50,7 +50,9 @@ function preferenceFromGoogle(
     displayAlias: null,
     displayAbbreviation: null,
     color: calendar.backgroundColor,
-    isSelected: true,
+    // Calendar discovery must never opt a private Google calendar into the
+    // shared planner. Its owner makes that choice explicitly in Settings.
+    isSelected: false,
     isPrimary: calendar.primary,
     sectionGroup: "critical",
     accessRole: calendar.accessRole,

@@ -175,7 +175,7 @@ struct CalendarEventEditorView: View {
 
     init(event: CalendarEvent?, date: String, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
         self.event = event; self.date = date; self.data = data; self.viewModel = viewModel
-        let defaultStart = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: WeekDate.parse(date)) ?? WeekDate.parse(date)
+        let defaultStart = WeekDate.calendarDate(date, hour: 9, timeZoneIdentifier: data.household.timezone)
         _title = State(initialValue: event?.title ?? "")
         _location = State(initialValue: event?.location ?? "")
         _notes = State(initialValue: event?.description ?? "")
@@ -215,12 +215,13 @@ struct CalendarEventEditorView: View {
                 }
             }
         }
+        .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
     }
 
     private func save() async {
         isSaving = true
-        let time = DateFormatter(); time.locale = Locale(identifier: "en_US_POSIX"); time.dateFormat = "HH:mm"
-        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start), endDate: WeekDate.string(end), startTime: time.string(from: start), endTime: time.string(from: end))
+        let time = DateFormatter(); time.locale = Locale(identifier: "en_US_POSIX"); time.timeZone = TimeZone(identifier: data.household.timezone) ?? .current; time.dateFormat = "HH:mm"
+        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start, timeZoneIdentifier: data.household.timezone), endDate: WeekDate.string(end, timeZoneIdentifier: data.household.timezone), startTime: time.string(from: start), endTime: time.string(from: end))
         if await viewModel.saveEvent(draft, editing: event != nil) { dismiss() }
         isSaving = false
     }

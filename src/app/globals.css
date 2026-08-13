@@ -379,10 +379,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .pending-invitations > div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 10px; }
 .pending-invitations small { color: var(--warning); text-transform: capitalize; }
 .settings-help { max-width: 620px; margin: 12px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.calendar-privacy-note { max-width: 720px; display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; padding: 11px 13px; border: 1px solid #cfded5; border-radius: 8px; background: var(--accent-wash); color: var(--accent-strong); }
+.calendar-privacy-note svg { flex: 0 0 auto; margin-top: 1px; }
+.calendar-privacy-note > div { display: flex; flex-direction: column; gap: 3px; }
+.calendar-privacy-note strong { font-size: 11px; }
+.calendar-privacy-note p { margin: 0; color: var(--ink-soft); font-size: 9px; line-height: 1.5; }
 .calendar-settings-list, .location-settings-list { max-width: 720px; border: 1px solid var(--rule); }
 .calendar-setting { min-height: 56px; display: grid; grid-template-columns: 34px 30px minmax(110px, 1fr) minmax(115px, .7fr) 54px 104px; align-items: center; gap: 10px; padding: 8px 11px; border-bottom: 1px solid var(--rule); }
 .calendar-setting:last-child, .location-setting:last-child { border-bottom: 0; }
+.calendar-setting.is-private .calendar-badge-preview { filter: saturate(.45); opacity: .68; }
 .toggle { position: relative; width: 31px; height: 18px; padding: 0; border: 0; border-radius: 20px; background: #cfcdc5; cursor: pointer; }
+.toggle:disabled { cursor: wait; opacity: .62; }
 .toggle i { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--white); transition: transform .16s ease; }
 .toggle.is-on { background: var(--accent); }
 .toggle.is-on i { transform: translateX(13px); }
@@ -390,6 +397,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .calendar-setting > div { display: flex; flex-direction: column; gap: 2px; }
 .calendar-setting strong { font-size: 11px; }
 .calendar-setting small { color: var(--muted); font-size: 8px; }
+.calendar-setting .calendar-sharing-status.is-shared { color: var(--accent-strong); font-weight: 750; }
+.calendar-setting .calendar-sharing-status.is-private { color: var(--muted); font-weight: 700; }
 .calendar-setting input, .calendar-setting select { min-width: 0; height: 33px; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 4px; background: var(--white); font-size: 10px; }
 .calendar-setting .calendar-abbreviation-input { text-align: center; text-transform: uppercase; font-weight: 750; }
 .hidden-calendar-events { max-width: 720px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }

@@ -107,11 +107,12 @@ try {
     `insert into calendar_preferences (
        household_id, user_id, google_calendar_id, calendar_name, color
      ) values ($1, $2, 'family@example.com', 'Family', '#123456')
-     returning id, section_group, access_role`,
+     returning id, section_group, access_role, is_selected`,
     [householdA, userA],
   )).rows[0];
   assert.equal(calendarPreference.section_group, "critical", "new calendars default to the critical section");
   assert.equal(calendarPreference.access_role, "reader", "new calendars default to a non-writable access role");
+  assert.equal(calendarPreference.is_selected, false, "new calendars stay private until their owner selects them");
   const foreignCalendarGroupUpdate = await client.query(
     `update calendar_preferences set section_group = 'supplemental'
       where id = $1 and household_id = $2 and user_id = $3`,
