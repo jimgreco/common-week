@@ -153,7 +153,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .source-alert a { margin-left: auto; font-weight: 700; text-decoration: underline; }
 
 .week-grid { max-width: 1800px; margin: 0 auto; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--rule-strong); background: var(--white); }
-.day-column { min-width: 0; min-height: 620px; display: flex; flex-direction: column; border-right: 1px solid var(--rule); }
+.day-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--rule); }
 .day-column:last-child { border-right: 0; }
 .day-column.is-today { box-shadow: inset 0 3px 0 var(--accent); }
 .day-header { min-height: 126px; padding: 12px 10px 11px; border-bottom: 1px solid var(--rule-strong); background: #f7f5ef; }
@@ -163,32 +163,32 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .day-date > strong { font-family: Georgia, 'Times New Roman', serif; font-size: 22px; font-weight: 400; }
 .day-date i { margin-left: auto; color: var(--accent); font-size: 8px; font-style: normal; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
 .mobile-day-date { display: none; }
-.location-button { width: 100%; min-height: 27px; display: flex; align-items: center; gap: 5px; padding: 3px 0; border: 0; background: transparent; font-size: 11px; font-weight: 660; text-align: left; cursor: pointer; }
+.location-button { width: 100%; min-height: 27px; display: flex; align-items: center; gap: 5px; padding: 3px 0; border: 0; background: transparent; font-size: 12px; font-weight: 660; text-align: left; cursor: pointer; }
 .location-button span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .location-button span:last-child { margin-left: auto; color: var(--muted); }
-.weather-button { width: 100%; min-height: 27px; display: flex; align-items: center; gap: 3px; padding: 3px 0; border: 0; background: transparent; color: var(--ink-soft); font-size: 10px; cursor: pointer; }
-.weather-button strong { color: var(--ink); font-size: 12px; }
+.weather-button { width: 100%; min-height: 27px; display: flex; align-items: center; gap: 3px; padding: 3px 0; border: 0; background: transparent; color: var(--ink-soft); font-size: 11px; cursor: pointer; }
+.weather-button strong { color: var(--ink); font-size: 13px; }
 .weather-button span:last-child { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .weather-button .rain-risk { color: #356b83; font-weight: 700; }
 .weather-symbol { color: #a7782c; font-family: Georgia, serif; font-size: 16px; line-height: 1; }
-.weather-unavailable { min-height: 27px; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 9px; line-height: 1.25; }
+.weather-unavailable { min-height: 27px; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; line-height: 1.25; }
 
-.day-section { min-height: 94px; padding: 10px 9px; border-bottom: 1px solid var(--rule); }
-.day-section h2, .weekly-columns h2 { margin: 0 0 8px; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: 8px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
-.calendar-section { min-height: 142px; }
-.plans-section { min-height: 145px; }
-.tasks-section { min-height: 118px; }
+.day-section { min-height: 80px; padding: 11px 9px; border-bottom: 1px solid var(--rule); }
+.day-section h2, .weekly-columns h2 { margin: 0 0 9px; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: 9px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+.calendar-section { min-height: 160px; }
+.plans-section { min-height: 100px; }
+.tasks-section { min-height: 86px; flex: 1; }
 .plans-section, .tasks-section { display: flex; flex-direction: column; }
 .section-content { display: flex; flex-direction: column; gap: 5px; }
 .plans-section .section-content, .tasks-section .section-content { flex: 1; }
 .empty-section { margin: 0; color: #aaa79f; font-size: 9px; font-style: italic; }
-.calendar-event { position: relative; min-height: 25px; display: grid; grid-template-columns: 20px 38px minmax(0, 1fr); align-items: start; gap: 4px; padding: 3px 2px; border-radius: 3px; font-size: 9px; line-height: 1.35; }
+.calendar-event { position: relative; min-height: 32px; display: grid; grid-template-columns: 24px 46px minmax(0, 1fr); align-items: start; gap: 5px; padding: 4px 2px; border-radius: 4px; font-size: 11px; line-height: 1.32; }
 .calendar-event:hover { background: var(--paper-deep); }
-.calendar-attribution { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 3px; color: #fff; font-size: 7px; font-weight: 800; }
-.event-time { color: var(--ink-soft); white-space: nowrap; }
+.calendar-attribution { width: 21px; height: 21px; display: grid; place-items: center; border-radius: 4px; color: #fff; font-size: 8px; font-weight: 800; }
+.event-time { color: var(--ink-soft); font-size: 10px; line-height: 1.45; white-space: nowrap; }
 .event-title { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-weight: 580; }
 .calendar-event.has-conflict { background: #fbefec; }
-.conflict-mark { position: absolute; right: 0; top: 1px; width: 13px; height: 13px; display: grid; place-items: center; border: 1px solid #d28d83; border-radius: 50%; color: var(--danger); font-size: 8px; font-weight: 800; }
+.conflict-mark { position: absolute; right: 0; top: 2px; width: 15px; height: 15px; display: grid; place-items: center; border: 1px solid #d28d83; border-radius: 50%; color: var(--danger); font-size: 9px; font-weight: 800; }
 
 .planning-row { min-width: 0; display: flex; align-items: flex-start; gap: 6px; padding: 2px 1px; border-radius: 3px; }
 .planning-row:hover { background: var(--paper-deep); }
@@ -196,7 +196,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .planning-row.is-complete .planning-row-text { text-decoration: line-through; }
 .planning-row.has-save-error { background: #fbefec; }
 .planning-row-body { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
-.planning-row-text { overflow-wrap: anywhere; font-size: 10px; line-height: 1.38; }
+.planning-row-text { overflow-wrap: anywhere; font-size: 11px; line-height: 1.38; }
 .category-label { color: var(--muted); font-size: 7px; font-weight: 680; letter-spacing: .05em; text-transform: uppercase; }
 .task-checkbox { flex: 0 0 auto; width: 14px; height: 14px; display: grid; place-items: center; margin-top: 0; padding: 0; border: 1px solid #aaa79d; border-radius: 3px; background: var(--white); cursor: pointer; }
 .task-checkbox.checked { border-color: var(--accent); background: var(--accent); color: #fff; }
@@ -205,7 +205,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .retry-button { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: transparent; color: var(--danger); font-size: 7px; font-weight: 700; cursor: pointer; }
 
 .inline-planning-add { min-height: 30px; flex: 1; display: grid; grid-template-columns: 14px minmax(0, 1fr); align-content: start; align-items: center; gap: 4px; margin-top: 1px; padding: 3px 1px; border-radius: 3px; cursor: text; }
-.inline-planning-add input { min-width: 0; height: 24px; padding: 0; border: 0; background: transparent; font-size: 9px; }
+.inline-planning-add input { min-width: 0; height: 24px; padding: 0; border: 0; background: transparent; font-size: 10px; }
 .inline-planning-add input::placeholder { color: #aaa79f; font-style: italic; opacity: 1; }
 .inline-planning-add select, .inline-planning-add button { display: none; }
 .inline-planning-add:focus-within { grid-template-columns: 14px minmax(0, 1fr) minmax(0, 68px) auto; padding: 3px 4px; background: #f7f5ef; }
@@ -391,8 +391,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .week-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .planner-shell { padding-inline: 8px; }
   .day-header, .day-section { padding-inline: 7px; }
-  .calendar-event { grid-template-columns: 18px minmax(0, 1fr); }
-  .event-time { grid-column: 2; font-size: 8px; }
+  .calendar-event { grid-template-columns: 24px minmax(0, 1fr); }
+  .event-time { grid-column: 2; font-size: 9px; }
   .event-title { grid-column: 2; }
   .weather-button span:last-child { display: none; }
 }
