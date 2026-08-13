@@ -9,6 +9,7 @@ import { isDemoMode } from "@/lib/env";
 import { getUserContext } from "@/lib/server/auth";
 import { getCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
 import { query } from "@/lib/server/database";
+import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import type { HiddenCalendarEvent, HouseholdLocation, HouseholdMember } from "@/types/domain";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -19,6 +20,7 @@ export default async function SettingsPage() {
     const data = getDemoPlannerData();
     const demoCalendars = Array.from(new Map(data.days.flatMap((day) => day.events).map((event) => [event.calendarId, event])).values()).map((event, index) => ({
       id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      userId: "demo-jim",
       googleCalendarId: event.calendarId,
       calendarName: event.calendarName,
       displayAlias: null,
@@ -27,8 +29,9 @@ export default async function SettingsPage() {
       isSelected: true,
       isPrimary: index === 0,
       sectionGroup: event.sectionGroup,
+      accessRole: "owner" as const,
     }));
-    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} calendarConnected={false} isDemo /></SettingsScaffold>;
+    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} calendarConnected={false} calendarWriteEnabled isDemo /></SettingsScaffold>;
   }
 
   const context = await getUserContext();
@@ -54,7 +57,7 @@ export default async function SettingsPage() {
       [context.householdId],
     ),
     getCurrentUserCalendarPreferences(context.userId),
-    query("select 1 from google_connections where user_id = $1", [context.userId]),
+    query<{ scope: string | null }>("select scope from google_connections where user_id = $1", [context.userId]),
     query<{ id: string; event_id: string; title: string; calendar_name: string; event_start: string; hidden_at: Date }>(
       `select id, event_id, title, calendar_name, event_start, hidden_at
          from hidden_calendar_events
@@ -69,7 +72,7 @@ export default async function SettingsPage() {
   const members: HouseholdMember[] = membersResult.rows.map((member) => ({ id: member.id, userId: member.user_id, displayName: member.display_name, email: member.email, role: member.role }));
   const locations: HouseholdLocation[] = locationsResult.rows.map((location) => ({ id: location.id, name: location.name, latitude: Number(location.latitude), longitude: Number(location.longitude), timezone: location.timezone, isSaved: location.is_saved, isDefault: location.id === household.default_location_id }));
   const hiddenEvents: HiddenCalendarEvent[] = hiddenEventsResult.rows.map((event) => ({ id: event.id, eventId: event.event_id, title: event.title, calendarName: event.calendar_name, eventStart: event.event_start, hiddenAt: event.hidden_at.toISOString() }));
-  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString() }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} calendarConnected={Boolean(connectionResult.rowCount)} isDemo={false} /></SettingsScaffold>;
+  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString() }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} calendarConnected={Boolean(connectionResult.rowCount)} calendarWriteEnabled={hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE)} isDemo={false} /></SettingsScaffold>;
 }
 
 function SettingsScaffold({ children }: { children: React.ReactNode }) {

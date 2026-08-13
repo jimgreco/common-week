@@ -2,7 +2,9 @@ import "server-only";
 
 import { eventFallsOnDate, markCalendarConflicts, sortCalendarEvents } from "@/lib/calendar-utils";
 import { weekDates } from "@/lib/date";
+import { isWritableGoogleCalendarRole } from "@/lib/google-calendar-permissions";
 import { query } from "@/lib/server/database";
+import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import { getHouseholdCalendarEvents } from "@/lib/server/calendar-data";
 import { getWeatherForAssignments } from "@/lib/server/weather-data";
 import type {
@@ -89,7 +91,7 @@ export async function getPlannerData(
   options: { includeExternal?: boolean } = {},
 ): Promise<WeeklyPlannerData> {
   const dates = weekDates(weekStart);
-  const [householdResult, locationsResult, settingsResult, planningResult, categoriesResult, membersResult, hiddenEventsResult] =
+  const [householdResult, locationsResult, settingsResult, planningResult, categoriesResult, membersResult, hiddenEventsResult, currentCalendarsResult, connectionResult] =
     await Promise.all([
       query<HouseholdRow>(
         `select h.id, h.name, h.timezone, h.temperature_unit, h.default_location_id
@@ -144,6 +146,25 @@ export async function getPlannerData(
         "select event_id from hidden_calendar_events where household_id = $1",
         [context.householdId],
       ),
+      query<{
+        id: string;
+        calendar_name: string;
+        display_alias: string | null;
+        color: string;
+        section_group: "critical" | "supplemental";
+        access_role: "freeBusyReader" | "reader" | "writer" | "owner";
+        is_selected: boolean;
+      }>(
+        `select id, calendar_name, display_alias, color, section_group, access_role, is_selected
+           from calendar_preferences
+          where household_id = $1 and user_id = $2
+          order by is_primary desc, calendar_name`,
+        [context.householdId, context.userId],
+      ),
+      query<{ scope: string | null }>(
+        "select scope from google_connections where user_id = $1",
+        [context.userId],
+      ),
     ]);
 
   const household = householdResult.rows[0];
@@ -187,6 +208,12 @@ export async function getPlannerData(
     color: row.color,
   }));
   const hiddenEventIds = new Set(hiddenEventsResult.rows.map((row) => row.event_id));
+  const calendarWriteEnabled = hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE);
+  const writablePreferenceIds = new Set(
+    currentCalendarsResult.rows
+      .filter((calendar) => calendarWriteEnabled && isWritableGoogleCalendarRole(calendar.access_role))
+      .map((calendar) => calendar.id),
+  );
 
   return {
     household: {
@@ -205,7 +232,12 @@ export async function getPlannerData(
         sortCalendarEvents(
           calendarBundle.events.filter(
             (event) => !hiddenEventIds.has(event.id) && eventFallsOnDate(event, date, household.timezone),
-          ),
+          ).map((event) => ({
+            ...event,
+            canEdit: event.sourceUserId === context.userId
+              && Boolean(event.calendarPreferenceId && writablePreferenceIds.has(event.calendarPreferenceId))
+              && !event.recurringEventId,
+          })),
         ),
       ),
       items: items.filter((item) => item.planningDate === date),
@@ -213,6 +245,14 @@ export async function getPlannerData(
     weeklyItems: items.filter((item) => item.planningDate === null),
     locations,
     categories,
+    editableCalendars: currentCalendarsResult.rows
+      .filter((calendar) => calendar.is_selected && calendarWriteEnabled && isWritableGoogleCalendarRole(calendar.access_role))
+      .map((calendar) => ({
+        id: calendar.id,
+        name: calendar.display_alias ?? calendar.calendar_name,
+        color: calendar.color,
+        sectionGroup: calendar.section_group,
+      })),
     calendarState: calendarBundle.state,
     weatherState: weatherBundle.state,
     isDemo: false,

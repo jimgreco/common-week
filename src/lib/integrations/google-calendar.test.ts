@@ -56,6 +56,9 @@ describe("GoogleCalendarApiService", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       items: [{
         id: "event-1",
+        etag: "etag-1",
+        recurringEventId: "series-1",
+        originalStartTime: { dateTime: "2026-08-15T19:00:00-04:00" },
         summary: "Dinner reservation",
         description: "Patio table requested.",
         location: "177 Main Street",
@@ -66,6 +69,7 @@ describe("GoogleCalendarApiService", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
     const preference: CalendarPreference = {
       id: "preference",
+      userId: "user",
       googleCalendarId: "family@example.com",
       calendarName: "Family",
       displayAlias: null,
@@ -74,6 +78,7 @@ describe("GoogleCalendarApiService", () => {
       isSelected: true,
       isPrimary: false,
       sectionGroup: "supplemental",
+      accessRole: "writer",
     };
 
     await expect(new GoogleCalendarApiService().listEvents(
@@ -85,6 +90,11 @@ describe("GoogleCalendarApiService", () => {
       "FA",
     )).resolves.toEqual([expect.objectContaining({
       id: "family@example.com:event-1",
+      providerEventId: "event-1",
+      sourceUserId: "user",
+      calendarPreferenceId: "preference",
+      etag: "etag-1",
+      recurringEventId: "series-1",
       title: "Dinner reservation",
       description: "Patio table requested.",
       location: "177 Main Street",
@@ -92,5 +102,28 @@ describe("GoogleCalendarApiService", () => {
       end: "2026-08-15T21:00:00-04:00",
       sectionGroup: "supplemental",
     })]);
+  });
+
+  it("creates, updates, and deletes through the selected calendar with concurrency headers", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "event-2", summary: "Lunch", start: {}, end: {} }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "event-2", summary: "Lunch later", start: {}, end: {} }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new GoogleCalendarApiService();
+    const input = {
+      summary: "Lunch",
+      start: { dateTime: "2026-08-15T16:00:00.000Z", timeZone: "America/New_York" },
+      end: { dateTime: "2026-08-15T17:00:00.000Z", timeZone: "America/New_York" },
+    };
+
+    await service.createEvent("opaque-token", "family@example.com", input);
+    await service.updateEvent("opaque-token", "family@example.com", "event-2", "etag-1", { ...input, summary: "Lunch later" });
+    await service.deleteEvent("opaque-token", "family@example.com", "event-2", "etag-2");
+
+    expect(fetchMock.mock.calls[0][0].pathname).toBe("/calendar/v3/calendars/family%40example.com/events");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST", body: JSON.stringify(input) });
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "PATCH", headers: { "If-Match": "etag-1" } });
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "DELETE", headers: { "If-Match": "etag-2" } });
   });
 });

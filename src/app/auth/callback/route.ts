@@ -1,10 +1,13 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { applicationOrigin } from "@/lib/env";
+import { refreshCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
 import { withTransaction } from "@/lib/server/database";
 import {
+  GOOGLE_CALENDAR_WRITE_SCOPE,
   GOOGLE_SCOPES,
   googleOAuthClient,
+  OAUTH_MODE_COOKIE,
   OAUTH_STATE_COOKIE,
   OAUTH_VERIFIER_COOKIE,
 } from "@/lib/server/google-oauth";
@@ -23,6 +26,7 @@ function equalState(expected: string | undefined, actual: string | null): boolea
 function clearOAuthCookies(response: NextResponse) {
   response.cookies.delete(OAUTH_STATE_COOKIE);
   response.cookies.delete(OAUTH_VERIFIER_COOKIE);
+  response.cookies.delete(OAUTH_MODE_COOKIE);
 }
 
 function authFailure(reason: string) {
@@ -36,6 +40,7 @@ export async function GET(request: NextRequest) {
   const state = request.nextUrl.searchParams.get("state");
   const expectedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
   const codeVerifier = request.cookies.get(OAUTH_VERIFIER_COOKIE)?.value;
+  const oauthMode = request.cookies.get(OAUTH_MODE_COOKIE)?.value;
   if (!code || !codeVerifier || !equalState(expectedState, state)) return authFailure("state");
 
   try {
@@ -82,7 +87,10 @@ export async function GET(request: NextRequest) {
           accessToken,
           refreshToken,
           tokens.expiry_date ? new Date(tokens.expiry_date) : new Date(Date.now() + 55 * 60_000),
-          tokens.scope || GOOGLE_SCOPES.join(" "),
+          tokens.scope || [
+            ...GOOGLE_SCOPES,
+            ...(oauthMode === "calendar-write" ? [GOOGLE_CALENDAR_WRITE_SCOPE] : []),
+          ].join(" "),
         ],
       );
 
@@ -114,10 +122,22 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      return { ...(await createDatabaseSession(database, userId)), householdId };
+      return { ...(await createDatabaseSession(database, userId)), householdId, userId };
     });
 
-    const destination = session.householdId ? "/planner" : "/onboarding";
+    if (oauthMode === "calendar-write" && session.householdId) {
+      try {
+        await refreshCurrentUserCalendarPreferences(session.householdId, session.userId);
+      } catch (error) {
+        console.warn("Calendar access roles could not be refreshed after authorization", {
+          name: error instanceof Error ? error.name : "UnknownError",
+        });
+      }
+    }
+
+    const destination = session.householdId
+      ? oauthMode === "calendar-write" ? "/settings?calendar_editing=enabled#calendars" : "/planner"
+      : "/onboarding";
     const response = NextResponse.redirect(new URL(destination, applicationOrigin()));
     response.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions(session.expires));
     clearOAuthCookies(response);

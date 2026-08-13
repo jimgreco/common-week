@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { AlertTriangle, CalendarDays, Check, Clock, CloudRain, ExternalLink, EyeOff, LoaderCircle, MapPin, Search, Sunrise, Sunset, Trash2, Wind, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, Clock, CloudRain, ExternalLink, EyeOff, LoaderCircle, MapPin, Pencil, Search, Sunrise, Sunset, Trash2, Wind, X } from "lucide-react";
 import { searchLocationsAction } from "@/app/actions/planner";
 import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, DayPlan, GeocodingResult, HouseholdLocation, PlanningCategory, PlanningItem } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, PlanningCategory, PlanningItem } from "@/types/domain";
 
 export type LocationSelection =
   | { kind: "saved"; location: HouseholdLocation }
@@ -89,11 +89,13 @@ export function EventDetailDialog({
   timeZone,
   onClose,
   onHide,
+  onEdit,
 }: {
   event: CalendarEvent;
   timeZone: string;
   onClose: () => void;
   onHide: (event: CalendarEvent) => Promise<string | null>;
+  onEdit: (event: CalendarEvent) => void;
 }) {
   const [hiding, setHiding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,13 +113,133 @@ export function EventDetailDialog({
           {event.isConflict && <div className="event-conflict-detail"><dt><AlertTriangle size={15} /><span className="sr-only">Conflict</span></dt><dd><strong>Time conflict</strong><span>This event overlaps another scheduled event.</span></dd></div>}
         </dl>
         {event.description && <div className="event-description"><h4>Notes</h4><p>{event.description}</p></div>}
+        {!event.canEdit && <p className="event-edit-note">{event.recurringEventId ? "Recurring events remain read-only in Common Week. Open this event in Google Calendar to change the series." : "This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only."}</p>}
         <p className="event-hide-note">Hiding affects Common Week for the household. It does not change Google Calendar, and you can restore the event in Settings.</p>
         {error && <p className="location-picker-error" role="alert">{error}</p>}
       </div>
       <footer className="modal-footer split-footer">
         <button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Common Week"}</button>
-        <span>{event.googleUrl && <a className="button button-secondary" href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={13} /></a>}<button className="button button-primary" type="button" onClick={onClose}>Done</button></span>
+        <span>{event.googleUrl && <a className="button button-secondary" href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={13} /></a>}{event.canEdit && <button className="button button-secondary" type="button" onClick={() => onEdit(event)}><Pencil size={13} />Edit event</button>}<button className="button button-primary" type="button" onClick={onClose}>Done</button></span>
       </footer>
+    </Modal>
+  );
+}
+
+function eventDateAndTime(value: string, timeZone: string): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(value));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { date: `${byType.year}-${byType.month}-${byType.day}`, time: `${byType.hour}:${byType.minute}` };
+}
+
+function initialEventDraft(date: string, calendars: EditableCalendar[], timeZone: string, event?: CalendarEvent): CalendarEventDraft {
+  if (!event) {
+    return {
+      requestId: crypto.randomUUID(),
+      calendarPreferenceId: calendars[0]?.id ?? "",
+      title: "",
+      description: "",
+      location: "",
+      allDay: false,
+      startDate: date,
+      endDate: date,
+      startTime: "09:00",
+      endTime: "10:00",
+    };
+  }
+  const start = event.allDay ? { date: event.start.slice(0, 10), time: "09:00" } : eventDateAndTime(event.start, timeZone);
+  const end = event.allDay
+    ? { date: addDateDays(event.end.slice(0, 10), -1), time: "10:00" }
+    : eventDateAndTime(event.end, timeZone);
+  return {
+    requestId: crypto.randomUUID(),
+    calendarPreferenceId: event.calendarPreferenceId ?? "",
+    providerEventId: event.providerEventId,
+    etag: event.etag,
+    title: event.title,
+    description: event.description ?? "",
+    location: event.location ?? "",
+    allDay: event.allDay,
+    startDate: start.date,
+    endDate: end.date,
+    startTime: start.time,
+    endTime: end.time,
+  };
+}
+
+export function CalendarEventEditorDialog({
+  date,
+  event,
+  calendars,
+  timeZone,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  date: string;
+  event?: CalendarEvent;
+  calendars: EditableCalendar[];
+  timeZone: string;
+  onClose: () => void;
+  onSave: (draft: CalendarEventDraft) => Promise<string | null>;
+  onDelete: (event: CalendarEvent) => Promise<string | null>;
+}) {
+  const [draft, setDraft] = useState(() => initialEventDraft(date, calendars, timeZone, event));
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const editing = Boolean(event);
+
+  return (
+    <Modal title={editing ? "Edit Google event" : "Add Google event"} onClose={onClose}>
+      <form onSubmit={async (submitEvent) => {
+        submitEvent.preventDefault();
+        setSaving(true);
+        setError(null);
+        const saveError = await onSave(draft);
+        setSaving(false);
+        if (saveError) setError(saveError);
+        else onClose();
+      }}>
+        <div className="modal-body form-stack calendar-event-form">
+          <label>Title<input data-modal-autofocus value={draft.title} required maxLength={1000} onChange={(change) => setDraft({ ...draft, title: change.target.value })} /></label>
+          <label>Calendar<select value={draft.calendarPreferenceId} disabled={editing} onChange={(change) => setDraft({ ...draft, calendarPreferenceId: change.target.value })}>{calendars.map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.name}</option>)}</select></label>
+          <label className="all-day-control"><input type="checkbox" checked={draft.allDay} onChange={(change) => setDraft({ ...draft, allDay: change.target.checked })} /><span>All-day event</span></label>
+          <div className="event-date-row">
+            <label>Starts<input type="date" value={draft.startDate} required onChange={(change) => setDraft({ ...draft, startDate: change.target.value, endDate: draft.endDate < change.target.value ? change.target.value : draft.endDate })} /></label>
+            {!draft.allDay && <label>Time<input type="time" value={draft.startTime} required onChange={(change) => setDraft({ ...draft, startTime: change.target.value })} /></label>}
+          </div>
+          <div className="event-date-row">
+            <label>Ends<input type="date" value={draft.endDate} min={draft.startDate} required onChange={(change) => setDraft({ ...draft, endDate: change.target.value })} /></label>
+            {!draft.allDay && <label>Time<input type="time" value={draft.endTime} required onChange={(change) => setDraft({ ...draft, endTime: change.target.value })} /></label>}
+          </div>
+          <label>Location<input value={draft.location} maxLength={1000} placeholder="Optional" onChange={(change) => setDraft({ ...draft, location: change.target.value })} /></label>
+          <label>Notes<textarea value={draft.description} maxLength={8192} placeholder="Optional" onChange={(change) => setDraft({ ...draft, description: change.target.value })} /></label>
+          <p className="event-timezone-note">Times use the household timezone: {timeZone}</p>
+          {error && <p className="location-picker-error" role="alert">{error}</p>}
+          {confirmDelete && <div className="delete-confirmation" role="alert"><strong>Delete this event from Google Calendar?</strong><span>This cannot be undone from Common Week.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
+            if (!event) return;
+            setDeleting(true);
+            setError(null);
+            const deleteError = await onDelete(event);
+            setDeleting(false);
+            if (deleteError) setError(deleteError);
+            else onClose();
+          }}>{deleting ? "Deleting…" : "Yes, delete from Google"}</button></div>}
+        </div>
+        <footer className="modal-footer split-footer">
+          <span>{editing && <button className="button button-danger-quiet" type="button" disabled={saving || deleting} onClick={() => setConfirmDelete((current) => !current)}><Trash2 size={14} />Delete from Google</button>}</span>
+          <span><button className="button button-secondary" type="button" disabled={saving || deleting} onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={saving || deleting || !draft.calendarPreferenceId || !draft.title.trim()}>{saving && <LoaderCircle className="spin" size={14} />}{saving ? "Saving…" : editing ? "Save changes" : "Add event"}</button></span>
+        </footer>
+      </form>
     </Modal>
   );
 }

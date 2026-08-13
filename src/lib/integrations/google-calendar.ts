@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { CalendarEvent, CalendarPreference } from "@/types/domain";
+import type { CalendarEvent, CalendarPreference, GoogleCalendarAccessRole } from "@/types/domain";
 
 const GOOGLE_API = "https://www.googleapis.com/calendar/v3";
 
@@ -9,7 +9,25 @@ export interface GoogleCalendarListEntry {
   summary: string;
   primary: boolean;
   backgroundColor: string;
-  accessRole: string;
+  accessRole: GoogleCalendarAccessRole;
+}
+
+export interface GoogleCalendarEventInput {
+  id?: string;
+  summary: string;
+  description?: string;
+  location?: string;
+  start: { date?: string; dateTime?: string; timeZone?: string };
+  end: { date?: string; dateTime?: string; timeZone?: string };
+}
+
+export interface GoogleCalendarEventResource extends GoogleCalendarEventInput {
+  id: string;
+  etag?: string;
+  recurringEventId?: string;
+  originalStartTime?: { date?: string; dateTime?: string };
+  htmlLink?: string;
+  status?: string;
 }
 
 export interface GoogleCalendarService {
@@ -22,6 +40,10 @@ export interface GoogleCalendarService {
     timeZone: string,
     attribution: string,
   ): Promise<CalendarEvent[]>;
+  getEvent(accessToken: string, calendarId: string, eventId: string): Promise<GoogleCalendarEventResource>;
+  createEvent(accessToken: string, calendarId: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource>;
+  updateEvent(accessToken: string, calendarId: string, eventId: string, etag: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource>;
+  deleteEvent(accessToken: string, calendarId: string, eventId: string, etag: string): Promise<void>;
 }
 
 interface GoogleCalendarListResponse {
@@ -36,16 +58,7 @@ interface GoogleCalendarListResponse {
 }
 
 interface GoogleEventsResponse {
-  items?: Array<{
-    id: string;
-    summary?: string;
-    description?: string;
-    location?: string;
-    htmlLink?: string;
-    status?: string;
-    start?: { date?: string; dateTime?: string };
-    end?: { date?: string; dateTime?: string };
-  }>;
+  items?: GoogleCalendarEventResource[];
   nextPageToken?: string;
 }
 
@@ -73,9 +86,15 @@ export function isGoogleCalendarApiDisabled(error: unknown): boolean {
     (error.reason === "accessNotConfigured" || error.googleStatus === "SERVICE_DISABLED");
 }
 
-async function googleFetch<T>(url: URL, accessToken: string): Promise<T> {
+async function googleFetch<T>(url: URL, accessToken: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+    ...init,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...init.headers,
+    },
     signal: AbortSignal.timeout(8_000),
     cache: "no-store",
   });
@@ -91,7 +110,14 @@ async function googleFetch<T>(url: URL, accessToken: string): Promise<T> {
       payload.error?.status ?? null,
     );
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+function calendarAccessRole(value: string | undefined): GoogleCalendarAccessRole {
+  return value === "freeBusyReader" || value === "writer" || value === "owner"
+    ? value
+    : "reader";
 }
 
 export class GoogleCalendarApiService implements GoogleCalendarService {
@@ -110,7 +136,7 @@ export class GoogleCalendarApiService implements GoogleCalendarService {
         summary: item.summary ?? "Calendar",
         primary: Boolean(item.primary),
         backgroundColor: item.backgroundColor ?? "#718096",
-        accessRole: item.accessRole ?? "reader",
+        accessRole: calendarAccessRole(item.accessRole),
       })));
       pageToken = payload.nextPageToken;
     } while (pageToken);
@@ -149,6 +175,12 @@ export class GoogleCalendarApiService implements GoogleCalendarService {
         if (!start || !end) continue;
         events.push({
           id: `${preference.googleCalendarId}:${item.id}`,
+          providerEventId: item.id,
+          sourceUserId: preference.userId,
+          calendarPreferenceId: preference.id,
+          etag: item.etag,
+          recurringEventId: item.recurringEventId,
+          originalStartTime: item.originalStartTime?.dateTime ?? item.originalStartTime?.date,
           title: item.summary?.trim() || "Busy",
           description: item.description?.trim() || undefined,
           location: item.location?.trim() || undefined,
@@ -168,6 +200,37 @@ export class GoogleCalendarApiService implements GoogleCalendarService {
     } while (pageToken);
 
     return events;
+  }
+
+  async getEvent(accessToken: string, calendarId: string, eventId: string): Promise<GoogleCalendarEventResource> {
+    return googleFetch<GoogleCalendarEventResource>(
+      new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`),
+      accessToken,
+    );
+  }
+
+  async createEvent(accessToken: string, calendarId: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource> {
+    return googleFetch<GoogleCalendarEventResource>(
+      new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events`),
+      accessToken,
+      { method: "POST", body: JSON.stringify(event) },
+    );
+  }
+
+  async updateEvent(accessToken: string, calendarId: string, eventId: string, etag: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource> {
+    return googleFetch<GoogleCalendarEventResource>(
+      new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`),
+      accessToken,
+      { method: "PATCH", headers: { "If-Match": etag }, body: JSON.stringify(event) },
+    );
+  }
+
+  async deleteEvent(accessToken: string, calendarId: string, eventId: string, etag: string): Promise<void> {
+    await googleFetch<void>(
+      new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`),
+      accessToken,
+      { method: "DELETE", headers: { "If-Match": etag } },
+    );
   }
 }
 

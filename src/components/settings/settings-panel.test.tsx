@@ -39,6 +39,7 @@ describe("SettingsPanel calendar degradation", () => {
       locations={[]}
       calendars={[]}
       calendarConnected
+      calendarWriteEnabled={false}
       isDemo={false}
     />);
 
@@ -46,6 +47,7 @@ describe("SettingsPanel calendar degradation", () => {
     expect(await screen.findByText(/Calendar API needs to be enabled/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try Calendar again" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Connect Google Calendar" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Enable calendar editing" })).toHaveAttribute("href", "/auth/google?calendar_write=1");
   });
 
   it("derives a calendar badge and saves a custom override", async () => {
@@ -58,6 +60,7 @@ describe("SettingsPanel calendar degradation", () => {
       locations={[]}
       calendars={[{
         id: "00000000-0000-4000-8000-000000000001",
+        userId: "user",
         googleCalendarId: "family@example.com",
         calendarName: "Family",
         displayAlias: null,
@@ -66,8 +69,10 @@ describe("SettingsPanel calendar degradation", () => {
         isSelected: true,
         isPrimary: false,
         sectionGroup: "critical",
+        accessRole: "owner",
       }]}
       calendarConnected
+      calendarWriteEnabled
       isDemo={false}
     />);
 
@@ -113,6 +118,7 @@ describe("SettingsPanel calendar degradation", () => {
         hiddenAt: "2026-08-12T21:00:00Z",
       }]}
       calendarConnected={false}
+      calendarWriteEnabled={false}
       isDemo={false}
     />);
 

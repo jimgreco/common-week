@@ -28,6 +28,7 @@ export function SettingsPanel({
   calendars: initialCalendars,
   hiddenEvents: initialHiddenEvents = [],
   calendarConnected: initialCalendarConnected,
+  calendarWriteEnabled,
   isDemo,
 }: {
   household: HouseholdSummary;
@@ -37,6 +38,7 @@ export function SettingsPanel({
   calendars: CalendarPreference[];
   hiddenEvents?: HiddenCalendarEvent[];
   calendarConnected: boolean;
+  calendarWriteEnabled: boolean;
   isDemo: boolean;
 }) {
   const [locations, setLocations] = useState(initialLocations);
@@ -91,7 +93,13 @@ export function SettingsPanel({
         </section>
 
         <section className="settings-section" id="calendars">
-          <header><p className="eyebrow">Calendars</p><h2>Choose the scheduled commitments you see</h2><p>Read-only. Set a shorter name, override the badge, and place each calendar in the Critical or Supplemental section.</p></header>
+          <header><p className="eyebrow">Calendars</p><h2>Choose the scheduled commitments you see</h2><p>Set a shorter name, override the badge, and place each calendar in the Critical or Supplemental section.</p></header>
+          {!isDemo && calendarConnected && (
+            <div className={`calendar-editing-access ${calendarWriteEnabled ? "is-enabled" : ""}`}>
+              <div><strong>{calendarWriteEnabled ? "Single-event editing enabled" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "You can create, edit, and delete single events on calendars where Google gives you write access." : "Enable this separately to keep the default Google connection read-only."}</p></div>
+              {!calendarWriteEnabled && <a className="button button-secondary" href="/auth/google?calendar_write=1">Enable calendar editing</a>}
+            </div>
+          )}
           {calendarError && <div className="calendar-provider-error" role="status"><AlertTriangle size={15} /><span>{calendarError}</span></div>}
           {calendars.length ? <div className="calendar-settings-list">{calendars.map((calendar) => {
             const defaultAbbreviation = calendarAbbreviation(calendar.displayAlias ?? calendar.calendarName);

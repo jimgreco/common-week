@@ -10,8 +10,15 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
 ] as const;
 
+export const GOOGLE_CALENDAR_WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+
 export const OAUTH_STATE_COOKIE = "common_week_oauth_state";
 export const OAUTH_VERIFIER_COOKIE = "common_week_oauth_verifier";
+export const OAUTH_MODE_COOKIE = "common_week_oauth_mode";
+
+export function hasGoogleScope(scope: string | null | undefined, expected: string): boolean {
+  return new Set((scope ?? "").split(/\s+/).filter(Boolean)).has(expected);
+}
 
 export function googleOAuthClient(): OAuth2Client {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -24,7 +31,7 @@ export function googleOAuthClient(): OAuth2Client {
   });
 }
 
-export async function createGoogleAuthorization() {
+export async function createGoogleAuthorization(options: { calendarWrite?: boolean } = {}) {
   const client = googleOAuthClient();
   const { codeVerifier, codeChallenge } = await client.generateCodeVerifierAsync();
   const state = crypto.randomUUID();
@@ -32,7 +39,7 @@ export async function createGoogleAuthorization() {
     access_type: "offline",
     prompt: "consent select_account",
     include_granted_scopes: true,
-    scope: [...GOOGLE_SCOPES],
+    scope: options.calendarWrite ? [...GOOGLE_SCOPES, GOOGLE_CALENDAR_WRITE_SCOPE] : [...GOOGLE_SCOPES],
     state,
     code_challenge: codeChallenge,
     code_challenge_method: CodeChallengeMethod.S256,

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowLeft, ArrowRight, CalendarRange, CloudOff, Menu, Search, Settings, Users, WifiOff, X } from "lucide-react";
 import { signOut } from "@/app/actions/auth";
+import { createCalendarEventAction, deleteCalendarEventAction, updateCalendarEventAction } from "@/app/actions/calendar";
 import {
   createPlanningItemAction,
   deletePlanningItemAction,
@@ -18,9 +19,9 @@ import {
 } from "@/app/actions/planner";
 import { BrandMark } from "@/components/brand-mark";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
-import { EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
+import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
-import type { CalendarEvent, DayPlan, HouseholdLocation, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, DayPlan, HouseholdLocation, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
 export function WeeklyPlanner({ initialData, currentUserName }: { initialData: WeeklyPlannerData; currentUserName: string }) {
   const router = useRouter();
@@ -30,6 +31,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
   const [weatherDay, setWeatherDay] = useState<DayPlan | null>(null);
   const [editingItem, setEditingItem] = useState<PlanningItem | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlanningItem[]>([]);
@@ -230,6 +232,49 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     return null;
   }, [initialData.isDemo]);
 
+  const refreshPlannerSources = useCallback(async () => {
+    if (initialData.isDemo) return;
+    const result = await loadPlannerSourcesAction(initialData.weekStart);
+    if (!result.ok || !result.data) {
+      setNotice(result.error ?? "Google Calendar could not be refreshed.");
+      return;
+    }
+    const sources = new Map(result.data.days.map((day) => [day.date, day]));
+    setDays((current) => current.map((day) => {
+      const source = sources.get(day.date);
+      return source ? { ...day, events: source.events, weather: source.weather } : day;
+    }));
+    setCalendarState(result.data.calendarState);
+  }, [initialData.isDemo, initialData.weekStart]);
+
+  const saveCalendarEvent = useCallback(async (draft: CalendarEventDraft): Promise<string | null> => {
+    if (initialData.isDemo) {
+      setNotice(`Demo event ${draft.providerEventId ? "updated" : "added"}.`);
+      return null;
+    }
+    const result = draft.providerEventId
+      ? await updateCalendarEventAction(draft)
+      : await createCalendarEventAction(draft);
+    if (!result.ok) return result.error ?? "Google Calendar could not save this event.";
+    await refreshPlannerSources();
+    setNotice(draft.providerEventId ? "Google Calendar event updated." : "Google Calendar event added.");
+    return null;
+  }, [initialData.isDemo, refreshPlannerSources]);
+
+  const deleteCalendarEvent = useCallback(async (event: CalendarEvent): Promise<string | null> => {
+    if (!event.calendarPreferenceId || !event.providerEventId || !event.etag) return "Refresh the week before deleting this event.";
+    if (!initialData.isDemo) {
+      const result = await deleteCalendarEventAction({ calendarPreferenceId: event.calendarPreferenceId, providerEventId: event.providerEventId, etag: event.etag });
+      if (!result.ok) return result.error ?? "Google Calendar could not delete this event.";
+      await refreshPlannerSources();
+    } else {
+      setDays((current) => current.map((day) => ({ ...day, events: day.events.filter((candidate) => candidate.id !== event.id) })));
+    }
+    setSelectedEvent(null);
+    setNotice("Google Calendar event deleted.");
+    return null;
+  }, [initialData.isDemo, refreshPlannerSources]);
+
   const setLocation = useCallback(async (selection: LocationSelection, scope: "day" | "through-sunday" | "week"): Promise<string | null> => {
     if (!locationDate) return "Choose a day before setting its location.";
     let location: HouseholdLocation;
@@ -340,6 +385,8 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
               onLocation={setLocationDate}
               onWeather={setWeatherDay}
               onEvent={setSelectedEvent}
+              onAddEvent={(date) => setCalendarEditor({ date })}
+              canAddEvent={initialData.editableCalendars.length > 0}
               key={day.date}
             />
           ))}
@@ -356,7 +403,8 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
 
       {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
-      {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} />}
+      {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
+      {calendarEditor && <CalendarEventEditorDialog date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
       {editingItem && <ItemEditorDialog item={editingItem} weekDates={weekDates(initialData.weekStart)} categories={initialData.categories} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
       {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
     </main>

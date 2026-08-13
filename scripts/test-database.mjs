@@ -107,10 +107,11 @@ try {
     `insert into calendar_preferences (
        household_id, user_id, google_calendar_id, calendar_name, color
      ) values ($1, $2, 'family@example.com', 'Family', '#123456')
-     returning id, section_group`,
+     returning id, section_group, access_role`,
     [householdA, userA],
   )).rows[0];
   assert.equal(calendarPreference.section_group, "critical", "new calendars default to the critical section");
+  assert.equal(calendarPreference.access_role, "reader", "new calendars default to a non-writable access role");
   const foreignCalendarGroupUpdate = await client.query(
     `update calendar_preferences set section_group = 'supplemental'
       where id = $1 and household_id = $2 and user_id = $3`,
@@ -137,6 +138,29 @@ try {
     await client.query("rollback to savepoint invalid_calendar_group");
   }
   assert.equal(rejectedInvalidCalendarGroup, true, "calendar groups reject unknown values");
+
+  const ownCalendarAccessUpdate = await client.query(
+    `update calendar_preferences set access_role = 'writer'
+      where id = $1 and household_id = $2 and user_id = $3
+      returning access_role`,
+    [calendarPreference.id, householdA, userA],
+  );
+  assert.equal(ownCalendarAccessUpdate.rows[0].access_role, "writer", "Google writable access roles are persisted");
+  const foreignCalendarAccessUpdate = await client.query(
+    `update calendar_preferences set access_role = 'owner'
+      where id = $1 and household_id = $2 and user_id = $3`,
+    [calendarPreference.id, householdB, userB],
+  );
+  assert.equal(foreignCalendarAccessUpdate.rowCount, 0, "calendar write access cannot be changed across households");
+  await client.query("savepoint invalid_calendar_access");
+  let rejectedInvalidCalendarAccess = false;
+  try {
+    await client.query("update calendar_preferences set access_role = 'editor' where id = $1", [calendarPreference.id]);
+  } catch (error) {
+    rejectedInvalidCalendarAccess = error?.code === "23514";
+    await client.query("rollback to savepoint invalid_calendar_access");
+  }
+  assert.equal(rejectedInvalidCalendarAccess, true, "calendar access rejects unknown roles");
 
   const sessionToken = randomBytes(32).toString("base64url");
   const sessionHash = createHash("sha256").update(sessionToken).digest();

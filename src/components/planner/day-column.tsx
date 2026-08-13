@@ -18,6 +18,8 @@ interface DayColumnProps {
   onLocation: (date: string) => void;
   onWeather: (day: DayPlan) => void;
   onEvent: (event: CalendarEvent) => void;
+  onAddEvent: (date: string) => void;
+  canAddEvent: boolean;
 }
 
 function eventTimeLabel(event: CalendarEvent, timeZone: string): string {
@@ -163,6 +165,8 @@ export function DayColumn({
   onLocation,
   onWeather,
   onEvent,
+  onAddEvent,
+  canAddEvent,
 }: DayColumnProps) {
   const notes = day.items.filter((item) => item.type === "note");
   const tasks = day.items.filter((item) => item.type === "task");
@@ -226,6 +230,7 @@ export function DayColumn({
             <CalendarEventRows events={group.events} timeZone={timeZone} onEvent={onEvent} />
           </div>
         )) : <><h2>Calendar</h2><p className="empty-section">{calendarState.status === "loading" ? "Loading calendar" : "No events"}</p></>}
+        {canAddEvent && <button className="calendar-quick-add" type="button" onClick={() => onAddEvent(day.date)}><Plus size={12} />Add event</button>}
       </section>
 
       <section className="day-section plans-section" aria-label={`Plans for ${formatMobileDate(day.date)}`}>

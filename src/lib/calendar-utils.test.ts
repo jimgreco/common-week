@@ -38,6 +38,7 @@ describe("calendar event placement", () => {
     const cached = { ...event("cached", "2026-08-10T09:00:00-04:00", "2026-08-10T10:00:00-04:00"), attribution: "JG" };
     const preference: CalendarPreference = {
       id: "preference",
+      userId: "user",
       googleCalendarId: "calendar",
       calendarName: "Family",
       displayAlias: "Our family",
@@ -46,6 +47,7 @@ describe("calendar event placement", () => {
       isSelected: true,
       isPrimary: false,
       sectionGroup: "supplemental",
+      accessRole: "owner",
     };
 
     expect(decorateCalendarEvents([cached], [preference])).toEqual([

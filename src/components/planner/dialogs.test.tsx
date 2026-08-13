@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EventDetailDialog, LocationDialog } from "@/components/planner/dialogs";
+import { CalendarEventEditorDialog, EventDetailDialog, LocationDialog } from "@/components/planner/dialogs";
 import type { CalendarEvent } from "@/types/domain";
 
 const searchLocationsAction = vi.fn();
@@ -110,7 +110,7 @@ describe("EventDetailDialog", () => {
     };
     const onHide = vi.fn().mockResolvedValue(null);
 
-    render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={onHide} />);
+    render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={onHide} onEdit={vi.fn()} />);
 
     expect(screen.getByRole("dialog", { name: "Calendar event" })).toBeInTheDocument();
     expect(screen.getByText("Dinner reservation")).toBeInTheDocument();
@@ -122,5 +122,55 @@ describe("EventDetailDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Hide from Common Week" }));
     await waitFor(() => expect(onHide).toHaveBeenCalledWith(event));
+  });
+});
+
+describe("CalendarEventEditorDialog", () => {
+  const calendars = [{
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Family",
+    color: "#688173",
+    sectionGroup: "critical" as const,
+  }];
+
+  it("keeps entered content visible when a Google save fails", async () => {
+    const onSave = vi.fn().mockResolvedValue("Google Calendar could not save this change. Your edits are still here.");
+    render(<CalendarEventEditorDialog date="2026-08-15" calendars={calendars} timeZone="America/New_York" onClose={vi.fn()} onSave={onSave} onDelete={vi.fn()} />);
+
+    const title = screen.getByRole("textbox", { name: "Title" });
+    fireEvent.change(title, { target: { value: "Dinner outside" } });
+    fireEvent.change(screen.getByLabelText("Location"), { target: { value: "The patio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add event" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your edits are still here");
+    expect(title).toHaveValue("Dinner outside");
+    expect(screen.getByLabelText("Location")).toHaveValue("The patio");
+  });
+
+  it("requires explicit confirmation before deleting from Google", async () => {
+    const event: CalendarEvent = {
+      id: "family:event-1",
+      providerEventId: "event-1",
+      calendarPreferenceId: calendars[0].id,
+      etag: "etag-1",
+      canEdit: true,
+      title: "Dinner reservation",
+      start: "2026-08-15T19:00:00-04:00",
+      end: "2026-08-15T21:00:00-04:00",
+      allDay: false,
+      calendarId: "family",
+      calendarName: "Family",
+      calendarAlias: "Family",
+      calendarColor: "#688173",
+      attribution: "FA",
+      sectionGroup: "critical",
+    };
+    const onDelete = vi.fn().mockResolvedValue(null);
+    render(<CalendarEventEditorDialog date="2026-08-15" event={event} calendars={calendars} timeZone="America/New_York" onClose={vi.fn()} onSave={vi.fn()} onDelete={onDelete} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete from Google" }));
+    expect(onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Yes, delete from Google" }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(event));
   });
 });

@@ -6,7 +6,7 @@ The production application uses the existing self-hosted PostgreSQL 16 service. 
 
 ## What is implemented
 
-- Independent Google sign-in for each member with read-only Google Calendar authorization
+- Independent Google sign-in for each member, read-only Calendar by default, and a separate opt-in for single-event editing
 - Shared single-household model with email-matched partner invitations
 - Selected primary, additional, and shared calendars with aliases, colors, all-day/timed/multi-day events, and conflict flags
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
@@ -74,7 +74,7 @@ Key paths:
 ## Current V1 constraints
 
 - Invitations are recorded securely but not emailed. The partner opens the app and signs in with the invited Google address.
-- Google Calendar is intentionally read-only. Calendar writes, RSVP, and Calendar search are absent.
+- Single non-recurring events can be created, edited, and deleted only by the member who connected a Google calendar with write access. Recurring-event editing, RSVP, and Calendar search remain absent.
 - Forecasts use Open-Meteo's useful forecast horizon. Past weather is not reconstructed.
 - Collaboration is item-level last-write-wins, not simultaneous rich-text editing.
 - Google Cloud credentials and the public proxy/DNS still require operator setup before real-account production acceptance testing.

@@ -22,6 +22,8 @@ describe("DayColumn", () => {
         onLocation={vi.fn()}
         onWeather={vi.fn()}
         onEvent={onEvent}
+        onAddEvent={vi.fn()}
+        canAddEvent
       />,
     );
 
@@ -57,6 +59,8 @@ describe("DayColumn", () => {
         onLocation={vi.fn()}
         onWeather={vi.fn()}
         onEvent={vi.fn()}
+        onAddEvent={vi.fn()}
+        canAddEvent
       />,
     );
 
@@ -91,6 +95,8 @@ describe("DayColumn", () => {
         onLocation={vi.fn()}
         onWeather={vi.fn()}
         onEvent={vi.fn()}
+        onAddEvent={vi.fn()}
+        canAddEvent
       />,
     );
 
@@ -100,5 +106,31 @@ describe("DayColumn", () => {
     fireEvent.change(input, { target: { value: "Dinner outside if sunny" } });
     fireEvent.blur(input);
     expect(input).toHaveValue("Dinner outside if sunny");
+  });
+
+  it("opens the single-event editor from the calendar section", () => {
+    const data = getDemoPlannerData();
+    const onAddEvent = vi.fn();
+    render(
+      <DayColumn
+        day={data.days[0]}
+        categories={data.categories}
+        timeZone={data.household.timezone}
+        temperatureUnit={data.household.temperatureUnit}
+        calendarState={data.calendarState}
+        weatherState={data.weatherState}
+        onAdd={vi.fn()}
+        onToggle={vi.fn()}
+        onEdit={vi.fn()}
+        onRetry={vi.fn()}
+        onLocation={vi.fn()}
+        onWeather={vi.fn()}
+        onEvent={vi.fn()}
+        onAddEvent={onAddEvent}
+        canAddEvent
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add event" }));
+    expect(onAddEvent).toHaveBeenCalledWith(data.days[0].date);
   });
 });

@@ -77,6 +77,13 @@ export interface DailyWeather {
 
 export interface CalendarEvent {
   id: string;
+  providerEventId?: string;
+  sourceUserId?: string;
+  calendarPreferenceId?: string;
+  etag?: string;
+  recurringEventId?: string;
+  originalStartTime?: string;
+  canEdit?: boolean;
   title: string;
   description?: string;
   location?: string;
@@ -95,6 +102,34 @@ export interface CalendarEvent {
 
 export type CalendarSectionGroup = "critical" | "supplemental";
 
+export type GoogleCalendarAccessRole =
+  | "freeBusyReader"
+  | "reader"
+  | "writer"
+  | "owner";
+
+export interface EditableCalendar {
+  id: string;
+  name: string;
+  color: string;
+  sectionGroup: CalendarSectionGroup;
+}
+
+export interface CalendarEventDraft {
+  requestId: string;
+  calendarPreferenceId: string;
+  providerEventId?: string;
+  etag?: string;
+  title: string;
+  description: string;
+  location: string;
+  allDay: boolean;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface HiddenCalendarEvent {
   id: string;
   eventId: string;
@@ -106,6 +141,7 @@ export interface HiddenCalendarEvent {
 
 export interface CalendarPreference {
   id: string;
+  userId: string;
   googleCalendarId: string;
   calendarName: string;
   displayAlias: string | null;
@@ -114,6 +150,7 @@ export interface CalendarPreference {
   isSelected: boolean;
   isPrimary: boolean;
   sectionGroup: CalendarSectionGroup;
+  accessRole: GoogleCalendarAccessRole;
 }
 
 export interface DayPlan {
@@ -137,6 +174,7 @@ export interface WeeklyPlannerData {
   weeklyItems: PlanningItem[];
   locations: HouseholdLocation[];
   categories: PlanningCategory[];
+  editableCalendars: EditableCalendar[];
   calendarState: PlannerSourceState;
   weatherState: PlannerSourceState;
   isDemo: boolean;

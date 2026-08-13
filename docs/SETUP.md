@@ -34,11 +34,12 @@ The production workflow creates the `common_week_app` role and `common_week` dat
 
 1. Create or select a Google Cloud project.
 2. Enable **Google Calendar API**.
-3. Configure the OAuth consent screen with only:
+3. Configure the OAuth consent screen with:
    - `openid`
    - `email`
    - `profile`
    - `https://www.googleapis.com/auth/calendar.readonly`
+   - `https://www.googleapis.com/auth/calendar.events`
 4. Create a **Web application** OAuth client.
 5. Add the exact authorized redirect URI:
 
@@ -66,7 +67,9 @@ GOOGLE_CLIENT_SECRET=...
 GOOGLE_TOKEN_ENCRYPTION_KEY=the-generated-base64-value
 ```
 
-The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. No Calendar write scope is requested.
+The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. Normal sign-in requests read-only Calendar access. The member must separately choose **Enable calendar editing** in Settings before Common Week requests `calendar.events`; only that member's writable calendars become editable.
+
+Because `calendar.events` is a sensitive scope, configure the Google Auth Platform Data Access screen and complete Google's verification process for general public use. While the consent screen is in testing, both household accounts must remain listed as test users.
 
 ## 3. Create and join a household
 
@@ -76,6 +79,7 @@ The OAuth flow uses state validation and PKCE. Each member's access/refresh toke
 4. Invite the second member's exact Google email in Settings.
 5. Sign out, then sign in with the invited account. A current invitation matching Google's verified email is accepted atomically.
 6. Each member selects and aliases their own visible calendars.
+7. Each member who wants event editing enables it separately in Settings and confirms that writable calendars show the editing-enabled state.
 
 ## 4. Verify PostgreSQL isolation
 
@@ -96,6 +100,7 @@ The browser never connects to PostgreSQL. Household identity comes from the serv
 - Verify two members see each other's planning changes promptly.
 - Use a third account in a different household and attempt item IDs, category IDs, and location IDs from the first household; confirm no reads or writes succeed.
 - Select primary, additional, and shared calendars; check timed, all-day, recurring-expanded, and multi-day events.
+- Create, edit, and delete a single event on the signed-in member's writable calendar. Confirm a partner's calendar and recurring events stay read-only, and confirm Hide affects Common Week without deleting from Google.
 - Exercise month, year, and DST boundaries.
 - Change Friday's location through Sunday and confirm all three weather summaries refresh.
 - Interrupt the network during quick entry and confirm typed text stays visible with Retry.

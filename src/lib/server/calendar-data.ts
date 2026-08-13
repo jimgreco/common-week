@@ -20,6 +20,7 @@ interface CalendarBundle {
 
 interface PreferenceRow {
   id: string;
+  user_id: string;
   google_calendar_id: string;
   calendar_name: string;
   display_alias: string | null;
@@ -28,6 +29,7 @@ interface PreferenceRow {
   is_selected: boolean;
   is_primary: boolean;
   section_group: "critical" | "supplemental";
+  access_role: CalendarPreference["accessRole"];
 }
 
 function attributionFor(preference: CalendarPreference): string {
@@ -51,12 +53,14 @@ function preferenceFromGoogle(
     isSelected: true,
     isPrimary: calendar.primary,
     sectionGroup: "critical",
+    accessRole: calendar.accessRole,
   };
 }
 
 function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
   return rows.map((row) => ({
     id: row.id,
+    userId: row.user_id,
     googleCalendarId: row.google_calendar_id,
     calendarName: row.calendar_name,
     displayAlias: row.display_alias,
@@ -65,13 +69,14 @@ function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
     isSelected: row.is_selected,
     isPrimary: row.is_primary,
     sectionGroup: row.section_group,
+    accessRole: row.access_role,
   }));
 }
 
 async function readPreferences(householdId: string, userId: string) {
   return query<PreferenceRow>(
-    `select id, google_calendar_id, calendar_name, display_alias, display_abbreviation,
-            color, is_selected, is_primary, section_group
+    `select id, user_id, google_calendar_id, calendar_name, display_alias, display_abbreviation,
+            color, is_selected, is_primary, section_group, access_role
        from calendar_preferences
       where household_id = $1 and user_id = $2
       order by is_primary desc, calendar_name`,
@@ -96,11 +101,13 @@ async function ensurePreferences(
           `insert into calendar_preferences (
              household_id, user_id, google_calendar_id, calendar_name, display_alias,
              display_abbreviation, color, is_selected, is_primary, section_group
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             , access_role
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            on conflict (user_id, google_calendar_id) do update set
              calendar_name = excluded.calendar_name,
              color = excluded.color,
-             is_primary = excluded.is_primary`,
+             is_primary = excluded.is_primary,
+             access_role = excluded.access_role`,
           [
             preference.householdId,
             preference.userId,
@@ -112,6 +119,7 @@ async function ensurePreferences(
             preference.isSelected,
             preference.isPrimary,
             preference.sectionGroup,
+            preference.accessRole,
           ],
         );
       }
@@ -138,7 +146,7 @@ async function eventsForMember(
     const timeMin = fromZonedTime(`${weekStart}T00:00:00`, timeZone).toISOString();
     const timeMax = fromZonedTime(`${addDateDays(weekStart, 7)}T00:00:00`, timeZone).toISOString();
     const cacheKey = createHash("sha256")
-      .update(`${weekStart}:${timeZone}:${preferences.map((preference) => `${preference.id}:${preference.isSelected}`).join(",")}`)
+      .update(`event-editing-v1:${weekStart}:${timeZone}:${preferences.map((preference) => `${preference.id}:${preference.isSelected}`).join(",")}`)
       .digest("hex");
     const cached = await query<{ events: CalendarEvent[]; expires_at: Date }>(
       `select events, expires_at from calendar_event_cache

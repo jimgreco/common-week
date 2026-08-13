@@ -118,6 +118,11 @@ function event(
   const names = { J: "Jim", R: "Rachel", M: "Miriam", F: "Family" };
   return {
     id,
+    providerEventId: id,
+    sourceUserId: owner === "R" ? "demo-rachel" : "demo-jim",
+    calendarPreferenceId: `demo-${owner}`,
+    etag: `demo-${id}`,
+    canEdit: owner === "J" || owner === "F",
     title,
     description: id === "e1" ? "Camp drop-off and morning activities." : undefined,
     location: owner === "F" ? "East Hampton, New York" : owner === "M" ? "Miriam's school" : undefined,
@@ -220,6 +225,10 @@ export function getDemoPlannerData(requestedWeek?: string): WeeklyPlannerData {
     categories: DEMO_CATEGORIES,
     calendarState: { status: "ready" },
     weatherState: { status: "ready" },
+    editableCalendars: [
+      { id: "demo-F", name: "Family", color: "#688173", sectionGroup: "critical" },
+      { id: "demo-J", name: "Jim", color: "#587f9b", sectionGroup: "supplemental" },
+    ],
     isDemo: true,
   };
 }
