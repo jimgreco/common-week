@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eventFallsOnDate, markCalendarConflicts } from "@/lib/calendar-utils";
+import { eventFallsOnDate, markCalendarConflicts, sortCalendarEvents } from "@/lib/calendar-utils";
 import { weekDates } from "@/lib/date";
 import { query } from "@/lib/server/database";
 import { getHouseholdCalendarEvents } from "@/lib/server/calendar-data";
@@ -197,7 +197,9 @@ export async function getPlannerData(
       location,
       weather: location ? weatherBundle.forecasts.get(`${location.id}:${date}`) ?? null : null,
       events: markCalendarConflicts(
-        calendarBundle.events.filter((event) => eventFallsOnDate(event, date, household.timezone)),
+        sortCalendarEvents(
+          calendarBundle.events.filter((event) => eventFallsOnDate(event, date, household.timezone)),
+        ),
       ),
       items: items.filter((item) => item.planningDate === date),
     })),

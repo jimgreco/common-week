@@ -1,6 +1,31 @@
 import { addDateDays } from "@/lib/date";
 import type { CalendarEvent } from "@/types/domain";
 
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function eventTimestamp(value: string): number {
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? Number.MAX_SAFE_INTEGER : timestamp;
+}
+
+export function sortCalendarEvents(events: CalendarEvent[]): CalendarEvent[] {
+  return [...events].sort((left, right) => {
+    if (left.allDay !== right.allDay) return left.allDay ? -1 : 1;
+
+    const startDifference = eventTimestamp(left.start) - eventTimestamp(right.start);
+    if (startDifference) return startDifference;
+
+    const endDifference = eventTimestamp(left.end) - eventTimestamp(right.end);
+    if (endDifference) return endDifference;
+
+    return compareText(left.calendarAlias, right.calendarAlias)
+      || compareText(left.title, right.title)
+      || compareText(left.id, right.id);
+  });
+}
+
 export function markCalendarConflicts(events: CalendarEvent[]): CalendarEvent[] {
   const timed = events.filter((event) => !event.allDay);
   const conflictingIds = new Set<string>();
