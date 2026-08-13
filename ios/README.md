@@ -11,7 +11,7 @@ cd ios
 xcodegen generate
 ```
 
-The Debug and Release configurations use `https://common-week.jim-greco.com` as `API_BASE_URL`. Change that value in `CommonWeek/Info.plist` when pointing a local build at another server.
+The Debug and Release configurations use `https://weekofus.com` as `API_BASE_URL`. Change that value in `CommonWeek/Info.plist` when pointing a local build at another server.
 
 For a network-free interactive preview in Simulator, launch the app with `COMMON_WEEK_DEMO=1` in the scheme environment. Preview mutations stay in memory.
 
@@ -50,4 +50,4 @@ Configure these GitHub Actions secrets before the first release:
 
 App Store Connect must also contain a Week of Us app record for `com.jimgreco.commonweek`, and the provisioning profile must be an active App Store distribution profile for that identifier.
 
-The optional repository variable `IOS_API_BASE_URL` can override the production API URL. It must use HTTPS and defaults to `https://common-week.jim-greco.com`.
+The optional repository variable `IOS_API_BASE_URL` can override the production API URL. Release validation requires the canonical `https://weekofus.com` origin.

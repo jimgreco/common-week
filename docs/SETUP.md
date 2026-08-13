@@ -50,7 +50,7 @@ http://localhost:3000/auth/callback
 For production also add:
 
 ```text
-https://common-week.jim-greco.com/auth/callback
+https://weekofus.com/auth/callback
 ```
 
 6. If the consent screen is in testing, add both household Google accounts as test users.

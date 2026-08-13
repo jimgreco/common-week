@@ -36,7 +36,7 @@ final class APIClient {
     init(session: URLSession = .shared, baseURL: URL? = nil) {
         self.session = session
         let configured = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
-        self.baseURL = baseURL ?? URL(string: configured ?? "https://common-week.jim-greco.com")!
+        self.baseURL = baseURL ?? URL(string: configured ?? "https://weekofus.com")!
     }
 
     func exchange(code: String, state: String) async throws -> NativeSession {

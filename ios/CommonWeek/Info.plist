@@ -21,7 +21,7 @@
   <key>ITSAppUsesNonExemptEncryption</key>
   <false/>
   <key>API_BASE_URL</key>
-  <string>https://common-week.jim-greco.com</string>
+  <string>https://weekofus.com</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

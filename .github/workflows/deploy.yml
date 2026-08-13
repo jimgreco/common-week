@@ -75,7 +75,7 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
           build-args: |
             APP_BUILD=${{ github.sha }}
-            NEXT_PUBLIC_APP_URL=${{ vars.PRODUCTION_BASE_URL || 'https://common-week.jim-greco.com' }}
+            NEXT_PUBLIC_APP_URL=${{ vars.PRODUCTION_BASE_URL || 'https://weekofus.com' }}
           cache-from: type=gha,scope=common-week-arm64
           cache-to: type=gha,mode=max,scope=common-week-arm64
 
@@ -86,11 +86,16 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_USER: ${{ secrets.EC2_USER }}
+          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://weekofus.com' }}
         run: |
           set -euo pipefail
           for name in COMMON_WEEK_GOOGLE_CLIENT_ID COMMON_WEEK_GOOGLE_CLIENT_SECRET EC2_HOST EC2_SSH_KEY EC2_USER; do
             test -n "${!name}" || { echo "Missing required secret: $name"; exit 1; }
           done
+          test "$PRODUCTION_BASE_URL" = "https://weekofus.com" || {
+            echo "PRODUCTION_BASE_URL must be https://weekofus.com."
+            exit 1
+          }
 
       - name: Prepare SSH
         env:
@@ -165,16 +170,17 @@ jobs:
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
+          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://weekofus.com' }}
         run: |
           set -euo pipefail
           ssh -i "$HOME/.ssh/common-week" \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
-            "COMMON_WEEK_APP_BUILD='$GITHUB_SHA' COMMON_WEEK_IMAGE='ghcr.io/$GITHUB_REPOSITORY:$GITHUB_SHA' bash -se" <<'REMOTE'
+            "COMMON_WEEK_APP_BUILD='$GITHUB_SHA' COMMON_WEEK_IMAGE='ghcr.io/$GITHUB_REPOSITORY:$GITHUB_SHA' COMMON_WEEK_APP_URL='$PRODUCTION_BASE_URL' bash -se" <<'REMOTE'
           set -euo pipefail
           cd "$HOME/deploy"
-          export COMMON_WEEK_APP_BUILD COMMON_WEEK_IMAGE
+          export COMMON_WEEK_APP_BUILD COMMON_WEEK_IMAGE COMMON_WEEK_APP_URL
           export COMPOSE_PROFILES=common-week
           export DOCKER_CONFIG="$HOME/common-week/.docker"
           secrets_file="$HOME/common-week/.env.production.pending"
@@ -205,6 +211,7 @@ jobs:
 
           update_env COMMON_WEEK_GOOGLE_CLIENT_ID "$google_client_id"
           update_env COMMON_WEEK_GOOGLE_CLIENT_SECRET "$google_client_secret"
+          update_env COMMON_WEEK_APP_URL "$COMMON_WEEK_APP_URL"
 
           if ! grep -q '^COMMON_WEEK_DB_PASSWORD=' .env 2>/dev/null; then
             umask 077

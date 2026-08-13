@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 45
     env:
       IOS_BUNDLE_ID: com.jimgreco.commonweek
-      IOS_API_BASE_URL: ${{ vars.IOS_API_BASE_URL || 'https://common-week.jim-greco.com' }}
+      IOS_API_BASE_URL: ${{ vars.IOS_API_BASE_URL || 'https://weekofus.com' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -63,6 +63,10 @@ jobs:
             https://*) ;;
             *) echo "IOS_API_BASE_URL must use HTTPS."; exit 1 ;;
           esac
+          test "$IOS_API_BASE_URL" = "https://weekofus.com" || {
+            echo "IOS_API_BASE_URL must be https://weekofus.com."
+            exit 1
+          }
 
           /usr/libexec/PlistBuddy -c "Set :API_BASE_URL $IOS_API_BASE_URL" ios/CommonWeek/Info.plist
           configured_url="$(plutil -extract API_BASE_URL raw -o - ios/CommonWeek/Info.plist)"

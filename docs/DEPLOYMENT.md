@@ -24,20 +24,20 @@ Configure these GitHub Actions secrets at the repository level or in the `produc
 Set the Actions variable:
 
 ```text
-PRODUCTION_BASE_URL=https://common-week.jim-greco.com
+PRODUCTION_BASE_URL=https://weekofus.com
 ```
 
 The deployment transfers the Google credentials through a permission-restricted temporary file, updates `~/deploy/.env`, and removes the temporary copy. The first application deployment also generates `COMMON_WEEK_DB_PASSWORD` and `COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY` directly in that protected server file. The remaining runtime values are:
 
 ```dotenv
-COMMON_WEEK_APP_URL=https://common-week.jim-greco.com
+COMMON_WEEK_APP_URL=https://weekofus.com
 COMMON_WEEK_ENABLE_DEMO=false
 ```
 
 Do not copy another app's OAuth client unless its Google configuration intentionally includes the Week of Us callback. The authorized production redirect URI must be:
 
 ```text
-https://common-week.jim-greco.com/auth/callback
+https://weekofus.com/auth/callback
 ```
 
 In Nginx Proxy Manager, create a TLS proxy host for the canonical hostname with upstream `http://common-week:3000`. Keep the proxy on the shared Compose network. Server-sent events send `X-Accel-Buffering: no`; preserve streaming through the proxy for immediate collaboration updates.
