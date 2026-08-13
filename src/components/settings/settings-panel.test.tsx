@@ -65,6 +65,7 @@ describe("SettingsPanel calendar degradation", () => {
         color: "#123456",
         isSelected: true,
         isPrimary: false,
+        sectionGroup: "critical",
       }]}
       calendarConnected
       isDemo={false}
@@ -82,6 +83,16 @@ describe("SettingsPanel calendar degradation", () => {
       isSelected: true,
       displayAlias: null,
       displayAbbreviation: "FM",
+      sectionGroup: "critical",
+    }));
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Section group for Family" }), { target: { value: "supplemental" } });
+    await waitFor(() => expect(updateCalendarPreferenceAction).toHaveBeenCalledWith({
+      id: "00000000-0000-4000-8000-000000000001",
+      isSelected: true,
+      displayAlias: null,
+      displayAbbreviation: "FM",
+      sectionGroup: "supplemental",
     }));
   });
 

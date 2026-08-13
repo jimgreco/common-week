@@ -178,6 +178,7 @@ export async function updateCalendarPreferenceAction(input: {
   isSelected: boolean;
   displayAlias: string | null;
   displayAbbreviation: string | null;
+  sectionGroup: "critical" | "supplemental";
 }): Promise<ActionResult> {
   try {
     const parsed = z.object({
@@ -188,11 +189,12 @@ export async function updateCalendarPreferenceAction(input: {
         .regex(/^[\p{L}\p{N}]{1,2}$/u)
         .transform(normalizeCalendarAbbreviation)
         .nullable(),
+      sectionGroup: z.enum(["critical", "supplemental"]),
     }).parse(input);
     const context = await requireHouseholdContext();
     const result = await query(
       `update calendar_preferences set
-         is_selected = $4, display_alias = $5, display_abbreviation = $6
+         is_selected = $4, display_alias = $5, display_abbreviation = $6, section_group = $7
         where id = $1 and household_id = $2 and user_id = $3`,
       [
         parsed.id,
@@ -201,6 +203,7 @@ export async function updateCalendarPreferenceAction(input: {
         parsed.isSelected,
         parsed.displayAlias,
         parsed.displayAbbreviation,
+        parsed.sectionGroup,
       ],
     );
     if (!result.rowCount) throw new Error("That calendar is not available.");

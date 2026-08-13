@@ -30,6 +30,30 @@ function eventTimeLabel(event: CalendarEvent, timeZone: string): string {
     : `${start}–${end}`;
 }
 
+function CalendarEventRows({
+  events,
+  timeZone,
+  onEvent,
+}: {
+  events: CalendarEvent[];
+  timeZone: string;
+  onEvent: (event: CalendarEvent) => void;
+}) {
+  return (
+    <div className="section-content event-list">
+      {events.map((event) => (
+        <button className={`calendar-event ${event.isConflict ? "has-conflict" : ""}`} type="button" onClick={() => onEvent(event)} aria-label={`${event.title}, ${eventTimeLabel(event, timeZone)}. Open details.`} key={event.id}>
+          <span className="calendar-attribution" style={{ background: event.calendarColor }} title={event.calendarAlias}>
+            {event.attribution}
+          </span>
+          <span className="event-copy"><span className="event-time">{eventTimeLabel(event, timeZone)}</span><span className="event-title" title={event.title}>{event.title}</span>{event.location && <span className="event-location">{event.location}</span>}</span>
+          {event.isConflict && <span className="conflict-mark" title="Time conflict: overlaps another event" aria-label="Time conflict"><AlertTriangle size={10} aria-hidden="true" /></span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function InlinePlanningAdd({
   date,
   type,
@@ -142,6 +166,10 @@ export function DayColumn({
 }: DayColumnProps) {
   const notes = day.items.filter((item) => item.type === "note");
   const tasks = day.items.filter((item) => item.type === "task");
+  const calendarGroups = [
+    { id: "critical", label: "Critical", events: day.events.filter((event) => event.sectionGroup === "critical") },
+    { id: "supplemental", label: "Supplemental", events: day.events.filter((event) => event.sectionGroup === "supplemental") },
+  ].filter((group) => group.events.length > 0);
   const today = isToday(day.date, timeZone);
   const weather = day.weather;
   const unitLabel = temperatureSymbol(temperatureUnit);
@@ -192,18 +220,12 @@ export function DayColumn({
       </header>
 
       <section className="day-section calendar-section" aria-label={`Calendar for ${formatMobileDate(day.date)}`}>
-        <h2>Calendar</h2>
-        <div className="section-content event-list">
-          {day.events.length ? day.events.map((event) => (
-            <button className={`calendar-event ${event.isConflict ? "has-conflict" : ""}`} type="button" onClick={() => onEvent(event)} aria-label={`${event.title}, ${eventTimeLabel(event, timeZone)}. Open details.`} key={event.id}>
-              <span className="calendar-attribution" style={{ background: event.calendarColor }} title={event.calendarAlias}>
-                {event.attribution}
-              </span>
-              <span className="event-copy"><span className="event-time">{eventTimeLabel(event, timeZone)}</span><span className="event-title" title={event.title}>{event.title}</span>{event.location && <span className="event-location">{event.location}</span>}</span>
-              {event.isConflict && <span className="conflict-mark" title="Time conflict: overlaps another event" aria-label="Time conflict"><AlertTriangle size={10} aria-hidden="true" /></span>}
-            </button>
-          )) : <p className="empty-section">{calendarState.status === "loading" ? "Loading calendar" : "No events"}</p>}
-        </div>
+        {calendarGroups.length ? calendarGroups.map((group) => (
+          <div className={`calendar-event-group is-${group.id}`} key={group.id}>
+            <h2>{group.label}</h2>
+            <CalendarEventRows events={group.events} timeZone={timeZone} onEvent={onEvent} />
+          </div>
+        )) : <><h2>Calendar</h2><p className="empty-section">{calendarState.status === "loading" ? "Loading calendar" : "No events"}</p></>}
       </section>
 
       <section className="day-section plans-section" aria-label={`Plans for ${formatMobileDate(day.date)}`}>

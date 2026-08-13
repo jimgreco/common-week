@@ -27,6 +27,7 @@ interface PreferenceRow {
   color: string;
   is_selected: boolean;
   is_primary: boolean;
+  section_group: "critical" | "supplemental";
 }
 
 function attributionFor(preference: CalendarPreference): string {
@@ -49,6 +50,7 @@ function preferenceFromGoogle(
     color: calendar.backgroundColor,
     isSelected: true,
     isPrimary: calendar.primary,
+    sectionGroup: "critical",
   };
 }
 
@@ -62,13 +64,14 @@ function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
     color: row.color,
     isSelected: row.is_selected,
     isPrimary: row.is_primary,
+    sectionGroup: row.section_group,
   }));
 }
 
 async function readPreferences(householdId: string, userId: string) {
   return query<PreferenceRow>(
     `select id, google_calendar_id, calendar_name, display_alias, display_abbreviation,
-            color, is_selected, is_primary
+            color, is_selected, is_primary, section_group
        from calendar_preferences
       where household_id = $1 and user_id = $2
       order by is_primary desc, calendar_name`,
@@ -92,8 +95,8 @@ async function ensurePreferences(
         await database.query(
           `insert into calendar_preferences (
              household_id, user_id, google_calendar_id, calendar_name, display_alias,
-             display_abbreviation, color, is_selected, is_primary
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             display_abbreviation, color, is_selected, is_primary, section_group
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            on conflict (user_id, google_calendar_id) do update set
              calendar_name = excluded.calendar_name,
              color = excluded.color,
@@ -108,6 +111,7 @@ async function ensurePreferences(
             preference.color,
             preference.isSelected,
             preference.isPrimary,
+            preference.sectionGroup,
           ],
         );
       }

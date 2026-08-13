@@ -89,8 +89,11 @@ export interface CalendarEvent {
   calendarAlias: string;
   calendarColor: string;
   attribution: string;
+  sectionGroup: CalendarSectionGroup;
   isConflict?: boolean;
 }
+
+export type CalendarSectionGroup = "critical" | "supplemental";
 
 export interface HiddenCalendarEvent {
   id: string;
@@ -110,6 +113,7 @@ export interface CalendarPreference {
   color: string;
   isSelected: boolean;
   isPrimary: boolean;
+  sectionGroup: CalendarSectionGroup;
 }
 
 export interface DayPlan {

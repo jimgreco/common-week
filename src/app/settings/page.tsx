@@ -17,7 +17,18 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   if (isDemoMode) {
     const data = getDemoPlannerData();
-    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={[]} calendarConnected={false} isDemo /></SettingsScaffold>;
+    const demoCalendars = Array.from(new Map(data.days.flatMap((day) => day.events).map((event) => [event.calendarId, event])).values()).map((event, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      googleCalendarId: event.calendarId,
+      calendarName: event.calendarName,
+      displayAlias: null,
+      displayAbbreviation: null,
+      color: event.calendarColor,
+      isSelected: true,
+      isPrimary: index === 0,
+      sectionGroup: event.sectionGroup,
+    }));
+    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} calendarConnected={false} isDemo /></SettingsScaffold>;
   }
 
   const context = await getUserContext();

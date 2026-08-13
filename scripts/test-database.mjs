@@ -103,6 +103,41 @@ try {
   assert.equal(ownHiddenEvent.rowCount, 1, "a household can manage its hidden events");
   assert.equal(foreignHiddenEvent.rowCount, 0, "hidden events cannot cross household boundaries");
 
+  const calendarPreference = (await client.query(
+    `insert into calendar_preferences (
+       household_id, user_id, google_calendar_id, calendar_name, color
+     ) values ($1, $2, 'family@example.com', 'Family', '#123456')
+     returning id, section_group`,
+    [householdA, userA],
+  )).rows[0];
+  assert.equal(calendarPreference.section_group, "critical", "new calendars default to the critical section");
+  const foreignCalendarGroupUpdate = await client.query(
+    `update calendar_preferences set section_group = 'supplemental'
+      where id = $1 and household_id = $2 and user_id = $3`,
+    [calendarPreference.id, householdB, userB],
+  );
+  assert.equal(foreignCalendarGroupUpdate.rowCount, 0, "calendar groups cannot be changed across households");
+  const ownCalendarGroupUpdate = await client.query(
+    `update calendar_preferences set section_group = 'supplemental'
+      where id = $1 and household_id = $2 and user_id = $3
+      returning section_group`,
+    [calendarPreference.id, householdA, userA],
+  );
+  assert.equal(ownCalendarGroupUpdate.rows[0].section_group, "supplemental", "a member can group their own calendar");
+
+  await client.query("savepoint invalid_calendar_group");
+  let rejectedInvalidCalendarGroup = false;
+  try {
+    await client.query(
+      "update calendar_preferences set section_group = 'untrusted' where id = $1",
+      [calendarPreference.id],
+    );
+  } catch (error) {
+    rejectedInvalidCalendarGroup = error?.code === "23514";
+    await client.query("rollback to savepoint invalid_calendar_group");
+  }
+  assert.equal(rejectedInvalidCalendarGroup, true, "calendar groups reject unknown values");
+
   const sessionToken = randomBytes(32).toString("base64url");
   const sessionHash = createHash("sha256").update(sessionToken).digest();
   await client.query(

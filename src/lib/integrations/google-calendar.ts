@@ -161,6 +161,7 @@ export class GoogleCalendarApiService implements GoogleCalendarService {
           calendarAlias: preference.displayAlias ?? preference.calendarName,
           calendarColor: preference.color,
           attribution,
+          sectionGroup: preference.sectionGroup,
         });
       }
       pageToken = payload.nextPageToken;

@@ -25,7 +25,8 @@ describe("DayColumn", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Calendar" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Critical" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Supplemental" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Plans" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Tasks" })).toBeInTheDocument();
     expect(screen.getByText("Camp")).toBeInTheDocument();

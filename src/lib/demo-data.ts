@@ -129,6 +129,7 @@ function event(
     calendarAlias: names[owner],
     calendarColor: colors[owner],
     attribution: calendarAbbreviation(names[owner]),
+    sectionGroup: owner === "J" || owner === "R" ? "supplemental" : "critical",
   };
 }
 

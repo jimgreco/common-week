@@ -105,6 +105,7 @@ describe("EventDetailDialog", () => {
       calendarAlias: "Family",
       calendarColor: "#688173",
       attribution: "FA",
+      sectionGroup: "critical",
       isConflict: true,
     };
     const onHide = vi.fn().mockResolvedValue(null);

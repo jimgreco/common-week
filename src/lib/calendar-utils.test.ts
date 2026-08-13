@@ -21,6 +21,7 @@ function event(id: string, start: string, end: string, allDay = false): Calendar
     calendarAlias: "Family",
     calendarColor: "#66867B",
     attribution: "F",
+    sectionGroup: "critical",
   };
 }
 
@@ -44,6 +45,7 @@ describe("calendar event placement", () => {
       color: "#123456",
       isSelected: true,
       isPrimary: false,
+      sectionGroup: "supplemental",
     };
 
     expect(decorateCalendarEvents([cached], [preference])).toEqual([
@@ -51,6 +53,7 @@ describe("calendar event placement", () => {
         attribution: "OU",
         calendarAlias: "Our family",
         calendarColor: "#123456",
+        sectionGroup: "supplemental",
       }),
     ]);
     expect(decorateCalendarEvents([cached], [{ ...preference, displayAbbreviation: "FA" }])[0].attribution).toBe("FA");

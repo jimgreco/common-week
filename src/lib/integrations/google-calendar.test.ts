@@ -73,6 +73,7 @@ describe("GoogleCalendarApiService", () => {
       color: "#688173",
       isSelected: true,
       isPrimary: false,
+      sectionGroup: "supplemental",
     };
 
     await expect(new GoogleCalendarApiService().listEvents(
@@ -89,6 +90,7 @@ describe("GoogleCalendarApiService", () => {
       location: "177 Main Street",
       googleUrl: "https://calendar.google.com/event?eid=example",
       end: "2026-08-15T21:00:00-04:00",
+      sectionGroup: "supplemental",
     })]);
   });
 });

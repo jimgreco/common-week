@@ -29,6 +29,7 @@ export function decorateCalendarEvents(
       calendarColor: preference.color,
       attribution: preference.displayAbbreviation
         ?? calendarAbbreviation(preference.displayAlias ?? preference.calendarName),
+      sectionGroup: preference.sectionGroup,
     };
   });
 }
