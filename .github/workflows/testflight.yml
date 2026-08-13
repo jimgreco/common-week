@@ -1,0 +1,285 @@
+name: TestFlight
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: common-week-testflight
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      IOS_BUNDLE_ID: com.jimgreco.commonweek
+      IOS_API_BASE_URL: ${{ vars.IOS_API_BASE_URL || 'https://common-week.jim-greco.com' }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          ls /Applications | grep -i '^Xcode' || true
+          for path in /Applications/Xcode_26.4.app /Applications/Xcode_26.3.app /Applications/Xcode_26.2.app /Applications/Xcode_26.1.app /Applications/Xcode_26.0.app /Applications/Xcode_26.app /Applications/Xcode-26.app /Applications/Xcode.app; do
+            if [ -d "$path" ]; then
+              sudo xcode-select -s "$path/Contents/Developer"
+              echo "Selected: $path"
+              break
+            fi
+          done
+          xcodebuild -version
+
+      - name: Validate release configuration
+        env:
+          CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+          CERT_PWD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          KC_PWD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in CERT_P12 CERT_PWD PROFILE PROFILE_NAME KC_PWD TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY IOS_API_BASE_URL; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required secret or variable: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          case "$IOS_API_BASE_URL" in
+            https://*) ;;
+            *) echo "IOS_API_BASE_URL must use HTTPS."; exit 1 ;;
+          esac
+
+          /usr/libexec/PlistBuddy -c "Set :API_BASE_URL $IOS_API_BASE_URL" ios/CommonWeek/Info.plist
+          configured_url="$(plutil -extract API_BASE_URL raw -o - ios/CommonWeek/Info.plist)"
+          test "$configured_url" = "$IOS_API_BASE_URL"
+
+      - name: Import signing assets
+        env:
+          CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+          CERT_PWD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          KC_PWD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/common-week-signing.keychain-db"
+          echo "KEYCHAIN_PATH=$KEYCHAIN" >> "$GITHUB_ENV"
+
+          security create-keychain -p "$KC_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PWD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/[\"]//g')
+          security default-keychain -s "$KEYCHAIN"
+
+          printf '%s' "$CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          echo "p12 size: $(stat -f%z "$RUNNER_TEMP/cert.p12") bytes"
+          if openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -noout -passin pass:"$CERT_PWD"; then
+            echo "openssl pkcs12 verification: OK"
+          elif openssl pkcs12 -legacy -in "$RUNNER_TEMP/cert.p12" -noout -passin pass:"$CERT_PWD"; then
+            echo "openssl pkcs12 verification: OK (legacy provider)"
+          else
+            echo "openssl pkcs12 verification: FAILED"
+            exit 1
+          fi
+
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PWD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PWD" "$KEYCHAIN"
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/common-week-app-store.mobileprovision"
+          printf '%s' "$PROFILE" | base64 -d > "$PROFILE_PATH"
+          PROFILE_PLIST="$RUNNER_TEMP/profile.plist"
+          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
+
+          actual_profile_name="$(plutil -extract Name raw -o - "$PROFILE_PLIST")"
+          actual_app_id="$(plutil -extract Entitlements.application-identifier raw -o - "$PROFILE_PLIST")"
+          actual_team_id="$(plutil -extract TeamIdentifier.0 raw -o - "$PROFILE_PLIST")"
+          echo "Provisioning profile: $actual_profile_name"
+          echo "Application ID: $actual_app_id"
+          echo "Team: $actual_team_id"
+          echo "Expires: $(plutil -extract ExpirationDate raw -o - "$PROFILE_PLIST")"
+
+          if [ "$actual_profile_name" != "$PROFILE_NAME" ]; then
+            echo "Provisioning profile name mismatch: expected '$PROFILE_NAME'."
+            exit 1
+          fi
+          if [ "$actual_app_id" != "$TEAM_ID.$IOS_BUNDLE_ID" ]; then
+            echo "Provisioning profile is for '$actual_app_id', expected '$TEAM_ID.$IOS_BUNDLE_ID'."
+            exit 1
+          fi
+          if [ "$actual_team_id" != "$TEAM_ID" ]; then
+            echo "Provisioning profile team mismatch."
+            exit 1
+          fi
+
+      - name: Set up App Store Connect API key
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          KEY_FILE="$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+          export KEY_FILE
+          python3 - <<'PY'
+          import base64
+          import os
+
+          key = os.environ["API_KEY"].strip()
+          if "\\n" in key and "\n" not in key:
+              key = key.replace("\\n", "\n")
+          if "BEGIN PRIVATE KEY" not in key:
+              try:
+                  decoded = base64.b64decode(key).decode("utf-8")
+                  if "BEGIN PRIVATE KEY" in decoded:
+                      key = decoded
+              except Exception:
+                  pass
+          if "BEGIN PRIVATE KEY" not in key:
+              raise SystemExit("APP_STORE_CONNECT_API_KEY is not a PEM or base64-encoded PEM private key.")
+          with open(os.environ["KEY_FILE"], "w", encoding="utf-8") as key_file:
+              key_file.write(key.rstrip() + "\n")
+          PY
+          chmod 600 "$KEY_FILE"
+          echo "API_KEY_PATH=$KEY_FILE" >> "$GITHUB_ENV"
+
+      - name: Compute build metadata
+        run: |
+          set -euo pipefail
+          BUILD_NUMBER="$(git rev-list --count HEAD)"
+          if ! [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Computed invalid build number '$BUILD_NUMBER'."
+            exit 1
+          fi
+          echo "IOS_BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "Build number: $BUILD_NUMBER"
+          echo "Commit: $(git rev-parse HEAD)"
+
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios/CommonWeek.xcodeproj \
+            -scheme CommonWeek \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/CommonWeek.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CURRENT_PROJECT_VERSION="$IOS_BUILD_NUMBER" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$API_KEY_PATH" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            archive
+
+      - name: Export IPA
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${IOS_BUNDLE_ID}</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
+            <key>stripSwiftSymbols</key><true/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          EOF
+
+          EXPORT_LOG="$RUNNER_TEMP/export.log"
+          if ! xcodebuild -exportArchive \
+              -archivePath "$RUNNER_TEMP/CommonWeek.xcarchive" \
+              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+              -exportPath "$RUNNER_TEMP/export" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "$API_KEY_PATH" \
+              -authenticationKeyID "$KEY_ID" \
+              -authenticationKeyIssuerID "$ISSUER_ID" 2>&1 | tee "$EXPORT_LOG"; then
+            exit 1
+          fi
+
+          if grep -Eiq "NOT_AUTHORIZED|failed to authenticate|Communication with Apple failed|Validation failed" "$EXPORT_LOG"; then
+            echo "App Store Connect export reported an authentication or validation failure."
+            exit 1
+          fi
+          IPA_PATH="$(find "$RUNNER_TEMP/export" -name '*.ipa' -print -quit)"
+          test -n "$IPA_PATH" || { echo "No IPA was exported."; exit 1; }
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          UPLOAD_LOG="$RUNNER_TEMP/altool-upload.log"
+          if ! xcrun altool --upload-app \
+              --type ios \
+              --file "$IPA_PATH" \
+              --apiKey "$KEY_ID" \
+              --apiIssuer "$ISSUER_ID" 2>&1 | tee "$UPLOAD_LOG"; then
+            exit 1
+          fi
+          if grep -Eiq "NOT_AUTHORIZED|failed to authenticate|received status code 401|UPLOAD FAILED|Validation failed|Failed to upload package|Failed to determine the Apple ID" "$UPLOAD_LOG"; then
+            echo "App Store Connect upload reported a failure."
+            exit 1
+          fi
+          if ! grep -Eiq "UPLOAD SUCCEEDED|successfully uploaded" "$UPLOAD_LOG"; then
+            echo "The upload command exited successfully but did not report an upload success marker."
+            exit 1
+          fi
+
+      - name: Publish release summary
+        run: |
+          {
+            echo "### TestFlight upload"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Bundle: \`${IOS_BUNDLE_ID}\`"
+            echo "- Version: \`1.0 (${IOS_BUILD_NUMBER})\`"
+            echo "- API: \`${IOS_API_BASE_URL}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup signing assets
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+          rm -f "${API_KEY_PATH:-}" "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/profile.plist"

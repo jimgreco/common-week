@@ -1,0 +1,202 @@
+import SwiftUI
+
+enum PlannerSheet: Identifiable {
+    case item(PlanningItem?, date: String?, type: PlanningItemType)
+    case event(CalendarEvent)
+    case newEvent(String)
+    case weather(DayPlan)
+    case location(DayPlan)
+    case search
+    case settings
+
+    var id: String {
+        switch self {
+        case .item(let item, let date, let type): "item-\(item?.id ?? date ?? "weekly")-\(type.rawValue)"
+        case .event(let event): "event-\(event.id)"
+        case .newEvent(let date): "new-event-\(date)"
+        case .weather(let day): "weather-\(day.date)"
+        case .location(let day): "location-\(day.date)"
+        case .search: "search"
+        case .settings: "settings"
+        }
+    }
+}
+
+struct PlannerView: View {
+    @ObservedObject var viewModel: PlannerViewModel
+    @ObservedObject var auth: AuthStore
+    let user: SessionIdentity
+    @State private var sheet: PlannerSheet?
+
+    var body: some View {
+        NavigationStack {
+            ZStack(alignment: .bottom) {
+                AppBackground()
+                content
+                if let toast = viewModel.toast {
+                    Label(toast, systemImage: "checkmark.circle.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(CWTheme.accentStrong)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(.regularMaterial, in: Capsule())
+                        .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
+                        .padding(.bottom, 18)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { BrandMark(compact: true) }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { sheet = .search } label: { Image(systemName: "magnifyingglass") }
+                        .accessibilityLabel("Search")
+                    Button { sheet = .settings } label: {
+                        Text(user.displayName.prefix(1)).font(.caption.bold()).frame(width: 30, height: 30).background(CWTheme.mint, in: Circle())
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
+            .sheet(item: $sheet) { destination in
+                sheetView(destination)
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if viewModel.isLoading && viewModel.data == nil {
+            LoadingWeekView()
+        } else if let error = viewModel.errorMessage, viewModel.data == nil {
+            ContentUnavailableView("The planner didn’t load", systemImage: "calendar.badge.exclamationmark", description: Text(error))
+                .overlay(alignment: .bottom) { Button("Try again") { Task { await viewModel.load() } }.buttonStyle(.borderedProminent).padding(.bottom, 80) }
+        } else if let data = viewModel.data {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    weekHeader(data)
+                    if data.isDemo {
+                        Label("Interactive preview · Changes stay on this device", systemImage: "sparkles")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(CWTheme.accentStrong)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(CWTheme.mint.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    ForEach(data.days) { day in
+                        DayCardView(day: day, data: data, viewModel: viewModel, sheet: $sheet)
+                    }
+                    WeeklyCard(data: data, viewModel: viewModel, sheet: $sheet)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 18)
+                .padding(.bottom, 48)
+            }
+            .refreshable { await viewModel.load(week: data.weekStart, quietly: true) }
+        }
+    }
+
+    private func weekHeader(_ data: WeeklyPlannerData) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Eyebrow(text: "Weekly plan")
+                    Text(WeekDate.weekTitle(data.weekStart))
+                        .font(CWTheme.display(39))
+                        .tracking(-1.5)
+                        .foregroundStyle(CWTheme.ink)
+                }
+                Spacer()
+                Button { Task { await viewModel.load(week: WeekDate.string(WeekDate.monday())) } } label: {
+                    Text("Today").font(.caption.bold()).padding(.horizontal, 12).frame(height: 38).background(.regularMaterial, in: Capsule())
+                }
+            }
+            HStack(spacing: 8) {
+                weekButton("Previous", icon: "chevron.left") { Task { await viewModel.moveWeek(by: -7) } }
+                Spacer()
+                weekButton("Next", icon: "chevron.right", trailing: true) { Task { await viewModel.moveWeek(by: 7) } }
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private func weekButton(_ title: String, icon: String, trailing: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if !trailing { Image(systemName: icon) }
+                Text(title)
+                if trailing { Image(systemName: icon) }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(CWTheme.secondaryInk)
+            .padding(.horizontal, 12).frame(height: 38)
+            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func sheetView(_ destination: PlannerSheet) -> some View {
+        if let data = viewModel.data {
+            switch destination {
+            case .item(let item, let date, let type):
+                ItemEditorView(item: item, planningDate: date, defaultType: type, data: data, viewModel: viewModel)
+            case .event(let event): EventDetailView(event: event, data: data, viewModel: viewModel)
+            case .newEvent(let date): CalendarEventEditorView(event: nil, date: date, data: data, viewModel: viewModel)
+            case .weather(let day): WeatherDetailView(day: day, unit: data.household.temperatureUnit)
+            case .location(let day): LocationPickerView(day: day, locations: data.locations, viewModel: viewModel)
+            case .search: PlannerSearchView(viewModel: viewModel)
+            case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth)
+            }
+        } else {
+            EmptyView()
+        }
+    }
+}
+
+private struct LoadingWeekView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                RoundedRectangle(cornerRadius: 8).fill(CWTheme.rule).frame(width: 220, height: 40)
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 22).fill(Color(.secondarySystemGroupedBackground)).frame(height: 350)
+                }
+            }.padding()
+        }.redacted(reason: .placeholder)
+    }
+}
+
+private struct WeeklyCard: View {
+    let data: WeeklyPlannerData
+    @ObservedObject var viewModel: PlannerViewModel
+    @Binding var sheet: PlannerSheet?
+
+    var body: some View {
+        CardSurface {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("This week").font(CWTheme.display(28)).tracking(-0.7)
+                    Text("Notes and tasks that don’t belong to one day").font(.caption).foregroundStyle(.secondary)
+                }
+                section(title: "Plans & notes", type: .note)
+                Divider()
+                section(title: "Tasks", type: .task)
+            }.padding(20)
+        }
+    }
+
+    private func section(title: String, type: PlanningItemType) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow(text: title)
+            ForEach(data.weeklyItems.filter { $0.type == type }) { item in
+                PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: nil, type: item.type) }
+            }
+            Button { sheet = .item(nil, date: nil, type: type) } label: {
+                Label("Add \(type == .note ? "a plan" : "a task")", systemImage: "plus")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(CWTheme.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading).frame(height: 44)
+            }.buttonStyle(.plain)
+        }
+    }
+}

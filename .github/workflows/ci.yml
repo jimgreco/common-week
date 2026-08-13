@@ -4,9 +4,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: common-week-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -42,3 +47,57 @@ jobs:
       - run: npm run db:migrate
       - run: npm run test:database
       - run: npm run build
+
+  ios:
+    name: iOS simulator build and unit tests
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          for path in /Applications/Xcode_26.4.app /Applications/Xcode_26.3.app /Applications/Xcode_26.2.app /Applications/Xcode_26.1.app /Applications/Xcode_26.0.app /Applications/Xcode_26.app /Applications/Xcode-26.app /Applications/Xcode.app; do
+            if [ -d "$path" ]; then
+              sudo xcode-select -s "$path/Contents/Developer"
+              echo "Selected: $path"
+              break
+            fi
+          done
+          xcodebuild -version
+
+      - name: Run iOS tests
+        run: |
+          set -euo pipefail
+          mkdir -p output/ci output/xcode
+          simulator_id="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && /(Shutdown|Booted)/ { print $2; exit }')"
+          if [ -z "$simulator_id" ]; then
+            echo "No available iPhone simulator was found."
+            exit 1
+          fi
+          xcodebuild test \
+            -project ios/CommonWeek.xcodeproj \
+            -scheme CommonWeek \
+            -destination "platform=iOS Simulator,id=$simulator_id" \
+            -resultBundlePath output/xcode/CommonWeekTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee output/ci/ios-tests.log
+
+      - name: Upload iOS diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-diagnostics
+          path: |
+            output/ci/ios-tests.log
+            output/xcode/CommonWeekTests.xcresult
+          if-no-files-found: warn
+          retention-days: 14
+
+  testflight:
+    name: TestFlight
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [verify, ios]
+    uses: ./.github/workflows/testflight.yml
+    secrets: inherit
