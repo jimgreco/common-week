@@ -5,13 +5,22 @@ import { z } from "zod";
 import { datesForLocationScope, isDateOnly, weekStartForDate } from "@/lib/date";
 import { geocodingService } from "@/lib/integrations/geocoding";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
-import { postgresErrorCode, query } from "@/lib/server/database";
+import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
 import { getPlannerData } from "@/lib/server/planner-data";
-import type { ActionResult, GeocodingResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
+import type { ActionResult, GeocodingResult, HouseholdLocation, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
 
 const uuid = z.string().uuid();
 const itemText = z.string().trim().min(1).max(1000);
 const dateOnly = z.string().refine(isDateOnly, "Invalid date.");
+
+function validTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 interface PlanningRow {
   id: string;
@@ -226,6 +235,82 @@ export async function setDailyLocationAction(input: {
     return { ok: true };
   } catch (error) {
     return actionError(error, "Location changes could not be saved.");
+  }
+}
+
+export async function setGeocodedLocationAction(input: {
+  startDate: string;
+  scope: "day" | "through-sunday" | "week";
+  location: {
+    name: string;
+    latitude: number;
+    longitude: number;
+    timezone: string;
+  };
+}): Promise<ActionResult<HouseholdLocation>> {
+  try {
+    const parsed = z.object({
+      startDate: dateOnly,
+      scope: z.enum(["day", "through-sunday", "week"]),
+      location: z.object({
+        name: z.string().trim().min(1).max(120),
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        timezone: z.string().refine(validTimeZone, "Choose a valid timezone."),
+      }),
+    }).parse(input);
+    const context = await requireHouseholdContext();
+    const location = await withTransaction(async (database) => {
+      const locationResult = await database.query<{
+        id: string;
+        name: string;
+        latitude: number;
+        longitude: number;
+        timezone: string;
+        is_saved: boolean;
+      }>(
+        `insert into locations (household_id, name, latitude, longitude, timezone, is_saved)
+         values ($1, $2, $3, $4, $5, true)
+         on conflict (household_id, name) do update set
+           is_saved = true
+         returning id, name, latitude, longitude, timezone, is_saved`,
+        [
+          context.householdId,
+          parsed.location.name,
+          parsed.location.latitude,
+          parsed.location.longitude,
+          parsed.location.timezone,
+        ],
+      );
+      const savedLocation = locationResult.rows[0];
+      if (!savedLocation) throw new Error("The location could not be saved.");
+
+      await database.query(
+        `insert into daily_settings (household_id, date, location_id)
+         select $1, assigned_date, $3
+           from unnest($2::date[]) as assigned_date
+         on conflict (household_id, date) do update set location_id = excluded.location_id`,
+        [
+          context.householdId,
+          datesForLocationScope(parsed.startDate, parsed.scope),
+          savedLocation.id,
+        ],
+      );
+
+      return {
+        id: savedLocation.id,
+        name: savedLocation.name,
+        latitude: savedLocation.latitude,
+        longitude: savedLocation.longitude,
+        timezone: savedLocation.timezone,
+        isSaved: savedLocation.is_saved,
+      } satisfies HouseholdLocation;
+    });
+    revalidatePath("/settings");
+    revalidatePath("/planner");
+    return { ok: true, data: location };
+  } catch (error) {
+    return actionError<HouseholdLocation>(error, "The location could not be saved.");
   }
 }
 

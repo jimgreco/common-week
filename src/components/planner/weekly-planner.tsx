@@ -11,14 +11,15 @@ import {
   loadPlannerSourcesAction,
   searchPlanningItemsAction,
   setDailyLocationAction,
+  setGeocodedLocationAction,
   togglePlanningItemAction,
   updatePlanningItemAction,
 } from "@/app/actions/planner";
 import { BrandMark } from "@/components/brand-mark";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
-import { ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog } from "@/components/planner/dialogs";
+import { ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
-import type { DayPlan, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
+import type { DayPlan, HouseholdLocation, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
 export function WeeklyPlanner({ initialData, currentUserName }: { initialData: WeeklyPlannerData; currentUserName: string }) {
   const router = useRouter();
@@ -208,11 +209,39 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     }
   }, [initialData.isDemo, placeItem]);
 
-  const setLocation = useCallback(async (locationId: string, scope: "day" | "through-sunday" | "week") => {
-    if (!locationDate) return;
-    const location = initialData.locations.find((candidate) => candidate.id === locationId);
-    if (!location) return;
-    const original = days;
+  const setLocation = useCallback(async (selection: LocationSelection, scope: "day" | "through-sunday" | "week"): Promise<string | null> => {
+    if (!locationDate) return "Choose a day before setting its location.";
+    let location: HouseholdLocation;
+    if (selection.kind === "saved") {
+      location = selection.location;
+      if (!initialData.isDemo) {
+        const result = await setDailyLocationAction({ startDate: locationDate, locationId: location.id, scope });
+        if (!result.ok) return result.error ?? "Location changes could not be saved.";
+      }
+    } else if (initialData.isDemo) {
+      location = {
+        id: selection.result.id,
+        name: selection.name,
+        latitude: selection.result.latitude,
+        longitude: selection.result.longitude,
+        timezone: selection.result.timezone,
+        isSaved: true,
+      };
+    } else {
+      const result = await setGeocodedLocationAction({
+        startDate: locationDate,
+        scope,
+        location: {
+          name: selection.name,
+          latitude: selection.result.latitude,
+          longitude: selection.result.longitude,
+          timezone: selection.result.timezone,
+        },
+      });
+      if (!result.ok || !result.data) return result.error ?? "The location could not be saved.";
+      location = result.data;
+    }
+
     const monday = initialData.weekStart;
     const start = scope === "week" ? monday : locationDate;
     const end = scope === "day" ? start : addDateDays(monday, 6);
@@ -220,15 +249,9 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       ? { ...day, location, weather: initialData.isDemo && day.weather ? { ...day.weather, locationId: location.id } : null }
       : day));
     setLocationDate(null);
-    if (initialData.isDemo) return;
-    const result = await setDailyLocationAction({ startDate: locationDate, locationId, scope });
-    if (!result.ok) {
-      setDays(original);
-      setNotice(result.error ?? "Location changes could not be saved.");
-    } else {
-      router.refresh();
-    }
-  }, [days, initialData.isDemo, initialData.locations, initialData.weekStart, locationDate, router]);
+    if (!initialData.isDemo) router.refresh();
+    return null;
+  }, [initialData.isDemo, initialData.weekStart, locationDate, router]);
 
   const runSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -309,7 +332,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
         </section>
       </section>
 
-      {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} onClose={() => setLocationDate(null)} onSave={setLocation} />}
+      {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
       {editingItem && <ItemEditorDialog item={editingItem} weekDates={weekDates(initialData.weekStart)} categories={initialData.categories} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
       {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
