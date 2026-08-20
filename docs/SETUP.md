@@ -101,7 +101,7 @@ The browser never connects to PostgreSQL. Household identity comes from the serv
 - Use a third account in a different household and attempt item IDs and location IDs from the first household; confirm no reads or writes succeed.
 - Select primary, additional, and shared calendars; check timed, all-day, recurring-expanded, and multi-day events.
 - Leave one connected calendar private and confirm another household member cannot see its name or events; select it and confirm it appears through the live planner update.
-- Create, edit, and delete a single event on the signed-in member's writable calendar. Confirm a partner's calendar and recurring events stay read-only, and confirm Hide affects Week of Us without deleting from Google.
+- Create, edit, and delete an event on the signed-in member's writable calendar. Confirm a recurring edit or deletion affects only the selected occurrence, a partner's calendar stays read-only, and Hide affects Week of Us without deleting from Google.
 - Exercise month, year, and DST boundaries.
 - Change Friday's location through Sunday and confirm all three weather summaries refresh.
 - Interrupt the network during quick entry and confirm typed text stays visible with Retry.

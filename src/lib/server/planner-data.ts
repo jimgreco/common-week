@@ -215,8 +215,7 @@ export async function getPlannerData(
           ).map((event) => ({
             ...event,
             canEdit: event.sourceUserId === context.userId
-              && Boolean(event.calendarPreferenceId && writablePreferenceIds.has(event.calendarPreferenceId))
-              && !event.recurringEventId,
+              && Boolean(event.calendarPreferenceId && writablePreferenceIds.has(event.calendarPreferenceId)),
           })),
         ),
       ),

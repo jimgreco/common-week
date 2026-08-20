@@ -111,6 +111,8 @@ struct EventDetailView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var editing = false
+    @State private var confirmingDelete = false
+    @State private var deleting = false
 
     var body: some View {
         NavigationStack {
@@ -131,8 +133,17 @@ struct EventDetailView: View {
                     if let description = event.description, !description.isEmpty {
                         Divider(); Eyebrow(text: "Notes"); Text(description).font(.body).foregroundStyle(CWTheme.secondaryInk)
                     }
-                    Text(event.canEdit == true ? "This event can be edited in Week of Us." : "This calendar is read-only here. You can still hide the event from the shared planner.")
+                    Text(event.canEdit == true ? (event.recurringEventId == nil ? "This event can be edited in Week of Us." : "Changes here apply only to this occurrence. Use Google Calendar to change the entire series.") : "This calendar is read-only here. You can still hide the event from the shared planner.")
                         .font(.footnote).foregroundStyle(.secondary).padding(14).background(CWTheme.mint.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
+                    if event.canEdit == true {
+                        HStack {
+                            Button { editing = true } label: { Label("Edit event", systemImage: "pencil") }
+                                .buttonStyle(.borderedProminent)
+                            Button(role: .destructive) { confirmingDelete = true } label: { Label("Delete", systemImage: "trash") }
+                                .buttonStyle(.bordered)
+                                .disabled(deleting)
+                        }
+                    }
                     Button(role: .destructive) { Task { if await viewModel.hideEvent(event) { dismiss() } } } label: { Label("Hide from Week of Us", systemImage: "eye.slash") }
                         .buttonStyle(.bordered)
                 }.padding(22)
@@ -144,6 +155,18 @@ struct EventDetailView: View {
                 if event.canEdit == true { ToolbarItem(placement: .confirmationAction) { Button("Edit") { editing = true } } }
             }
             .sheet(isPresented: $editing) { CalendarEventEditorView(event: event, date: String(event.start.prefix(10)), data: data, viewModel: viewModel) }
+            .confirmationDialog(event.recurringEventId == nil ? "Delete this event from Google Calendar?" : "Delete this occurrence from Google Calendar?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button(event.recurringEventId == nil ? "Delete event" : "Delete occurrence", role: .destructive) {
+                    Task {
+                        deleting = true
+                        if await viewModel.deleteEvent(event) { dismiss() }
+                        deleting = false
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This cannot be undone from Week of Us.")
+            }
         }
     }
 
@@ -166,6 +189,7 @@ struct CalendarEventEditorView: View {
     @State private var start: Date
     @State private var end: Date
     @State private var isSaving = false
+    @State private var confirmingDelete = false
 
     init(event: CalendarEvent?, date: String, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
         self.event = event; self.date = date; self.data = data; self.viewModel = viewModel
@@ -185,6 +209,7 @@ struct CalendarEventEditorView: View {
                 Section("Event") {
                     TextField("Title", text: $title)
                     Picker("Calendar", selection: $calendarId) { ForEach(data.editableCalendars) { Text($0.name).tag($0.id) } }
+                        .disabled(event != nil)
                     Toggle("All-day event", isOn: $allDay)
                 }
                 Section("When") {
@@ -195,8 +220,11 @@ struct CalendarEventEditorView: View {
                     TextField("Location", text: $location)
                     TextField("Notes", text: $notes, axis: .vertical).lineLimit(3...7)
                 }
+                if event?.recurringEventId != nil {
+                    Section { Text("Changes apply only to this occurrence. Use Google Calendar to change the entire series.").font(.footnote).foregroundStyle(.secondary) }
+                }
                 if let event {
-                    Section { Button("Delete from Google Calendar", role: .destructive) { Task { if await viewModel.deleteEvent(event) { dismiss() } } } }
+                    Section { Button(event.recurringEventId == nil ? "Delete from Google Calendar" : "Delete this occurrence", role: .destructive) { confirmingDelete = true } }
                 }
             }
             .navigationTitle(event == nil ? "Add event" : "Edit event")
@@ -210,6 +238,16 @@ struct CalendarEventEditorView: View {
             }
         }
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+        .confirmationDialog(event?.recurringEventId == nil ? "Delete this event from Google Calendar?" : "Delete this occurrence from Google Calendar?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            if let event {
+                Button(event.recurringEventId == nil ? "Delete event" : "Delete occurrence", role: .destructive) {
+                    Task { if await viewModel.deleteEvent(event) { dismiss() } }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This cannot be undone from Week of Us.")
+        }
     }
 
     private func save() async {

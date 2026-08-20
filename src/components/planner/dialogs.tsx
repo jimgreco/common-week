@@ -90,14 +90,18 @@ export function EventDetailDialog({
   onClose,
   onHide,
   onEdit,
+  onDelete,
 }: {
   event: CalendarEvent;
   timeZone: string;
   onClose: () => void;
   onHide: (event: CalendarEvent) => Promise<string | null>;
   onEdit: (event: CalendarEvent) => void;
+  onDelete: (event: CalendarEvent) => Promise<string | null>;
 }) {
   const [hiding, setHiding] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
     <Modal title="Calendar event" onClose={onClose}>
@@ -113,13 +117,22 @@ export function EventDetailDialog({
           {event.isConflict && <div className="event-conflict-detail"><dt><AlertTriangle size={15} /><span className="sr-only">Conflict</span></dt><dd><strong>Time conflict</strong><span>This event overlaps another scheduled event.</span></dd></div>}
         </dl>
         {event.description && <div className="event-description"><h4>Notes</h4><p>{event.description}</p></div>}
-        {!event.canEdit && <p className="event-edit-note">{event.recurringEventId ? "Recurring events remain read-only in Week of Us. Open this event in Google Calendar to change the series." : "This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only."}</p>}
+        {event.recurringEventId && event.canEdit && <p className="event-edit-note">Editing or deleting this event changes only this occurrence. Use Google Calendar to change the entire series.</p>}
+        {!event.canEdit && <p className="event-edit-note">This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only.</p>}
         <p className="event-hide-note">Hiding affects Week of Us for the household. It does not change Google Calendar, and you can restore the event in Settings.</p>
         {error && <p className="location-picker-error" role="alert">{error}</p>}
+        {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event.recurringEventId ? "Delete this occurrence from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
+          setDeleting(true);
+          setError(null);
+          const deleteError = await onDelete(event);
+          setDeleting(false);
+          if (deleteError) setError(deleteError);
+          else onClose();
+        }}>{deleting ? "Deleting…" : event.recurringEventId ? "Yes, delete occurrence" : "Yes, delete from Google"}</button></div>}
       </div>
-      <footer className="modal-footer split-footer">
+      <footer className="modal-footer split-footer event-detail-footer">
         <button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Week of Us"}</button>
-        <span>{event.googleUrl && <a className="button button-secondary" href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={13} /></a>}{event.canEdit && <button className="button button-secondary" type="button" onClick={() => onEdit(event)}><Pencil size={13} />Edit event</button>}<button className="button button-primary" type="button" onClick={onClose}>Done</button></span>
+        <span>{event.googleUrl && <a className="button button-secondary" href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={13} /></a>}{event.canEdit && <button className="button button-danger-quiet" type="button" disabled={deleting} onClick={() => setConfirmDelete((current) => !current)}><Trash2 size={13} />Delete</button>}{event.canEdit && <button className="button button-secondary" type="button" disabled={deleting} onClick={() => onEdit(event)}><Pencil size={13} />Edit</button>}<button className="button button-primary" type="button" disabled={deleting} onClick={onClose}>Done</button></span>
       </footer>
     </Modal>
   );
@@ -199,7 +212,7 @@ export function CalendarEventEditorDialog({
   const editing = Boolean(event);
 
   return (
-    <Modal title={editing ? "Edit Google event" : "Add Google event"} onClose={onClose}>
+    <Modal title={editing ? event?.recurringEventId ? "Edit event occurrence" : "Edit Google event" : "Add Google event"} onClose={onClose}>
       <form onSubmit={async (submitEvent) => {
         submitEvent.preventDefault();
         setSaving(true);
@@ -224,8 +237,9 @@ export function CalendarEventEditorDialog({
           <label>Location<input value={draft.location} maxLength={1000} placeholder="Optional" onChange={(change) => setDraft({ ...draft, location: change.target.value })} /></label>
           <label>Notes<textarea value={draft.description} maxLength={8192} placeholder="Optional" onChange={(change) => setDraft({ ...draft, description: change.target.value })} /></label>
           <p className="event-timezone-note">Times use the household timezone: {timeZone}</p>
+          {event?.recurringEventId && <p className="event-edit-note">These changes apply only to this occurrence. Use Google Calendar to change the entire series.</p>}
           {error && <p className="location-picker-error" role="alert">{error}</p>}
-          {confirmDelete && <div className="delete-confirmation" role="alert"><strong>Delete this event from Google Calendar?</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
+          {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event?.recurringEventId ? "Delete this occurrence from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
             if (!event) return;
             setDeleting(true);
             setError(null);
@@ -233,7 +247,7 @@ export function CalendarEventEditorDialog({
             setDeleting(false);
             if (deleteError) setError(deleteError);
             else onClose();
-          }}>{deleting ? "Deleting…" : "Yes, delete from Google"}</button></div>}
+          }}>{deleting ? "Deleting…" : event?.recurringEventId ? "Yes, delete occurrence" : "Yes, delete from Google"}</button></div>}
         </div>
         <footer className="modal-footer split-footer">
           <span>{editing && <button className="button button-danger-quiet" type="button" disabled={saving || deleting} onClick={() => setConfirmDelete((current) => !current)}><Trash2 size={14} />Delete from Google</button>}</span>

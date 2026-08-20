@@ -99,7 +99,7 @@ export function SettingsPanel({
           <div className="calendar-privacy-note"><LockKeyhole size={17} /><div><strong>Private by default</strong><p>New Google calendars stay off until you explicitly share them. You can make a shared calendar private again at any time. <Link href="/privacy">Read how Google data is handled.</Link></p></div></div>
           {!isDemo && calendarConnected && (
             <div className={`calendar-editing-access ${calendarWriteEnabled ? "is-enabled" : ""}`}>
-              <div><strong>{calendarWriteEnabled ? "Single-event editing enabled" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "You can create, edit, and delete single events on calendars where Google gives you write access." : "Enable this separately to keep the default Google connection read-only."}</p></div>
+              <div><strong>{calendarWriteEnabled ? "Calendar editing enabled" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "You can create, edit, and delete events on calendars where Google gives you write access. Changes to a recurring event apply to the selected occurrence." : "Enable this separately to keep the default Google connection read-only."}</p></div>
               {!calendarWriteEnabled && <a className="button button-secondary" href="/auth/google?calendar_write=1">Enable calendar editing</a>}
             </div>
           )}

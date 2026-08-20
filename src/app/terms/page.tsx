@@ -17,7 +17,7 @@ export default function TermsPage() {
         {
           title: "The service",
           paragraphs: [
-            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, and tasks. Features may change as the service improves. Google Calendar editing is optional and applies only to single events on calendars where your Google account has write permission.",
+            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, and tasks. Features may change as the service improves. Google Calendar editing is optional and applies only to events on calendars where your Google account has write permission. Changes to recurring events apply only to the selected occurrence.",
           ],
         },
         {

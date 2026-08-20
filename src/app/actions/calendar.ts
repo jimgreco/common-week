@@ -83,10 +83,6 @@ function mutationFailure(error: unknown): ActionResult {
   return { ok: false, error: error instanceof Error ? error.message : "The Google Calendar event could not be saved." };
 }
 
-function rejectRecurring(event: { recurringEventId?: string }) {
-  if (event.recurringEventId) throw new Error("Recurring events are read-only in Week of Us. Open this event in Google Calendar to change the series.");
-}
-
 export async function createCalendarEventAction(input: CalendarEventDraft): Promise<ActionResult> {
   try {
     const draft = eventDraftSchema.parse(input);
@@ -112,7 +108,6 @@ export async function updateCalendarEventAction(input: CalendarEventDraft): Prom
     if (!draft.providerEventId || !draft.etag) throw new Error("Refresh the week before editing this event.");
     const { context, calendar, accessToken } = await requireWritableCalendar(draft.calendarPreferenceId);
     const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, draft.providerEventId);
-    rejectRecurring(current);
     if (!current.etag || current.etag !== draft.etag) {
       return { ok: false, error: "This event changed in Google Calendar. Refresh the week and try again." };
     }
@@ -139,7 +134,6 @@ export async function deleteCalendarEventAction(input: Pick<CalendarEventDraft, 
     }).parse(input);
     const { context, calendar, accessToken } = await requireWritableCalendar(parsed.calendarPreferenceId);
     const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, parsed.providerEventId);
-    rejectRecurring(current);
     if (!current.etag || current.etag !== parsed.etag) {
       return { ok: false, error: "This event changed in Google Calendar. Refresh the week and try again." };
     }

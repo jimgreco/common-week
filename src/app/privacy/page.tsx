@@ -26,7 +26,7 @@ export default function PrivacyPage() {
         {
           title: "How Google user data is used",
           paragraphs: [
-            "Week of Us uses Google account data to authenticate you and associate your choices with your account. It uses Google Calendar data only to provide the user-facing calendar features you request: listing your calendars, showing events from calendars you select, and, after a separate opt-in, creating, updating, or deleting single events on calendars where Google grants you write access.",
+            "Week of Us uses Google account data to authenticate you and associate your choices with your account. It uses Google Calendar data only to provide the user-facing calendar features you request: listing your calendars, showing events from calendars you select, and, after a separate opt-in, creating, updating, or deleting events on calendars where Google grants you write access. Changes to recurring events apply only to the selected occurrence.",
             "Calendar access is private by default. A newly discovered calendar is not shown to another household member unless you explicitly select it. Calendar editing is also off by default and is requested through incremental authorization only when you choose to enable it.",
           ],
         },

@@ -110,7 +110,7 @@ describe("EventDetailDialog", () => {
     };
     const onHide = vi.fn().mockResolvedValue(null);
 
-    render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={onHide} onEdit={vi.fn()} />);
+    render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={onHide} onEdit={vi.fn()} onDelete={vi.fn()} />);
 
     expect(screen.getByRole("dialog", { name: "Calendar event" })).toBeInTheDocument();
     expect(screen.getByText("Dinner reservation")).toBeInTheDocument();
@@ -122,6 +122,63 @@ describe("EventDetailDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Hide from Week of Us" }));
     await waitFor(() => expect(onHide).toHaveBeenCalledWith(event));
+  });
+
+  it("offers direct edit and confirmed delete controls for writable events", async () => {
+    const event: CalendarEvent = {
+      id: "family:event-2",
+      providerEventId: "event-2",
+      calendarPreferenceId: "00000000-0000-4000-8000-000000000001",
+      etag: "etag-2",
+      canEdit: true,
+      title: "Soccer practice",
+      start: "2026-08-16T10:00:00-04:00",
+      end: "2026-08-16T11:00:00-04:00",
+      allDay: false,
+      calendarId: "family",
+      calendarName: "Family",
+      calendarAlias: "Family",
+      calendarColor: "#688173",
+      attribution: "FA",
+      sectionGroup: "critical",
+    };
+    const onEdit = vi.fn();
+    const onDelete = vi.fn().mockResolvedValue(null);
+
+    render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={vi.fn()} onEdit={onEdit} onDelete={onDelete} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(onEdit).toHaveBeenCalledWith(event);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Yes, delete from Google" }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(event));
+  });
+
+  it("explains that a recurring edit applies to one occurrence", () => {
+    const event: CalendarEvent = {
+      id: "family:occurrence-1",
+      providerEventId: "occurrence-1",
+      calendarPreferenceId: "00000000-0000-4000-8000-000000000001",
+      etag: "etag-occurrence-1",
+      recurringEventId: "series-1",
+      canEdit: true,
+      title: "Weekly lesson",
+      start: "2026-08-16T10:00:00-04:00",
+      end: "2026-08-16T11:00:00-04:00",
+      allDay: false,
+      calendarId: "family",
+      calendarName: "Family",
+      calendarAlias: "Family",
+      calendarColor: "#688173",
+      attribution: "FA",
+      sectionGroup: "critical",
+    };
+
+    render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />);
+
+    expect(screen.getByText(/changes only this occurrence/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 });
 
