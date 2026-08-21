@@ -113,13 +113,13 @@ export function EventDetailDialog({
         <dl className="event-detail-list">
           <div><dt><Clock size={15} /><span className="sr-only">Time</span></dt><dd>{eventSchedule(event, timeZone)}</dd></div>
           {event.location && <div><dt><MapPin size={15} /><span className="sr-only">Location</span></dt><dd>{event.location}</dd></div>}
-          <div><dt><CalendarDays size={15} /><span className="sr-only">Calendar</span></dt><dd>{event.calendarAlias}</dd></div>
+          <div><dt><CalendarDays size={15} /><span className="sr-only">Calendar</span></dt><dd className="event-calendar-detail"><span>{event.calendarAlias}</span>{event.googleUrl && <a href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={12} /></a>}</dd></div>
           {event.isConflict && <div className="event-conflict-detail"><dt><AlertTriangle size={15} /><span className="sr-only">Conflict</span></dt><dd><strong>Time conflict</strong><span>This event overlaps another scheduled event.</span></dd></div>}
         </dl>
         {event.description && <div className="event-description"><h4>Notes</h4><p>{event.description}</p></div>}
         {event.recurringEventId && event.canEdit && <p className="event-edit-note">Editing or deleting this event changes only this occurrence. Use Google Calendar to change the entire series.</p>}
         {!event.canEdit && <p className="event-edit-note">This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only.</p>}
-        <p className="event-hide-note">Hiding affects Week of Us for the household. It does not change Google Calendar, and you can restore the event in Settings.</p>
+        <div className="event-hide-note"><p>Hiding affects Week of Us for the household. It does not change Google Calendar, and you can restore the event in Settings.</p><button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Week of Us"}</button></div>
         {error && <p className="location-picker-error" role="alert">{error}</p>}
         {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event.recurringEventId ? "Delete this occurrence from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
           setDeleting(true);
@@ -131,8 +131,8 @@ export function EventDetailDialog({
         }}>{deleting ? "Deleting…" : event.recurringEventId ? "Yes, delete occurrence" : "Yes, delete from Google"}</button></div>}
       </div>
       <footer className="modal-footer split-footer event-detail-footer">
-        <button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Week of Us"}</button>
-        <span>{event.googleUrl && <a className="button button-secondary" href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={13} /></a>}{event.canEdit && <button className="button button-danger-quiet" type="button" disabled={deleting} onClick={() => setConfirmDelete((current) => !current)}><Trash2 size={13} />Delete</button>}{event.canEdit && <button className="button button-secondary" type="button" disabled={deleting} onClick={() => onEdit(event)}><Pencil size={13} />Edit</button>}<button className="button button-primary" type="button" disabled={deleting} onClick={onClose}>Done</button></span>
+        {event.canEdit && <button className="button button-danger-quiet" type="button" disabled={deleting} onClick={() => setConfirmDelete((current) => !current)}><Trash2 size={13} />Delete</button>}
+        <span>{event.canEdit && <button className="button button-secondary" type="button" disabled={deleting} onClick={() => onEdit(event)}><Pencil size={13} />Edit</button>}<button className="button button-primary" type="button" disabled={deleting} onClick={onClose}>Done</button></span>
       </footer>
     </Modal>
   );

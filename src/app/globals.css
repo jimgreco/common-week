@@ -288,6 +288,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .event-detail-list > div { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 7px; }
 .event-detail-list dt { display: grid; place-items: center; min-height: 20px; color: var(--muted); }
 .event-detail-list dd { margin: 0; font-size: 12px; line-height: 1.55; }
+.event-calendar-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 12px; }
+.event-calendar-detail a { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); font-size: 10px; font-weight: 680; }
+.event-calendar-detail a:hover { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 3px; }
 .event-edit-note, .event-hide-note { margin: 0; padding: 10px 11px; background: var(--paper); color: var(--muted); font-size: 10px; line-height: 1.5; }
 .event-conflict-detail { padding: 8px 9px; border: 1px solid #ead1cc; border-radius: 5px; background: #fbefec; color: #7a4540; }
 .event-conflict-detail dd { display: flex; flex-direction: column; }
@@ -295,7 +298,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .event-description { padding-top: 14px; border-top: 1px solid var(--rule); }
 .event-description h4 { margin: 0 0 6px; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
 .event-description p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.6; white-space: pre-wrap; }
-.event-hide-note { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.event-hide-note { display: flex; align-items: center; justify-content: space-between; gap: 14px; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.event-hide-note p { margin: 0; }
+.event-hide-note .button { min-height: 34px; flex: 0 0 auto; padding: 6px 9px; white-space: nowrap; font-size: 10px; }
+.event-detail-footer .button { white-space: nowrap; }
 .choice-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 18px; padding: 0; border: 0; }
 .choice-list legend { margin-bottom: 8px; color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
 .choice-list label { display: block; cursor: pointer; }
@@ -545,9 +551,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .modal-panel, .modal-panel.modal-wide { width: 100%; max-height: 92vh; border-radius: 12px 12px 0 0; }
   .modal-header { min-height: 57px; }
   .modal-footer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
-  .event-detail-footer { align-items: stretch; flex-direction: column-reverse; }
-  .event-detail-footer > button { align-self: flex-start; }
-  .event-detail-footer > span { flex-wrap: wrap; justify-content: flex-end; }
+  .event-detail-footer { align-items: center; flex-direction: row; }
+  .event-detail-footer > span { flex-wrap: nowrap; justify-content: flex-end; }
   .event-date-row { grid-template-columns: 1fr 1fr; }
   .calendar-editing-access { align-items: stretch; flex-direction: column; }
   .form-row { flex-direction: column; }
@@ -903,10 +908,12 @@ textarea:focus-visible {
   .day-column { margin-bottom: 11px; }
   .weekly-section > header { padding: 15px 17px; }
   .weekly-columns > div { padding: 17px; }
+  .modal-backdrop { align-items: end; padding: 0; }
   .modal-panel,
   .modal-panel.modal-wide { border-radius: 20px 20px 0 0; }
   .modal-header { min-height: 64px; }
   .modal-footer { min-height: 72px; }
+  .event-hide-note { align-items: flex-start; flex-direction: column; }
   .landing-shell { padding-inline: 18px; }
   .landing-hero { gap: 52px; padding: 60px 0; }
   .landing-copy h1 { font-size: clamp(47px, 14vw, 62px); }

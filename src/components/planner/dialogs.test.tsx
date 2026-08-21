@@ -119,6 +119,7 @@ describe("EventDetailDialog", () => {
     expect(screen.getByText("Time conflict")).toBeInTheDocument();
     expect(screen.getByText("This event overlaps another scheduled event.")).toBeInTheDocument();
     expect(screen.getByText("Patio table requested.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open in Google" })).toHaveAttribute("href", event.googleUrl);
 
     fireEvent.click(screen.getByRole("button", { name: "Hide from Week of Us" }));
     await waitFor(() => expect(onHide).toHaveBeenCalledWith(event));
