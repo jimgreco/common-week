@@ -38,7 +38,8 @@ The production workflow creates the `common_week_app` role and `common_week` dat
    - `openid`
    - `email`
    - `profile`
-   - `https://www.googleapis.com/auth/calendar.readonly`
+   - `https://www.googleapis.com/auth/calendar.calendarlist.readonly`
+   - `https://www.googleapis.com/auth/calendar.events.readonly`
    - `https://www.googleapis.com/auth/calendar.events`
 4. Create a **Web application** OAuth client.
 5. Add the exact authorized redirect URI:
@@ -67,9 +68,9 @@ GOOGLE_CLIENT_SECRET=...
 GOOGLE_TOKEN_ENCRYPTION_KEY=the-generated-base64-value
 ```
 
-The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. Normal sign-in requests read-only Calendar access. Discovered calendars are private by default: only calendars that their owner explicitly selects in Settings appear in the shared planner or become available for event editing. The member must separately choose **Enable calendar editing** in Settings before Week of Us requests `calendar.events`; only that member's selected, writable calendars become editable.
+The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. Normal sign-in requests the least-privilege `calendar.calendarlist.readonly` and `calendar.events.readonly` scopes so the app can discover calendars and display their events without write access. Discovered calendars are private by default: only calendars that their owner explicitly selects in Settings appear in the shared planner or become available for event editing. The member must separately choose **Enable calendar editing** in Settings before Week of Us requests `calendar.events`; only that member's selected, writable calendars become editable. The broader `calendar.events` scope, rather than `calendar.events.owned`, is required because the product supports calendars the connected user can write to but does not own, including shared household calendars.
 
-Because `calendar.events` is a sensitive scope, configure the Google Auth Platform Data Access screen and complete Google's verification process for general public use. While the consent screen is in testing, both household accounts must remain listed as test users.
+Configure the Google Auth Platform Data Access screen with exactly the same three Calendar scopes requested by the app: `calendar.calendarlist.readonly`, `calendar.events.readonly`, and `calendar.events`. Complete Google's verification process for general public use. While the consent screen is in testing, both household accounts must remain listed as test users.
 
 ## 3. Create and join a household
 
