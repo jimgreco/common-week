@@ -21,6 +21,12 @@ Sign-in starts the existing Google OAuth flow in `ASWebAuthenticationSession`. T
 
 After sign-in, iPhone Settings can connect or reconnect Google Calendar, request the separate editing permission, refresh calendar discovery, and manage each calendar's Hide, Private, Share, alias, badge, and planner-section settings without leaving the app. Google tokens and database credentials remain server-side.
 
+## Offline and live synchronization
+
+The app stores account-isolated planner snapshots in Application Support with iOS file protection and excludes them from device backups. Plans, tasks, completion changes, deletion, and saved or searched location assignments are applied immediately and queued durably when the network is unavailable. The queue replays automatically on foregrounding, pull-to-refresh, a live household change, or an iOS background refresh. Native-created item IDs and idempotent deletion make replay safe when the server applied a request but its response was lost.
+
+The same household-scoped PostgreSQL event stream used by the website accepts the native Bearer session and refreshes the visible week after another member changes it. iOS schedules `com.jimgreco.commonweek.refresh` with `BGAppRefreshTask`; execution time remains discretionary under the operating system. Google Calendar create, edit, delete, and hide operations intentionally remain online-only because replaying a stale provider ETag could overwrite a newer Google-side change.
+
 Before using real sign-in, deploy migration `006_native_auth.sql` and the matching Next.js routes. Google still redirects to the existing HTTPS `/auth/callback`; no new Google Console callback is required.
 
 ## Verification

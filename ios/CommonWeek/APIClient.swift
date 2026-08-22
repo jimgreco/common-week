@@ -15,6 +15,10 @@ enum APIError: LocalizedError {
     }
 }
 
+struct RealtimeChange: Equatable {
+    let table: String?
+}
+
 final class APIClient {
     static let shared = APIClient()
     static let authorizationExpired = Notification.Name("CommonWeekAuthorizationExpired")
@@ -126,6 +130,65 @@ final class APIClient {
         try await send(path: "/api/ios/settings", method: "PATCH", body: CalendarPreferenceUpdate(preference))
     }
 
+    func realtimeChanges() -> AsyncThrowingStream<RealtimeChange, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    guard let token else { throw APIError.unauthorized }
+                    var request = URLRequest(url: baseURL.appending(path: "/api/realtime"))
+                    request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                    request.cachePolicy = .reloadIgnoringLocalCacheData
+                    request.timeoutInterval = 60 * 60
+                    let (bytes, response) = try await session.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+                    if http.statusCode == 401 {
+                        self.token = nil
+                        NotificationCenter.default.post(name: Self.authorizationExpired, object: nil)
+                        throw APIError.unauthorized
+                    }
+                    guard (200..<300).contains(http.statusCode) else { throw APIError.invalidResponse }
+
+                    var eventName: String?
+                    var dataLines: [String] = []
+                    for try await line in bytes.lines {
+                        try Task.checkCancellation()
+                        if line.isEmpty {
+                            if eventName == "change" {
+                                let payload = dataLines.joined(separator: "\n").data(using: .utf8) ?? Data()
+                                let table = (try? decoder.decode(RealtimePayload.self, from: payload))?.table
+                                continuation.yield(RealtimeChange(table: table))
+                            }
+                            eventName = nil
+                            dataLines.removeAll(keepingCapacity: true)
+                        } else if line.hasPrefix("event:") {
+                            eventName = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+                        } else if line.hasPrefix("data:") {
+                            dataLines.append(line.dropFirst(5).trimmingCharacters(in: .whitespaces))
+                        }
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    static func isConnectivityFailure(_ error: Error) -> Bool {
+        if case APIError.invalidResponse = error { return true }
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .cancelled, .badURL, .unsupportedURL, .userAuthenticationRequired:
+            return false
+        default:
+            return true
+        }
+    }
+
     private func send<Response: Decodable>(
         path: String,
         method: String = "GET",
@@ -161,6 +224,10 @@ final class APIClient {
         }
         return value
     }
+}
+
+private struct RealtimePayload: Decodable {
+    let table: String?
 }
 
 private struct HideEventRequest: Encodable {

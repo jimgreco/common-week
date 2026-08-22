@@ -124,6 +124,15 @@ struct PlannerView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(CWTheme.mint.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
                     }
+                    if let syncStatus = viewModel.syncStatusText {
+                        Label(syncStatus, systemImage: viewModel.isOffline ? "wifi.slash" : "arrow.triangle.2.circlepath")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(viewModel.isOffline ? Color.orange : CWTheme.secondaryInk)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                            .accessibilityLabel(syncStatus)
+                    }
                     destinationContent(data)
                 }
                 .padding(.horizontal, 14)

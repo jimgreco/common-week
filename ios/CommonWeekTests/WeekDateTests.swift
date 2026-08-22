@@ -100,4 +100,44 @@ final class WeekDateTests: XCTestCase {
         XCTAssertEqual(payload["saveForReuse"] as? Bool, false)
         XCTAssertEqual(location["name"] as? String, "Paris, Île-de-France")
     }
+
+    func testOfflineStoreKeepsSnapshotsIsolatedByAccount() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "week-of-us-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = OfflineStore(directory: directory)
+        let planner = PreviewData.planner
+
+        try await store.savePlanner(planner, userId: "user-a")
+
+        let restored = await store.cachedPlanner(userId: "user-a", weekStart: planner.weekStart)
+        let otherAccount = await store.cachedPlanner(userId: "user-b", weekStart: planner.weekStart)
+        XCTAssertEqual(restored?.weekStart, planner.weekStart)
+        XCTAssertNil(otherAccount)
+    }
+
+    func testOfflineMutationQueueSurvivesAStoreReloadAndRemovesOneAtATime() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "week-of-us-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let firstStore = OfflineStore(directory: directory)
+        let mutation = OfflineMutation(
+            kind: .toggleItem,
+            itemId: "00000000-0000-4000-8000-000000000001",
+            completed: true
+        )
+        try await firstStore.enqueue(mutation, userId: "user-a")
+
+        let reloadedStore = OfflineStore(directory: directory)
+        let userAMutations = await reloadedStore.pendingMutations(userId: "user-a")
+        let userBMutations = await reloadedStore.pendingMutations(userId: "user-b")
+        XCTAssertEqual(userAMutations.map(\.id), [mutation.id])
+        XCTAssertEqual(userAMutations.map(\.kind), [.toggleItem])
+        XCTAssertEqual(userAMutations.first?.completed, true)
+        XCTAssertTrue(userBMutations.isEmpty)
+
+        try await reloadedStore.removeMutation(mutation.id, userId: "user-a")
+        let remaining = await reloadedStore.pendingMutations(userId: "user-a")
+        XCTAssertTrue(remaining.isEmpty)
+    }
 }

@@ -1,4 +1,5 @@
 import { type NextRequest } from "next/server";
+import { bearerTokenForAuthorization } from "@/lib/auth-token";
 import { getRealtimeHub } from "@/lib/server/realtime";
 import { SESSION_COOKIE, sessionIdentityForToken } from "@/lib/server/session";
 
@@ -6,7 +7,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const identity = await sessionIdentityForToken(request.cookies.get(SESSION_COOKIE)?.value);
+  const token = request.cookies.get(SESSION_COOKIE)?.value
+    ?? bearerTokenForAuthorization(request.headers.get("authorization"));
+  const identity = await sessionIdentityForToken(token);
   if (!identity?.householdId) return new Response(null, { status: 401 });
   const householdId = identity.householdId;
 

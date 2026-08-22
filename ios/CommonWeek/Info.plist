@@ -45,6 +45,14 @@
     <key>UIApplicationSupportsMultipleScenes</key>
     <false/>
   </dict>
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+    <string>com.jimgreco.commonweek.refresh</string>
+  </array>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>fetch</string>
+  </array>
   <key>UISupportedInterfaceOrientations</key>
   <array>
     <string>UIInterfaceOrientationPortrait</string>

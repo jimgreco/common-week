@@ -25,7 +25,7 @@ async function isAuthorized(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!(await isAuthorized(request))) return unauthorizedResponse();
   try {
-    const input = itemSchema.omit({ id: true }).parse(await request.json());
+    const input = itemSchema.parse(await request.json());
     return actionResponse(await createPlanningItemAction(input));
   } catch {
     return actionResponse({ ok: false, error: "Check the planning item and try again." });

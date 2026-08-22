@@ -122,6 +122,7 @@ export async function hideCalendarEventAction(input: {
 }
 
 export async function createPlanningItemAction(input: {
+  id?: string;
   text: string;
   type: PlanningItemType;
   planningDate: string | null;
@@ -129,6 +130,7 @@ export async function createPlanningItemAction(input: {
 }): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
+      id: uuid.optional(),
       text: itemText,
       type: z.enum(["note", "task"]),
       planningDate: dateOnly.nullable(),
@@ -136,22 +138,35 @@ export async function createPlanningItemAction(input: {
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
-    const result = await query<PlanningRow>(
-      `insert into planning_items (
-         household_id, created_by, planning_date, week_start_date, type, text
-       )
-       values ($1, $2, $3::date, $4::date, $5::planning_item_type, $6)
-       returning id, planning_date::text, week_start_date::text, type,
-                 text, is_completed, sort_order, created_by, updated_at`,
-      [
-        context.householdId,
-        context.userId,
-        parsed.planningDate,
-        parsed.weekStartDate,
-        parsed.type,
-        parsed.text,
-      ],
-    );
+    const result = await withTransaction(async (database) => {
+      const inserted = await database.query<PlanningRow>(
+        `insert into planning_items (
+           id, household_id, created_by, planning_date, week_start_date, type, text
+         )
+         values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4::date, $5::date, $6::planning_item_type, $7)
+         on conflict (id) do nothing
+         returning id, planning_date::text, week_start_date::text, type,
+                   text, is_completed, sort_order, created_by, updated_at`,
+        [
+          parsed.id ?? null,
+          context.householdId,
+          context.userId,
+          parsed.planningDate,
+          parsed.weekStartDate,
+          parsed.type,
+          parsed.text,
+        ],
+      );
+      if (inserted.rows[0]) return inserted;
+      return database.query<PlanningRow>(
+        `select id, planning_date::text, week_start_date::text, type,
+                text, is_completed, sort_order, created_by, updated_at
+           from planning_items
+          where id = $1 and household_id = $2 and created_by = $3`,
+        [parsed.id, context.householdId, context.userId],
+      );
+    });
+    if (!result.rows[0]) throw new Error("That offline change is not available to this household.");
     revalidatePath("/planner");
     return { ok: true, data: mappedItem(result.rows[0]) };
   } catch (error) {
@@ -218,11 +233,12 @@ export async function deletePlanningItemAction(id: string): Promise<ActionResult
   try {
     const parsedId = uuid.parse(id);
     const context = await requireHouseholdContext();
-    const result = await query(
+    await query(
       "delete from planning_items where id = $1 and household_id = $2",
       [parsedId, context.householdId],
     );
-    if (!result.rowCount) throw new Error("That item is not available to this household.");
+    // Deletion is intentionally idempotent so a native client can safely replay
+    // a request when it did not receive the original response.
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {

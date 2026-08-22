@@ -93,7 +93,7 @@ struct HouseholdLocation: Codable, Identifiable, Hashable {
     let isDefault: Bool?
 }
 
-struct GeocodingResult: Codable, Identifiable, Hashable {
+struct GeocodingResult: Codable, Identifiable, Hashable, Equatable {
     let id: String
     let name: String
     let admin1: String?
@@ -292,7 +292,7 @@ struct GeocodedLocationAssignmentRequest: Encodable {
     }
 }
 
-struct PlanningItemDraft: Encodable {
+struct PlanningItemDraft: Codable, Equatable {
     let id: String?
     let text: String
     let type: PlanningItemType
