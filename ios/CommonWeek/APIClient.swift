@@ -97,6 +97,18 @@ final class APIClient {
         try await send(path: "/api/ios/settings", method: "PATCH", body: household)
     }
 
+    func calendarSettings() async throws -> CalendarSettings {
+        try await send(path: "/api/ios/settings")
+    }
+
+    func refreshGoogleCalendars() async throws -> EmptyResponse {
+        try await send(path: "/api/ios/settings", method: "PATCH", body: ["action": "refreshCalendars"])
+    }
+
+    func updateCalendarPreference(_ preference: CalendarPreference) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/settings", method: "PATCH", body: CalendarPreferenceUpdate(preference))
+    }
+
     private func send<Response: Decodable>(
         path: String,
         method: String = "GET",

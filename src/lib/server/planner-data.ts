@@ -2,7 +2,7 @@ import "server-only";
 
 import { eventFallsOnDate, markCalendarConflicts, sortCalendarEvents } from "@/lib/calendar-utils";
 import { weekDates } from "@/lib/date";
-import { isWritableGoogleCalendarRole } from "@/lib/google-calendar-permissions";
+import { canHouseholdMemberWriteGoogleCalendar } from "@/lib/google-calendar-permissions";
 import { query } from "@/lib/server/database";
 import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import { getHouseholdCalendarEvents } from "@/lib/server/calendar-data";
@@ -84,7 +84,7 @@ export async function getPlannerData(
   options: { includeExternal?: boolean } = {},
 ): Promise<WeeklyPlannerData> {
   const dates = weekDates(weekStart);
-  const [householdResult, locationsResult, settingsResult, planningResult, membersResult, hiddenEventsResult, currentCalendarsResult, connectionResult] =
+  const [householdResult, locationsResult, settingsResult, planningResult, membersResult, hiddenEventsResult, accessibleCalendarsResult] =
     await Promise.all([
       query<HouseholdRow>(
         `select h.id, h.name, h.timezone, h.temperature_unit, h.default_location_id
@@ -133,22 +133,23 @@ export async function getPlannerData(
       ),
       query<{
         id: string;
+        user_id: string;
         calendar_name: string;
         display_alias: string | null;
         color: string;
         section_group: "critical" | "supplemental";
         access_role: "freeBusyReader" | "reader" | "writer" | "owner";
         visibility: "hide" | "private" | "share";
+        scope: string | null;
       }>(
-        `select id, calendar_name, display_alias, color, section_group, access_role, visibility
-           from calendar_preferences
-          where household_id = $1 and user_id = $2
-          order by is_primary desc, calendar_name`,
+        `select cp.id, cp.user_id, cp.calendar_name, cp.display_alias, cp.color,
+                cp.section_group, cp.access_role, cp.visibility, gc.scope
+           from calendar_preferences cp
+           left join google_connections gc on gc.user_id = cp.user_id
+          where cp.household_id = $1
+            and (cp.user_id = $2 or cp.visibility = 'share')
+          order by (cp.user_id = $2) desc, cp.is_primary desc, cp.calendar_name`,
         [context.householdId, context.userId],
-      ),
-      query<{ scope: string | null }>(
-        "select scope from google_connections where user_id = $1",
-        [context.userId],
       ),
     ]);
 
@@ -189,10 +190,17 @@ export async function getPlannerData(
 
   const items = planningResult.rows.map(mapPlanningItem);
   const hiddenEventIds = new Set(hiddenEventsResult.rows.map((row) => row.event_id));
-  const calendarWriteEnabled = hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE);
+  const actorRole = members.find((member) => member.userId === context.userId)?.role ?? "viewer";
   const writablePreferenceIds = new Set(
-    currentCalendarsResult.rows
-      .filter((calendar) => calendar.visibility !== "hide" && calendarWriteEnabled && isWritableGoogleCalendarRole(calendar.access_role))
+    accessibleCalendarsResult.rows
+      .filter((calendar) => canHouseholdMemberWriteGoogleCalendar({
+        actorRole,
+        actorUserId: context.userId,
+        calendarOwnerUserId: calendar.user_id,
+        visibility: calendar.visibility,
+        accessRole: calendar.access_role,
+        calendarWriteEnabled: hasGoogleScope(calendar.scope, GOOGLE_CALENDAR_WRITE_SCOPE),
+      }))
       .map((calendar) => calendar.id),
   );
 
@@ -215,8 +223,7 @@ export async function getPlannerData(
             (event) => !hiddenEventIds.has(event.id) && eventFallsOnDate(event, date, household.timezone),
           ).map((event) => ({
             ...event,
-            canEdit: event.sourceUserId === context.userId
-              && Boolean(event.calendarPreferenceId && writablePreferenceIds.has(event.calendarPreferenceId)),
+            canEdit: Boolean(event.calendarPreferenceId && writablePreferenceIds.has(event.calendarPreferenceId)),
           })),
         ),
       ),
@@ -224,8 +231,8 @@ export async function getPlannerData(
     })),
     weeklyItems: items.filter((item) => item.planningDate === null),
     locations,
-    editableCalendars: currentCalendarsResult.rows
-      .filter((calendar) => calendar.visibility !== "hide" && calendarWriteEnabled && isWritableGoogleCalendarRole(calendar.access_role))
+    editableCalendars: accessibleCalendarsResult.rows
+      .filter((calendar) => writablePreferenceIds.has(calendar.id))
       .map((calendar) => ({
         id: calendar.id,
         name: calendar.display_alias ?? calendar.calendar_name,

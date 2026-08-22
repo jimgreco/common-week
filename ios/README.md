@@ -19,6 +19,8 @@ For a network-free interactive preview in Simulator, launch the app with `COMMON
 
 Sign-in starts the existing Google OAuth flow in `ASWebAuthenticationSession`. The server returns a five-minute, one-use authorization code through the `commonweek://auth` callback. The app exchanges that code and its original random state for a 30-day opaque session token, which is stored in Keychain and sent as a Bearer credential.
 
+After sign-in, iPhone Settings can connect or reconnect Google Calendar, request the separate editing permission, refresh calendar discovery, and manage each calendar's Hide, Private, Share, alias, badge, and planner-section settings without leaving the app. Google tokens and database credentials remain server-side.
+
 Before using real sign-in, deploy migration `006_native_auth.sql` and the matching Next.js routes. Google still redirects to the existing HTTPS `/auth/callback`; no new Google Console callback is required.
 
 ## Verification

@@ -59,4 +59,24 @@ final class WeekDateTests: XCTestCase {
 
         XCTAssertEqual(identity.avatarUrl?.host, "lh3.googleusercontent.com")
     }
+
+    func testCalendarSettingsDecodeNativeManagementState() throws {
+        let payload = Data(##"{"calendars":[{"id":"calendar-1","userId":"user-1","googleCalendarId":"family@example.com","calendarName":"Family","displayAlias":"Home","displayAbbreviation":"HM","color":"#123456","visibility":"share","isPrimary":true,"sectionGroup":"critical","accessRole":"owner"}],"connected":true,"writeEnabled":true}"##.utf8)
+        let settings = try JSONDecoder().decode(CalendarSettings.self, from: payload)
+
+        XCTAssertTrue(settings.connected)
+        XCTAssertTrue(settings.writeEnabled)
+        XCTAssertEqual(settings.calendars.first?.visibility, .share)
+        XCTAssertEqual(settings.calendars.first?.displayAlias, "Home")
+    }
+
+    func testCalendarPreferenceUpdateEncodesTheNativeAction() throws {
+        let calendar = CalendarPreference(id: "calendar-1", userId: "user-1", googleCalendarId: "family@example.com", calendarName: "Family", displayAlias: "Home", displayAbbreviation: "HM", color: "#123456", visibility: .private, isPrimary: true, sectionGroup: .supplemental, accessRole: "owner")
+        let encoded = try JSONEncoder().encode(CalendarPreferenceUpdate(calendar))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: String])
+
+        XCTAssertEqual(payload["action"], "updateCalendar")
+        XCTAssertEqual(payload["visibility"], "private")
+        XCTAssertEqual(payload["sectionGroup"], "supplemental")
+    }
 }

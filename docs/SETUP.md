@@ -68,7 +68,7 @@ GOOGLE_CLIENT_SECRET=...
 GOOGLE_TOKEN_ENCRYPTION_KEY=the-generated-base64-value
 ```
 
-The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. Normal sign-in requests the least-privilege `calendar.calendarlist.readonly` and `calendar.events.readonly` scopes so the app can discover calendars and display their events without write access. Discovered calendars start hidden. In Settings, each owner chooses Hide (not shown in Week of Us), Private (shown only to that owner), or Share (shown to the household). The member must separately choose **Enable calendar editing** before Week of Us requests `calendar.events`; only that member's visible, writable calendars become editable. The broader `calendar.events` scope, rather than `calendar.events.owned`, is required because the product supports calendars the connected user can write to but does not own, including shared household calendars.
+The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. Normal sign-in requests the least-privilege `calendar.calendarlist.readonly` and `calendar.events.readonly` scopes so the app can discover calendars and display their events without write access. Discovered calendars start hidden. In Settings, each owner chooses Hide (not shown in Week of Us), Private (shown only to that owner), or Share (shown to the household). The calendar owner must separately choose **Enable calendar editing** before Week of Us requests `calendar.events`; then household owners and members can add, edit, and delete events on that owner's Shared writable calendars. Private and hidden calendars, read-only Google calendars, and viewer household roles remain non-editable. The broader `calendar.events` scope, rather than `calendar.events.owned`, is required because the product supports calendars the connected user can write to but does not own, including shared household calendars.
 
 Configure the Google Auth Platform Data Access screen with exactly the same three Calendar scopes requested by the app: `calendar.calendarlist.readonly`, `calendar.events.readonly`, and `calendar.events`. Complete Google's verification process for general public use. While the consent screen is in testing, both household accounts must remain listed as test users.
 
@@ -80,7 +80,9 @@ Configure the Google Auth Platform Data Access screen with exactly the same thre
 4. Invite the second member's exact Google email in Settings.
 5. Sign out, then sign in with the invited account. A current invitation matching Google's verified email is accepted atomically.
 6. Each member chooses Hide, Private, or Share for every calendar, then optionally sets aliases and badges for visible calendars.
-7. Each member who wants event editing enables it separately in Settings and confirms that writable calendars show the editing-enabled state.
+7. Each calendar owner who wants household event editing enables it separately in Settings and confirms that their Shared writable calendars are editable by the other household member.
+
+On iPhone, these controls are native: open the account menu, choose **Settings**, then use the **Google Calendar** section to connect or reconnect, enable editing, refresh calendars, and configure Hide, Private, Share, aliases, badges, and planner sections.
 
 ## 4. Verify PostgreSQL isolation
 
@@ -102,7 +104,7 @@ The browser never connects to PostgreSQL. Household identity comes from the serv
 - Use a third account in a different household and attempt item IDs and location IDs from the first household; confirm no reads or writes succeed.
 - Select primary, additional, and shared calendars; check timed, all-day, recurring-expanded, and multi-day events.
 - Set one calendar to Hide and confirm it is absent for its owner, set one to Private and confirm only its owner sees it, then set one to Share and confirm another household member sees its name and events through the live planner update.
-- Create, edit, and delete an event on the signed-in member's writable calendar. Confirm a recurring edit or deletion affects only the selected occurrence, a partner's calendar stays read-only, and Hide affects Week of Us without deleting from Google.
+- From both household accounts, create, edit, and delete an event on each Shared writable calendar. Confirm a recurring edit or deletion affects only the selected occurrence; Private, hidden, viewer-access, and Google read-only calendars stay read-only; and Hide affects Week of Us without deleting from Google.
 - Exercise month, year, and DST boundaries.
 - Change Friday's location through Sunday and confirm all three weather summaries refresh.
 - Interrupt the network during quick entry and confirm typed text stays visible with Retry.

@@ -11,19 +11,19 @@ export default function TermsPage() {
     <LegalPage
       eyebrow="Terms"
       title="Terms of Service"
-      updated="August 13, 2026"
+      updated="August 21, 2026"
       introduction="These terms govern your use of Week of Us. By using the service, you agree to these terms. If you do not agree, do not use the service."
       sections={[
         {
           title: "The service",
           paragraphs: [
-            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, and tasks. Features may change as the service improves. Google Calendar editing is optional and applies only to events on calendars where your Google account has write permission. Changes to recurring events apply only to the selected occurrence.",
+            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, and tasks. Features may change as the service improves. Google Calendar editing is optional and applies only to events on calendars where the connected Google account has write permission. Choosing Share authorizes household owners and members to add, edit, and delete events on that calendar through Week of Us. Changes to recurring events apply only to the selected occurrence.",
           ],
         },
         {
           title: "Your account and household",
           paragraphs: [
-            "You are responsible for your Google account, the accuracy of information you provide, and activity performed through your Week of Us session. Invite only people you intend to join your household. Household members can see data that you explicitly share into the common planner.",
+            "You are responsible for your Google account, the accuracy of information you provide, and activity performed through your Week of Us session. Invite only people you trust to join your household. Household owners and members can see and change calendar data that you explicitly Share into the common planner when Calendar editing is enabled.",
           ],
         },
         {

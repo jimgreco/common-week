@@ -115,11 +115,14 @@ struct SettingsView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @State private var name: String
     @State private var timezone: String
     @State private var temperature: TemperatureUnit
     @State private var isSaving = false
+    @State private var calendarSettings: CalendarSettings?
+    @State private var isLoadingCalendars = false
+    @State private var isAuthorizingCalendar = false
+    @State private var calendarMessage: String?
 
     private let timezones: [TimezoneChoice] = [
         .init(id: "America/New_York", name: "Eastern Time"), .init(id: "America/Chicago", name: "Central Time"),
@@ -159,10 +162,11 @@ struct SettingsView: View {
                     Picker("Timezone", selection: $timezone) { ForEach(timezones) { Text($0.name).tag($0.id) } }
                     Button(isSaving ? "Saving…" : "Save preferences") { Task { await save() } }.disabled(isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                Section("Calendars & locations") {
-                    Label("\(data.editableCalendars.count) editable calendar\(data.editableCalendars.count == 1 ? "" : "s")", systemImage: "calendar")
+                Section("Google Calendar") {
+                    calendarManagement
+                }
+                Section("Locations") {
                     Label("\(data.locations.count) saved location\(data.locations.count == 1 ? "" : "s")", systemImage: "location")
-                    Button { openURL(APIClient.shared.baseURL.appending(path: "/settings")) } label: { Label("Manage full settings on the web", systemImage: "safari") }
                 }
                 Section {
                     Button("Sign out", role: .destructive) { Task { await auth.signOut(); dismiss() } }
@@ -172,6 +176,59 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .task { await loadCalendarSettings() }
+        }
+    }
+
+    @ViewBuilder
+    private var calendarManagement: some View {
+        if isLoadingCalendars && calendarSettings == nil {
+            HStack { ProgressView(); Text("Loading calendars…").foregroundStyle(.secondary) }
+        } else if let settings = calendarSettings {
+            HStack {
+                Label(settings.connected ? "Google Calendar connected" : "Google Calendar not connected", systemImage: settings.connected ? "checkmark.circle.fill" : "calendar.badge.exclamationmark")
+                    .foregroundStyle(settings.connected ? CWTheme.accentStrong : .secondary)
+                Spacer()
+                if settings.writeEnabled { Text("Editing on").font(.caption.bold()).foregroundStyle(CWTheme.accentStrong) }
+            }
+
+            if !settings.connected {
+                Button { Task { await connectCalendar(writeAccess: false) } } label: {
+                    Label(isAuthorizingCalendar ? "Connecting…" : "Connect Google Calendar", systemImage: "link")
+                }.disabled(isAuthorizingCalendar)
+            } else {
+                if !settings.writeEnabled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Calendar access is read-only.").font(.subheadline)
+                        Text("Enable editing to add, edit, and delete events on writable calendars you share with your household.").font(.caption).foregroundStyle(.secondary)
+                        Button { Task { await connectCalendar(writeAccess: true) } } label: {
+                            Label(isAuthorizingCalendar ? "Authorizing…" : "Enable calendar editing", systemImage: "pencil.and.outline")
+                        }.disabled(isAuthorizingCalendar)
+                    }
+                }
+
+                Button { Task { await refreshCalendars() } } label: {
+                    Label(isLoadingCalendars ? "Refreshing…" : "Refresh calendars", systemImage: "arrow.clockwise")
+                }.disabled(isLoadingCalendars || isAuthorizingCalendar)
+            }
+
+            if let calendarMessage {
+                Text(calendarMessage).font(.caption).foregroundStyle(calendarMessage.hasPrefix("Couldn’t") ? .red : .secondary)
+            }
+
+            if settings.connected && settings.calendars.isEmpty {
+                Text("No calendars have been discovered yet. Tap Refresh calendars to load them from Google.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            ForEach(settings.calendars) { calendar in
+                CalendarPreferenceEditor(calendar: calendar, disabled: isLoadingCalendars || isAuthorizingCalendar) { updated in
+                    await saveCalendar(updated)
+                }
+            }
+        } else {
+            ContentUnavailableView("Calendars unavailable", systemImage: "calendar.badge.exclamationmark", description: Text(calendarMessage ?? "Try loading Calendar settings again."))
+            Button("Try again") { Task { await loadCalendarSettings() } }
         }
     }
 
@@ -182,10 +239,159 @@ struct SettingsView: View {
         isSaving = false
     }
 
+    private func loadCalendarSettings(refreshPlanner: Bool = false) async {
+        if data.isDemo {
+            calendarSettings = CalendarSettings(
+                calendars: data.editableCalendars.map { calendar in
+                    CalendarPreference(id: calendar.id, userId: "demo-jim", googleCalendarId: calendar.id, calendarName: calendar.name, displayAlias: nil, displayAbbreviation: nil, color: calendar.color, visibility: .share, isPrimary: calendar.id == data.editableCalendars.first?.id, sectionGroup: calendar.sectionGroup == "supplemental" ? .supplemental : .critical, accessRole: "owner")
+                },
+                connected: true,
+                writeEnabled: true
+            )
+            return
+        }
+        isLoadingCalendars = true
+        defer { isLoadingCalendars = false }
+        do {
+            calendarSettings = try await APIClient.shared.calendarSettings()
+            if refreshPlanner { await viewModel.load(week: data.weekStart, quietly: true) }
+        } catch {
+            calendarMessage = "Couldn’t load calendars: \(error.localizedDescription)"
+        }
+    }
+
+    private func connectCalendar(writeAccess: Bool) async {
+        isAuthorizingCalendar = true
+        calendarMessage = nil
+        defer { isAuthorizingCalendar = false }
+        do {
+            try await auth.connectGoogleCalendar(writeAccess: writeAccess)
+            do { _ = try await APIClient.shared.refreshGoogleCalendars() }
+            catch {
+                calendarMessage = "Google Calendar connected, but calendars couldn’t refresh: \(error.localizedDescription)"
+                await loadCalendarSettings(refreshPlanner: true)
+                return
+            }
+            await loadCalendarSettings(refreshPlanner: true)
+            calendarMessage = writeAccess ? "Calendar editing enabled." : "Google Calendar connected."
+        } catch AuthStoreError.cancelled {
+            return
+        } catch {
+            calendarMessage = "Couldn’t authorize Calendar: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshCalendars() async {
+        isLoadingCalendars = true
+        calendarMessage = nil
+        defer { isLoadingCalendars = false }
+        do {
+            _ = try await APIClient.shared.refreshGoogleCalendars()
+            calendarSettings = try await APIClient.shared.calendarSettings()
+            await viewModel.load(week: data.weekStart, quietly: true)
+            calendarMessage = "Calendars refreshed."
+        } catch {
+            calendarSettings = try? await APIClient.shared.calendarSettings()
+            calendarMessage = "Couldn’t refresh calendars: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveCalendar(_ calendar: CalendarPreference) async -> Bool {
+        guard !data.isDemo else {
+            replaceCalendar(calendar)
+            calendarMessage = "Demo calendar settings saved."
+            return true
+        }
+        do {
+            _ = try await APIClient.shared.updateCalendarPreference(calendar)
+            replaceCalendar(calendar)
+            await viewModel.load(week: data.weekStart, quietly: true)
+            calendarMessage = calendar.visibility == .share ? "Calendar shared with your household." : "Calendar settings saved."
+            return true
+        } catch {
+            calendarMessage = "Couldn’t save calendar: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private func replaceCalendar(_ calendar: CalendarPreference) {
+        guard var settings = calendarSettings,
+              let index = settings.calendars.firstIndex(where: { $0.id == calendar.id }) else { return }
+        settings.calendars[index] = calendar
+        calendarSettings = settings
+    }
+
     private var appVersion: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
         return "Week of Us \(version) (\(build))"
+    }
+}
+
+private struct CalendarPreferenceEditor: View {
+    @State private var calendar: CalendarPreference
+    @State private var isSaving = false
+    let disabled: Bool
+    let onSave: (CalendarPreference) async -> Bool
+
+    init(calendar: CalendarPreference, disabled: Bool, onSave: @escaping (CalendarPreference) async -> Bool) {
+        _calendar = State(initialValue: calendar)
+        self.disabled = disabled
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 11) {
+                Text(calendar.displayAbbreviation ?? abbreviation(for: calendar.displayAlias ?? calendar.calendarName))
+                    .font(.caption.bold()).foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color(hex: calendar.color), in: RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(calendar.calendarName).font(.headline)
+                    Text([calendar.accessRole.capitalized, calendar.isPrimary ? "Primary" : nil].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Picker("Access", selection: $calendar.visibility) {
+                ForEach(CalendarVisibility.allCases) { visibility in Text(visibility.title).tag(visibility) }
+            }.pickerStyle(.segmented)
+
+            Text(calendar.visibility == .share ? "Household owners and members can view this calendar and edit it when Google grants write access and Calendar editing is enabled." : calendar.visibility == .private ? "Only you can see and edit this calendar in Week of Us." : "This calendar is removed from Week of Us.")
+                .font(.caption).foregroundStyle(.secondary)
+
+            TextField("Display alias", text: optionalBinding(\CalendarPreference.displayAlias))
+            TextField("Badge (2 characters)", text: optionalBinding(\CalendarPreference.displayAbbreviation))
+                .textInputAutocapitalization(.characters)
+                .onChange(of: calendar.displayAbbreviation) { _, value in
+                    let normalized = String((value ?? "").uppercased().filter { $0.isLetter || $0.isNumber }.prefix(2))
+                    calendar.displayAbbreviation = normalized.isEmpty ? nil : normalized
+                }
+            Picker("Planner section", selection: $calendar.sectionGroup) {
+                ForEach(CalendarSectionGroup.allCases) { section in Text(section.title).tag(section) }
+            }
+            Button(isSaving ? "Saving…" : "Save calendar") {
+                Task {
+                    isSaving = true
+                    _ = await onSave(calendar)
+                    isSaving = false
+                }
+            }.disabled(disabled || isSaving)
+        }.padding(.vertical, 6)
+    }
+
+    private func optionalBinding(_ keyPath: WritableKeyPath<CalendarPreference, String?>) -> Binding<String> {
+        Binding(
+            get: { calendar[keyPath: keyPath] ?? "" },
+            set: { calendar[keyPath: keyPath] = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    private func abbreviation(for name: String) -> String {
+        let words = name.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        if words.count > 1 { return words.prefix(2).compactMap(\.first).map(String.init).joined().uppercased() }
+        return String(name.prefix(2)).uppercased()
     }
 }
 

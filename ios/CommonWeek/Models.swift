@@ -160,6 +160,49 @@ struct EditableCalendar: Codable, Identifiable, Hashable {
     let sectionGroup: String
 }
 
+struct CalendarSettings: Codable, Equatable {
+    var calendars: [CalendarPreference]
+    let connected: Bool
+    let writeEnabled: Bool
+}
+
+struct CalendarPreference: Codable, Identifiable, Equatable {
+    let id: String
+    let userId: String
+    let googleCalendarId: String
+    let calendarName: String
+    var displayAlias: String?
+    var displayAbbreviation: String?
+    let color: String
+    var visibility: CalendarVisibility
+    let isPrimary: Bool
+    var sectionGroup: CalendarSectionGroup
+    let accessRole: String
+}
+
+enum CalendarVisibility: String, Codable, CaseIterable, Identifiable {
+    case hide
+    case `private`
+    case share
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .hide: "Hide"
+        case .private: "Private"
+        case .share: "Share"
+        }
+    }
+}
+
+enum CalendarSectionGroup: String, Codable, CaseIterable, Identifiable {
+    case critical
+    case supplemental
+
+    var id: String { rawValue }
+    var title: String { self == .critical ? "Critical" : "Supplemental" }
+}
+
 struct PlannerSourceState: Codable {
     let status: String
     let message: String?
@@ -178,6 +221,23 @@ struct CalendarEventDraft: Encodable {
     let endDate: String
     let startTime: String
     let endTime: String
+}
+
+struct CalendarPreferenceUpdate: Encodable {
+    let action = "updateCalendar"
+    let id: String
+    let visibility: CalendarVisibility
+    let displayAlias: String?
+    let displayAbbreviation: String?
+    let sectionGroup: CalendarSectionGroup
+
+    init(_ preference: CalendarPreference) {
+        id = preference.id
+        visibility = preference.visibility
+        displayAlias = preference.displayAlias
+        displayAbbreviation = preference.displayAbbreviation
+        sectionGroup = preference.sectionGroup
+    }
 }
 
 struct PlanningItemDraft: Encodable {

@@ -58,15 +58,21 @@ describe("Google Calendar write privacy", () => {
 
   it("does not allow event writes through a hidden calendar", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
-      if (sql.includes("cp.visibility <> 'hide'")) return { rows: [], rowCount: 0 };
-      return {
+      if (sql.includes("from calendar_preferences")) return {
         rows: [{
+          calendar_owner_user_id: "member-a",
           google_calendar_id: "personal@example.com",
           access_role: "owner",
+          visibility: "hide",
+          actor_role: "member",
           scope: "calendar.events",
           timezone: "America/New_York",
         }],
         rowCount: 1,
+      };
+      return {
+        rows: [],
+        rowCount: 0,
       };
     });
 
@@ -83,17 +89,64 @@ describe("Google Calendar write privacy", () => {
       endTime: "11:00",
     });
 
-    expect(String(mocks.query.mock.calls[0][0])).toContain("cp.visibility <> 'hide'");
-    expect(result).toEqual({ ok: false, error: "That calendar is not writable from your Google account." });
+    expect(String(mocks.query.mock.calls[0][0])).toContain("join household_members actor");
+    expect(result).toEqual({ ok: false, error: "That calendar is not editable by this household member." });
     expect(mocks.createEvent).not.toHaveBeenCalled();
+  });
+
+  it("creates an event for a household member through the shared calendar owner's connection", async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("from calendar_preferences")) return {
+        rows: [{
+          calendar_owner_user_id: "member-b",
+          google_calendar_id: "family@example.com",
+          access_role: "owner",
+          visibility: "share",
+          actor_role: "member",
+          scope: "calendar.events",
+          timezone: "America/New_York",
+        }],
+        rowCount: 1,
+      };
+      return { rows: [], rowCount: 0 };
+    });
+    mocks.getGoogleAccessToken.mockImplementation(async (userId: string) => userId === "member-b" ? "token-b" : null);
+
+    const result = await createCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      calendarPreferenceId: "00000000-0000-4000-8000-000000000011",
+      title: "Shared family event",
+      description: "",
+      location: "",
+      allDay: false,
+      startDate: "2026-08-14",
+      endDate: "2026-08-14",
+      startTime: "10:00",
+      endTime: "11:00",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.getGoogleAccessToken).toHaveBeenCalledWith("member-b");
+    expect(mocks.createEvent).toHaveBeenCalledWith(
+      "token-b",
+      "family@example.com",
+      expect.objectContaining({ summary: "Shared family event" }),
+    );
+    expect(mocks.query).toHaveBeenCalledWith(
+      "delete from calendar_event_cache where user_id = $1",
+      ["member-b"],
+    );
   });
 
   it("updates one recurring occurrence after verifying its current ETag", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("from calendar_preferences")) return {
         rows: [{
+          calendar_owner_user_id: "member-a",
           google_calendar_id: "family@example.com",
           access_role: "owner",
+          visibility: "share",
+          actor_role: "member",
           scope: "calendar.events",
           timezone: "America/New_York",
         }],
@@ -131,8 +184,11 @@ describe("Google Calendar write privacy", () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("from calendar_preferences")) return {
         rows: [{
+          calendar_owner_user_id: "member-a",
           google_calendar_id: "family@example.com",
           access_role: "writer",
+          visibility: "share",
+          actor_role: "member",
           scope: "calendar.events",
           timezone: "America/New_York",
         }],
