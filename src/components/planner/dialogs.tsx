@@ -458,8 +458,10 @@ export function WeatherDialog({ day, timeZone, temperatureUnit, onClose }: { day
   return (
     <Modal title={`${formatMobileDate(day.date)} · ${day.location?.name ?? "Weather"}`} onClose={onClose} wide>
       <div className="weather-detail-summary">
-        <span className="weather-detail-symbol" aria-hidden="true">{weatherSymbol(weather.conditionCode)}</span>
-        <div><strong>{displayTemperature(weather.highF, temperatureUnit)}° / {displayTemperature(weather.lowF, temperatureUnit)}°</strong><span>{weatherLabel(weather.conditionCode)} · {temperatureSymbol(temperatureUnit)}</span></div>
+        <div className="weather-detail-primary">
+          <span className="weather-detail-symbol" aria-hidden="true">{weatherSymbol(weather.conditionCode)}</span>
+          <span className="weather-detail-copy"><strong>{displayTemperature(weather.highF, temperatureUnit)}° / {displayTemperature(weather.lowF, temperatureUnit)}°</strong><span>{weatherLabel(weather.conditionCode)} · {temperatureSymbol(temperatureUnit)}</span></span>
+        </div>
         <div><CloudRain size={16} /><strong>{weather.precipitationProbability}%</strong><span>{weather.precipitationAmount.toFixed(2)} in</span></div>
         <div><Wind size={16} /><strong>{weather.windSpeedMph} mph</strong><span>Peak wind</span></div>
       </div>

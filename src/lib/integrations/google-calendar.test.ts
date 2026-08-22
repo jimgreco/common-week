@@ -75,7 +75,7 @@ describe("GoogleCalendarApiService", () => {
       displayAlias: null,
       displayAbbreviation: null,
       color: "#688173",
-      isSelected: true,
+      visibility: "share",
       isPrimary: false,
       sectionGroup: "supplemental",
       accessRole: "writer",

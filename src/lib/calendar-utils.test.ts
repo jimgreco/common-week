@@ -44,7 +44,7 @@ describe("calendar event placement", () => {
       displayAlias: "Our family",
       displayAbbreviation: null,
       color: "#123456",
-      isSelected: true,
+      visibility: "share",
       isPrimary: false,
       sectionGroup: "supplemental",
       accessRole: "owner",

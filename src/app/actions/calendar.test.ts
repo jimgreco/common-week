@@ -56,9 +56,9 @@ describe("Google Calendar write privacy", () => {
     mocks.updateEvent.mockResolvedValue({ id: "occurrence-1" });
   });
 
-  it("does not allow event writes through a calendar that is not shared", async () => {
+  it("does not allow event writes through a hidden calendar", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
-      if (sql.includes("cp.is_selected")) return { rows: [], rowCount: 0 };
+      if (sql.includes("cp.visibility <> 'hide'")) return { rows: [], rowCount: 0 };
       return {
         rows: [{
           google_calendar_id: "personal@example.com",
@@ -83,7 +83,7 @@ describe("Google Calendar write privacy", () => {
       endTime: "11:00",
     });
 
-    expect(String(mocks.query.mock.calls[0][0])).toContain("cp.is_selected");
+    expect(String(mocks.query.mock.calls[0][0])).toContain("cp.visibility <> 'hide'");
     expect(result).toEqual({ ok: false, error: "That calendar is not writable from your Google account." });
     expect(mocks.createEvent).not.toHaveBeenCalled();
   });

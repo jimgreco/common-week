@@ -26,8 +26,8 @@ export default function PrivacyPage() {
         {
           title: "How Google user data is used",
           paragraphs: [
-            "Week of Us uses Google account data to authenticate you and associate your choices with your account. It uses Google Calendar data only to provide the user-facing calendar features you request: listing your calendars, showing events from calendars you select, and, after a separate opt-in, creating, updating, or deleting events on calendars where Google grants you write access. Changes to recurring events apply only to the selected occurrence.",
-            "Calendar access is private by default. A newly discovered calendar is not shown to another household member unless you explicitly select it. Calendar editing is also off by default and is requested through incremental authorization only when you choose to enable it.",
+            "Week of Us uses Google account data to authenticate you and associate your choices with your account. It uses Google Calendar data only to provide the user-facing calendar features you request: listing your calendars, showing events according to the visibility you choose, and, after a separate opt-in, creating, updating, or deleting events on calendars where Google grants you write access. Changes to recurring events apply only to the selected occurrence.",
+            "Calendar access is hidden by default. You can keep a calendar out of Week of Us, show it privately only to yourself, or explicitly share it with your household. Calendar editing is also off by default and is requested through incremental authorization only when you choose to enable it.",
           ],
         },
         {
@@ -47,14 +47,14 @@ export default function PrivacyPage() {
         {
           title: "Sharing and service providers",
           paragraphs: [
-            "Calendar names and events from calendars you select are shared only with members of your Week of Us household so the shared planner can function. We do not sell personal data. We disclose data only to infrastructure providers acting on our behalf, when you direct us to, to protect the service and its users, or when legally required.",
+            "Calendar names and events are shared with members of your Week of Us household only when you choose Share for that calendar. Private calendars remain visible only to their owner, and hidden calendars do not appear in the app. We do not sell personal data. We disclose data only to infrastructure providers acting on our behalf, when you direct us to, to protect the service and its users, or when legally required.",
             "Week of Us sends saved coordinates to Open-Meteo to retrieve weather forecasts and sends location search text to Open-Meteo’s geocoding service. Google Calendar data is not sent to Open-Meteo.",
           ],
         },
         {
           title: "Your choices and deletion",
           paragraphs: [
-            "You can keep individual calendars private, stop sharing a previously selected calendar, and avoid enabling Calendar editing. You can also revoke Week of Us access at any time from your Google Account’s third-party connections page.",
+            "You can hide individual calendars, keep them private to your account, stop sharing a calendar, and avoid enabling Calendar editing. You can also revoke Week of Us access at any time from your Google Account’s third-party connections page.",
             "You can request deletion of your Week of Us account and associated personal data from Settings after signing in, or by emailing jgreco@gmail.com from the Google email address used for the account. We may need to verify emailed requests. Deletion from active systems will be completed within 30 days unless retention is required for security or legal reasons.",
           ],
         },

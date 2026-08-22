@@ -50,7 +50,7 @@ describe("SettingsPanel calendar degradation", () => {
     expect(screen.getByRole("link", { name: "Enable calendar editing" })).toHaveAttribute("href", "/auth/google?calendar_write=1");
   });
 
-  it("shows that calendars are private until their owner shares them", async () => {
+  it("offers hide, private, and share visibility states", async () => {
     updateCalendarPreferenceAction.mockResolvedValue({ ok: true });
 
     render(<SettingsPanel
@@ -66,7 +66,7 @@ describe("SettingsPanel calendar degradation", () => {
         displayAlias: null,
         displayAbbreviation: null,
         color: "#345678",
-        isSelected: false,
+        visibility: "hide",
         isPrimary: true,
         sectionGroup: "critical",
         accessRole: "owner",
@@ -76,17 +76,30 @@ describe("SettingsPanel calendar degradation", () => {
       isDemo={false}
     />);
 
-    expect(screen.getByText("Private by default")).toBeInTheDocument();
-    expect(screen.getByText("Private · Primary")).toBeInTheDocument();
-    const sharingSwitch = screen.getByRole("switch", { name: "Share Personal with workspace" });
-    expect(sharingSwitch).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText("Hidden by default")).toBeInTheDocument();
+    expect(screen.getByText("Hidden from Week of Us · Primary")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Private" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Share" })).toHaveAttribute("aria-pressed", "false");
 
-    fireEvent.click(sharingSwitch);
+    fireEvent.click(screen.getByRole("button", { name: "Private" }));
 
-    expect(screen.getByText("Shared with workspace · Primary")).toBeInTheDocument();
+    expect(screen.getByText("Only you can see this · Primary")).toBeInTheDocument();
     await waitFor(() => expect(updateCalendarPreferenceAction).toHaveBeenCalledWith({
       id: "00000000-0000-4000-8000-000000000003",
-      isSelected: true,
+      visibility: "private",
+      displayAlias: null,
+      displayAbbreviation: null,
+      sectionGroup: "critical",
+    }));
+
+    const shareButton = screen.getByRole("button", { name: "Share" });
+    await waitFor(() => expect(shareButton).toBeEnabled());
+    fireEvent.click(shareButton);
+    expect(screen.getByText("Shared with household · Primary")).toBeInTheDocument();
+    await waitFor(() => expect(updateCalendarPreferenceAction).toHaveBeenLastCalledWith({
+      id: "00000000-0000-4000-8000-000000000003",
+      visibility: "share",
       displayAlias: null,
       displayAbbreviation: null,
       sectionGroup: "critical",
@@ -109,7 +122,7 @@ describe("SettingsPanel calendar degradation", () => {
         displayAlias: null,
         displayAbbreviation: null,
         color: "#123456",
-        isSelected: true,
+        visibility: "share",
         isPrimary: false,
         sectionGroup: "critical",
         accessRole: "owner",
@@ -128,7 +141,7 @@ describe("SettingsPanel calendar degradation", () => {
 
     await waitFor(() => expect(updateCalendarPreferenceAction).toHaveBeenCalledWith({
       id: "00000000-0000-4000-8000-000000000001",
-      isSelected: true,
+      visibility: "share",
       displayAlias: null,
       displayAbbreviation: "FM",
       sectionGroup: "critical",
@@ -137,7 +150,7 @@ describe("SettingsPanel calendar degradation", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Section group for Family" }), { target: { value: "supplemental" } });
     await waitFor(() => expect(updateCalendarPreferenceAction).toHaveBeenCalledWith({
       id: "00000000-0000-4000-8000-000000000001",
-      isSelected: true,
+      visibility: "share",
       displayAlias: null,
       displayAbbreviation: "FM",
       sectionGroup: "supplemental",

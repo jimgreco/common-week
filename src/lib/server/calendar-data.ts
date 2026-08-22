@@ -26,7 +26,7 @@ interface PreferenceRow {
   display_alias: string | null;
   display_abbreviation: string | null;
   color: string;
-  is_selected: boolean;
+  visibility: CalendarPreference["visibility"];
   is_primary: boolean;
   section_group: "critical" | "supplemental";
   access_role: CalendarPreference["accessRole"];
@@ -50,9 +50,9 @@ function preferenceFromGoogle(
     displayAlias: null,
     displayAbbreviation: null,
     color: calendar.backgroundColor,
-    // Calendar discovery must never opt a private Google calendar into the
-    // shared planner. Its owner makes that choice explicitly in Settings.
-    isSelected: false,
+    // Calendar discovery must never expose a Google calendar in Week of Us.
+    // Its owner chooses Hide, Private, or Share explicitly in Settings.
+    visibility: "hide",
     isPrimary: calendar.primary,
     sectionGroup: "critical",
     accessRole: calendar.accessRole,
@@ -68,7 +68,7 @@ function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
     displayAlias: row.display_alias,
     displayAbbreviation: row.display_abbreviation,
     color: row.color,
-    isSelected: row.is_selected,
+    visibility: row.visibility,
     isPrimary: row.is_primary,
     sectionGroup: row.section_group,
     accessRole: row.access_role,
@@ -78,7 +78,7 @@ function mapPreferences(rows: PreferenceRow[]): CalendarPreference[] {
 async function readPreferences(householdId: string, userId: string) {
   return query<PreferenceRow>(
     `select id, user_id, google_calendar_id, calendar_name, display_alias, display_abbreviation,
-            color, is_selected, is_primary, section_group, access_role
+            color, visibility, is_primary, section_group, access_role
        from calendar_preferences
       where household_id = $1 and user_id = $2
       order by is_primary desc, calendar_name`,
@@ -102,9 +102,9 @@ async function ensurePreferences(
         await database.query(
           `insert into calendar_preferences (
              household_id, user_id, google_calendar_id, calendar_name, display_alias,
-             display_abbreviation, color, is_selected, is_primary, section_group
-             , access_role
-           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             display_abbreviation, color, is_selected, visibility, is_primary,
+             section_group, access_role
+           ) values ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11)
            on conflict (user_id, google_calendar_id) do update set
              calendar_name = excluded.calendar_name,
              color = excluded.color,
@@ -118,7 +118,7 @@ async function ensurePreferences(
             preference.displayAlias,
             preference.displayAbbreviation,
             preference.color,
-            preference.isSelected,
+            preference.visibility,
             preference.isPrimary,
             preference.sectionGroup,
             preference.accessRole,
@@ -134,21 +134,22 @@ async function ensurePreferences(
 async function eventsForMember(
   householdId: string,
   member: MemberIdentity,
+  viewerUserId: string,
   weekStart: string,
   timeZone: string,
 ): Promise<{ events: CalendarEvent[]; connected: boolean }> {
   const accessToken = await getGoogleAccessToken(member.userId);
   if (!accessToken) return { events: [], connected: false };
   try {
-    const preferences = (await ensurePreferences(householdId, member.userId, accessToken)).filter(
-      (preference) => preference.isSelected,
-    );
+    const preferences = (await ensurePreferences(householdId, member.userId, accessToken)).filter((preference) =>
+      preference.visibility === "share"
+      || (preference.visibility === "private" && member.userId === viewerUserId));
     if (!preferences.length) return { events: [], connected: true };
 
     const timeMin = fromZonedTime(`${weekStart}T00:00:00`, timeZone).toISOString();
     const timeMax = fromZonedTime(`${addDateDays(weekStart, 7)}T00:00:00`, timeZone).toISOString();
     const cacheKey = createHash("sha256")
-      .update(`event-editing-v1:${weekStart}:${timeZone}:${preferences.map((preference) => `${preference.id}:${preference.isSelected}`).join(",")}`)
+      .update(`calendar-visibility-v1:${weekStart}:${timeZone}:${preferences.map((preference) => `${preference.id}:${preference.visibility}`).join(",")}`)
       .digest("hex");
     const cached = await query<{ events: CalendarEvent[]; expires_at: Date }>(
       `select events, expires_at from calendar_event_cache
@@ -197,12 +198,13 @@ async function eventsForMember(
 export async function getHouseholdCalendarEvents(
   householdId: string,
   members: MemberIdentity[],
+  viewerUserId: string,
   weekStart: string,
   timeZone: string,
 ): Promise<CalendarBundle> {
   try {
     const settled = await Promise.allSettled(
-      members.map((member) => eventsForMember(householdId, member, weekStart, timeZone)),
+      members.map((member) => eventsForMember(householdId, member, viewerUserId, weekStart, timeZone)),
     );
     const fulfilled = settled.filter(
       (result): result is PromiseFulfilledResult<{ events: CalendarEvent[]; connected: boolean }> =>

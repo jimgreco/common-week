@@ -175,7 +175,7 @@ export async function removeLocationAction(locationId: string): Promise<ActionRe
 
 export async function updateCalendarPreferenceAction(input: {
   id: string;
-  isSelected: boolean;
+  visibility: "hide" | "private" | "share";
   displayAlias: string | null;
   displayAbbreviation: string | null;
   sectionGroup: "critical" | "supplemental";
@@ -183,7 +183,7 @@ export async function updateCalendarPreferenceAction(input: {
   try {
     const parsed = z.object({
       id: z.string().uuid(),
-      isSelected: z.boolean(),
+      visibility: z.enum(["hide", "private", "share"]),
       displayAlias: z.string().trim().min(1).max(40).nullable(),
       displayAbbreviation: z.string().trim().min(1).max(2)
         .regex(/^[\p{L}\p{N}]{1,2}$/u)
@@ -195,14 +195,15 @@ export async function updateCalendarPreferenceAction(input: {
     await withTransaction(async (database) => {
       const result = await database.query<{ google_calendar_id: string }>(
         `update calendar_preferences set
-           is_selected = $4, display_alias = $5, display_abbreviation = $6, section_group = $7
+           visibility = $4, is_selected = ($4 = 'share'),
+           display_alias = $5, display_abbreviation = $6, section_group = $7
           where id = $1 and household_id = $2 and user_id = $3
           returning google_calendar_id`,
         [
           parsed.id,
           context.householdId,
           context.userId,
-          parsed.isSelected,
+          parsed.visibility,
           parsed.displayAlias,
           parsed.displayAbbreviation,
           parsed.sectionGroup,
@@ -215,7 +216,7 @@ export async function updateCalendarPreferenceAction(input: {
       // If nobody else shares the same Google calendar, also discard household
       // hide records that contain provider event titles from that calendar.
       await database.query("delete from calendar_event_cache where user_id = $1", [context.userId]);
-      if (!parsed.isSelected) {
+      if (parsed.visibility !== "share") {
         await database.query(
           `delete from hidden_calendar_events hce
             where hce.household_id = $1
@@ -225,7 +226,7 @@ export async function updateCalendarPreferenceAction(input: {
                   from calendar_preferences cp
                  where cp.household_id = $1
                    and cp.google_calendar_id = $2
-                   and cp.is_selected
+                   and cp.visibility = 'share'
               )`,
           [context.householdId, calendar.google_calendar_id],
         );

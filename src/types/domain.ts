@@ -130,6 +130,8 @@ export interface HiddenCalendarEvent {
   hiddenAt: string;
 }
 
+export type CalendarVisibility = "hide" | "private" | "share";
+
 export interface CalendarPreference {
   id: string;
   userId: string;
@@ -138,7 +140,7 @@ export interface CalendarPreference {
   displayAlias: string | null;
   displayAbbreviation: string | null;
   color: string;
-  isSelected: boolean;
+  visibility: CalendarVisibility;
   isPrimary: boolean;
   sectionGroup: CalendarSectionGroup;
   accessRole: GoogleCalendarAccessRole;

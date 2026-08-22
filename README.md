@@ -8,7 +8,7 @@ The production application uses the existing self-hosted PostgreSQL 16 service. 
 
 - Independent Google sign-in for each member, read-only Calendar by default, and a separate opt-in for event editing
 - Shared single-household model with email-matched partner invitations
-- Explicitly selected primary, additional, and shared calendars; newly discovered calendars stay private until their owner shares them with the household
+- Three-state calendar visibility: Hide removes a calendar from the app, Private shows it only to its owner, and Share shows it to the household; newly discovered calendars start hidden
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
 - Native SwiftUI iPhone companion with Keychain sessions, Google OAuth handoff, and full planner editing
 - Daily and weekly notes/tasks, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state

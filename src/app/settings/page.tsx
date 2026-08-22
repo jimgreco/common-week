@@ -26,7 +26,7 @@ export default async function SettingsPage() {
       displayAlias: null,
       displayAbbreviation: null,
       color: event.calendarColor,
-      isSelected: true,
+      visibility: "share" as const,
       isPrimary: index === 0,
       sectionGroup: event.sectionGroup,
       accessRole: "owner" as const,
@@ -66,12 +66,15 @@ export default async function SettingsPage() {
             select 1
               from calendar_preferences cp
              where cp.household_id = hce.household_id
-               and cp.is_selected
+               and (
+                 cp.visibility = 'share'
+                 or (cp.visibility = 'private' and cp.user_id = $2)
+               )
                and left(hce.event_id, char_length(cp.google_calendar_id) + 1) = cp.google_calendar_id || ':'
           )
         order by hidden_at desc
         limit 100`,
-      [context.householdId],
+      [context.householdId, context.userId],
     ),
   ]);
   const household = householdResult.rows[0];

@@ -101,12 +101,29 @@ try {
     `insert into calendar_preferences (
        household_id, user_id, google_calendar_id, calendar_name, color
      ) values ($1, $2, 'family@example.com', 'Family', '#123456')
-     returning id, section_group, access_role, is_selected`,
+     returning id, section_group, access_role, is_selected, visibility`,
     [householdA, userA],
   )).rows[0];
   assert.equal(calendarPreference.section_group, "critical", "new calendars default to the critical section");
   assert.equal(calendarPreference.access_role, "reader", "new calendars default to a non-writable access role");
-  assert.equal(calendarPreference.is_selected, false, "new calendars stay private until their owner selects them");
+  assert.equal(calendarPreference.is_selected, false, "new calendars are not shared by default");
+  assert.equal(calendarPreference.visibility, "hide", "new calendars are hidden by default");
+  const privateCalendarVisibility = await client.query(
+    `update calendar_preferences set visibility = 'private'
+      where id = $1 and household_id = $2 and user_id = $3
+      returning visibility, is_selected`,
+    [calendarPreference.id, householdA, userA],
+  );
+  assert.equal(privateCalendarVisibility.rows[0].visibility, "private", "owners can keep calendars visible only to themselves");
+  assert.equal(privateCalendarVisibility.rows[0].is_selected, false, "private calendars are not marked as shared");
+  const sharedCalendarVisibility = await client.query(
+    `update calendar_preferences set visibility = 'share', is_selected = true
+      where id = $1 and household_id = $2 and user_id = $3
+      returning visibility, is_selected`,
+    [calendarPreference.id, householdA, userA],
+  );
+  assert.equal(sharedCalendarVisibility.rows[0].visibility, "share", "owners can share calendars with the household");
+  assert.equal(sharedCalendarVisibility.rows[0].is_selected, true, "shared calendars retain the compatibility flag");
   const foreignCalendarGroupUpdate = await client.query(
     `update calendar_preferences set section_group = 'supplemental'
       where id = $1 and household_id = $2 and user_id = $3`,

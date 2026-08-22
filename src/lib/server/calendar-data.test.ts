@@ -35,7 +35,7 @@ function preferenceRow(input: {
   userId: string;
   calendarId: string;
   name: string;
-  selected: boolean;
+  visibility: CalendarPreference["visibility"];
 }) {
   return {
     id: input.id,
@@ -45,7 +45,7 @@ function preferenceRow(input: {
     display_alias: null,
     display_abbreviation: null,
     color: "#345678",
-    is_selected: input.selected,
+    visibility: input.visibility,
     is_primary: false,
     section_group: "critical" as const,
     access_role: "reader" as const,
@@ -66,7 +66,7 @@ describe("household calendar privacy", () => {
       userId: "member-a",
       calendarId: "personal@example.com",
       name: "Personal",
-      selected: false,
+      visibility: "hide",
     });
     mocks.getGoogleAccessToken.mockResolvedValue("token-a");
     mocks.query
@@ -83,21 +83,23 @@ describe("household calendar privacy", () => {
 
     const result = await refreshCurrentUserCalendarPreferences("household-a", "member-a");
 
-    expect(result).toMatchObject({ connected: true, calendars: [{ calendarName: "Personal", isSelected: false }] });
+    expect(result).toMatchObject({ connected: true, calendars: [{ calendarName: "Personal", visibility: "hide" }] });
     const [insertSql, insertValues] = mocks.transactionQuery.mock.calls[0] as [string, unknown[]];
     expect(insertSql).toContain("insert into calendar_preferences");
-    expect(insertValues[7]).toBe(false);
+    expect(insertSql).toContain("false");
+    expect(insertValues[7]).toBe("hide");
   });
 
-  it("fetches and returns only calendars each member selected for the shared workspace", async () => {
+  it("shows private calendars only to their owner and shared calendars to the household", async () => {
     const rowsByUser = new Map([
       ["member-a", [
-        preferenceRow({ id: "shared-a", userId: "member-a", calendarId: "family-a@example.com", name: "Family A", selected: true }),
-        preferenceRow({ id: "private-a", userId: "member-a", calendarId: "personal-a@example.com", name: "Personal A", selected: false }),
+        preferenceRow({ id: "shared-a", userId: "member-a", calendarId: "family-a@example.com", name: "Family A", visibility: "share" }),
+        preferenceRow({ id: "private-a", userId: "member-a", calendarId: "personal-a@example.com", name: "Personal A", visibility: "private" }),
+        preferenceRow({ id: "hidden-a", userId: "member-a", calendarId: "hidden-a@example.com", name: "Hidden A", visibility: "hide" }),
       ]],
       ["member-b", [
-        preferenceRow({ id: "shared-b", userId: "member-b", calendarId: "family-b@example.com", name: "Family B", selected: true }),
-        preferenceRow({ id: "private-b", userId: "member-b", calendarId: "work-b@example.com", name: "Work B", selected: false }),
+        preferenceRow({ id: "shared-b", userId: "member-b", calendarId: "family-b@example.com", name: "Family B", visibility: "share" }),
+        preferenceRow({ id: "private-b", userId: "member-b", calendarId: "work-b@example.com", name: "Work B", visibility: "private" }),
       ]],
     ]);
     mocks.getGoogleAccessToken.mockImplementation(async (userId: string) => `token-${userId}`);
@@ -130,6 +132,7 @@ describe("household calendar privacy", () => {
     const result = await getHouseholdCalendarEvents(
       "household-a",
       [{ userId: "member-a" }, { userId: "member-b" }],
+      "member-a",
       "2026-08-10",
       "America/New_York",
     );
@@ -137,12 +140,13 @@ describe("household calendar privacy", () => {
     expect(result.state).toEqual({ status: "ready" });
     expect(result.events.map((event) => event.title)).toEqual(expect.arrayContaining([
       "Family A event",
+      "Personal A event",
       "Family B event",
     ]));
-    expect(result.events).toHaveLength(2);
-    expect(mocks.listEvents).toHaveBeenCalledTimes(2);
+    expect(result.events).toHaveLength(3);
+    expect(mocks.listEvents).toHaveBeenCalledTimes(3);
     expect(mocks.listEvents.mock.calls.map((call) => (call[1] as CalendarPreference).calendarName)).not.toEqual(
-      expect.arrayContaining(["Personal A", "Work B"]),
+      expect.arrayContaining(["Hidden A", "Work B"]),
     );
   });
 });
