@@ -49,7 +49,7 @@ export default async function SettingsPage() {
       [context.householdId],
     ),
     query<{ id: string; name: string; latitude: number; longitude: number; timezone: string; is_saved: boolean }>(
-      "select id, name, latitude, longitude, timezone, is_saved from locations where household_id = $1 order by name",
+      "select id, name, latitude, longitude, timezone, is_saved from locations where household_id = $1 and is_saved = true order by name",
       [context.householdId],
     ),
     query<{ id: string; email: string; status: string; expires_at: Date }>(

@@ -76,6 +76,23 @@ final class APIClient {
         try await send(path: "/api/ios/locations", method: "PATCH", body: ["startDate": date, "locationId": locationId, "scope": scope])
     }
 
+    func setLocation(date: String, result: GeocodingResult, saveForReuse: Bool, scope: String) async throws -> HouseholdLocation {
+        try await send(
+            path: "/api/ios/locations",
+            method: "PATCH",
+            body: GeocodedLocationAssignmentRequest(
+                date: date,
+                scope: scope,
+                result: result,
+                saveForReuse: saveForReuse
+            )
+        )
+    }
+
+    func searchLocations(_ query: String) async throws -> [GeocodingResult] {
+        try await send(path: "/api/ios/locations", query: [URLQueryItem(name: "q", value: query)])
+    }
+
     func hideEvent(_ event: CalendarEvent) async throws -> EmptyResponse {
         let body = HideEventRequest(action: "hide", eventId: event.id, title: event.title, calendarName: event.calendarAlias, eventStart: event.start)
         return try await send(path: "/api/ios/calendar-events", method: "PATCH", body: body)

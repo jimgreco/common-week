@@ -33,7 +33,7 @@ struct WeeklyPlannerData: Codable {
     let weekStart: String
     var days: [DayPlan]
     var weeklyItems: [PlanningItem]
-    let locations: [HouseholdLocation]
+    var locations: [HouseholdLocation]
     let editableCalendars: [EditableCalendar]
     let calendarState: PlannerSourceState
     let weatherState: PlannerSourceState
@@ -91,6 +91,32 @@ struct HouseholdLocation: Codable, Identifiable, Hashable {
     let timezone: String
     let isSaved: Bool
     let isDefault: Bool?
+}
+
+struct GeocodingResult: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let admin1: String?
+    let country: String?
+    let latitude: Double
+    let longitude: Double
+    let timezone: String
+
+    var assignmentName: String {
+        [name, admin1 ?? country]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+            .prefix(120)
+            .description
+    }
+
+    var detailName: String {
+        [admin1, country]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+    }
 }
 
 struct DayPlan: Codable, Identifiable, Hashable {
@@ -237,6 +263,32 @@ struct CalendarPreferenceUpdate: Encodable {
         displayAlias = preference.displayAlias
         displayAbbreviation = preference.displayAbbreviation
         sectionGroup = preference.sectionGroup
+    }
+}
+
+struct GeocodedLocationAssignmentRequest: Encodable {
+    struct Location: Encodable {
+        let name: String
+        let latitude: Double
+        let longitude: Double
+        let timezone: String
+    }
+
+    let startDate: String
+    let scope: String
+    let saveForReuse: Bool
+    let location: Location
+
+    init(date: String, scope: String, result: GeocodingResult, saveForReuse: Bool) {
+        startDate = date
+        self.scope = scope
+        self.saveForReuse = saveForReuse
+        location = Location(
+            name: result.assignmentName,
+            latitude: result.latitude,
+            longitude: result.longitude,
+            timezone: result.timezone
+        )
     }
 }
 

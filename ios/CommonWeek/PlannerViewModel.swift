@@ -95,6 +95,45 @@ final class PlannerViewModel: ObservableObject {
         } catch { show(error.localizedDescription); return false }
     }
 
+    func setLocation(_ result: GeocodingResult, for date: String, scope: String, saveForReuse: Bool) async -> Bool {
+        if isDemo {
+            guard var planner = data else { return false }
+            let location = HouseholdLocation(
+                id: result.id.hasPrefix("demo-location-") ? result.id : "demo-location-\(result.id)",
+                name: result.assignmentName,
+                latitude: result.latitude,
+                longitude: result.longitude,
+                timezone: result.timezone,
+                isSaved: saveForReuse,
+                isDefault: false
+            )
+            if saveForReuse, !planner.locations.contains(where: { $0.name == location.name }) {
+                planner.locations.append(location)
+                planner.locations.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            }
+            assign(location, for: date, scope: scope, in: &planner)
+            data = planner
+            return true
+        }
+        do {
+            _ = try await api.setLocation(date: date, result: result, saveForReuse: saveForReuse, scope: scope)
+            await load(week: data?.weekStart, quietly: true)
+            return true
+        } catch { show(error.localizedDescription); return false }
+    }
+
+    func findLocations(matching query: String) async throws -> [GeocodingResult] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return [] }
+        if isDemo {
+            return PreviewData.locationSearchResults.filter {
+                $0.assignmentName.localizedCaseInsensitiveContains(trimmed)
+                    || $0.detailName.localizedCaseInsensitiveContains(trimmed)
+            }
+        }
+        return try await api.searchLocations(trimmed)
+    }
+
     func hideEvent(_ event: CalendarEvent) async -> Bool {
         if isDemo {
             guard var planner = data else { return false }
@@ -173,6 +212,14 @@ final class PlannerViewModel: ObservableObject {
         guard var planner = data else { return }
         planner.household = household
         data = planner
+    }
+
+    private func assign(_ location: HouseholdLocation, for date: String, scope: String, in planner: inout WeeklyPlannerData) {
+        let end = scope == "day" ? date : WeekDate.addDays(6, to: planner.weekStart)
+        let start = scope == "week" ? planner.weekStart : date
+        for index in planner.days.indices where planner.days[index].date >= start && planner.days[index].date <= end {
+            planner.days[index].location = location
+        }
     }
 
     private func insert(_ item: PlanningItem) {

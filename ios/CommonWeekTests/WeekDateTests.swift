@@ -79,4 +79,25 @@ final class WeekDateTests: XCTestCase {
         XCTAssertEqual(payload["visibility"], "private")
         XCTAssertEqual(payload["sectionGroup"], "supplemental")
     }
+
+    func testGeocodingResultBuildsAReadableAssignmentName() throws {
+        let payload = Data(#"{"id":"2988507","name":"Paris","admin1":"Île-de-France","country":"France","latitude":48.8566,"longitude":2.3522,"timezone":"Europe/Paris"}"#.utf8)
+        let result = try JSONDecoder().decode(GeocodingResult.self, from: payload)
+
+        XCTAssertEqual(result.assignmentName, "Paris, Île-de-France")
+        XCTAssertEqual(result.detailName, "Île-de-France, France")
+    }
+
+    func testGeocodedLocationAssignmentPreservesTheReuseChoice() throws {
+        let result = GeocodingResult(id: "2988507", name: "Paris", admin1: "Île-de-France", country: "France", latitude: 48.8566, longitude: 2.3522, timezone: "Europe/Paris")
+        let request = GeocodedLocationAssignmentRequest(date: "2026-08-14", scope: "day", result: result, saveForReuse: false)
+        let encoded = try JSONEncoder().encode(request)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let location = try XCTUnwrap(payload["location"] as? [String: Any])
+
+        XCTAssertEqual(payload["startDate"] as? String, "2026-08-14")
+        XCTAssertEqual(payload["scope"] as? String, "day")
+        XCTAssertEqual(payload["saveForReuse"] as? Bool, false)
+        XCTAssertEqual(location["name"] as? String, "Paris, Île-de-France")
+    }
 }

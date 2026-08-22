@@ -60,26 +60,133 @@ struct LocationPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "day"
     @State private var selectedId: String
+    @State private var searchText = ""
+    @State private var searchResults: [GeocodingResult] = []
+    @State private var selectedResult: GeocodingResult?
+    @State private var saveForReuse = true
+    @State private var isSearching = false
+    @State private var searchError: String?
     @State private var isSaving = false
+    @FocusState private var searchFocused: Bool
 
     init(day: DayPlan, locations: [HouseholdLocation], viewModel: PlannerViewModel) {
-        self.day = day; self.locations = locations; self.viewModel = viewModel
-        _selectedId = State(initialValue: day.location?.id ?? locations.first?.id ?? "")
+        self.day = day
+        self.locations = locations
+        self.viewModel = viewModel
+        if let current = day.location, !current.isSaved {
+            let result = GeocodingResult(
+                id: current.id,
+                name: current.name,
+                admin1: nil,
+                country: nil,
+                latitude: current.latitude,
+                longitude: current.longitude,
+                timezone: current.timezone
+            )
+            _selectedId = State(initialValue: "")
+            _searchText = State(initialValue: current.name)
+            _selectedResult = State(initialValue: result)
+            _saveForReuse = State(initialValue: false)
+        } else {
+            _selectedId = State(initialValue: day.location?.id ?? locations.first?.id ?? "")
+        }
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Location") {
-                    ForEach(locations) { location in
-                        Button { selectedId = location.id } label: {
-                            HStack {
-                                Image(systemName: "location.fill").foregroundStyle(CWTheme.accent)
-                                Text(location.name).foregroundStyle(CWTheme.ink)
-                                Spacer()
-                                if selectedId == location.id { Image(systemName: "checkmark.circle.fill").foregroundStyle(CWTheme.accent) }
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("Search city or place", text: $searchText)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .focused($searchFocused)
+                        if isSearching {
+                            ProgressView().controlSize(.small)
+                        } else if !searchText.isEmpty {
+                            Button {
+                                searchText = ""
+                                searchResults = []
+                                selectedResult = nil
+                                searchError = nil
+                                isSearching = false
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear location search")
+                        }
+                    }
+
+                    if let selectedResult {
+                        locationRow(
+                            title: selectedResult.name,
+                            detail: selectedResult.detailName,
+                            selected: true
+                        )
+                    } else {
+                        ForEach(searchResults) { result in
+                            Button { choose(result) } label: {
+                                locationRow(title: result.name, detail: result.detailName, selected: false)
                             }
                         }
+                    }
+
+                    if let searchError {
+                        Label(searchError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    } else if searchText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2,
+                              !isSearching,
+                              selectedResult == nil,
+                              searchResults.isEmpty {
+                        Text("No matching places found.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if selectedResult != nil {
+                    Section {
+                        Toggle(isOn: $saveForReuse) {
+                            Label("Save for reuse", systemImage: "bookmark")
+                        }
+                    } footer: {
+                        Text(saveForReuse
+                            ? "This place will appear under Saved locations next time."
+                            : "This place will only be assigned to the dates you choose below.")
+                    }
+                }
+
+                if !locations.isEmpty {
+                    Section("Saved locations") {
+                        ForEach(locations) { location in
+                            Button { choose(location) } label: {
+                                HStack {
+                                    Image(systemName: "location.fill").foregroundStyle(CWTheme.accent)
+                                    Text(location.name).foregroundStyle(CWTheme.ink)
+                                    Spacer()
+                                    if location.isDefault == true {
+                                        Text("Default")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if selectedId == location.id { Image(systemName: "checkmark.circle.fill").foregroundStyle(CWTheme.accent) }
+                                }
+                            }
+                        }
+                    }
+                } else if selectedResult == nil {
+                    Section {
+                        ContentUnavailableView(
+                            "No saved locations",
+                            systemImage: "location.slash",
+                            description: Text("Search above to set a place for this day.")
+                        )
                     }
                 }
                 Section("Apply to") {
@@ -90,17 +197,111 @@ struct LocationPickerView: View {
                     }.pickerStyle(.inline).labelsHidden()
                 }
             }
+            .task(id: searchText) { await search() }
+            .onChange(of: searchText) { _, newValue in
+                if let selectedResult, newValue != selectedResult.assignmentName {
+                    self.selectedResult = nil
+                }
+            }
             .navigationTitle("Set location")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSaving ? "Saving…" : "Set") {
-                        guard let location = locations.first(where: { $0.id == selectedId }) else { return }
-                        Task { isSaving = true; if await viewModel.setLocation(location, for: day.date, scope: scope) { dismiss() }; isSaving = false }
-                    }.disabled(selectedId.isEmpty || isSaving)
+                        Task {
+                            isSaving = true
+                            let succeeded: Bool
+                            if let selectedResult {
+                                succeeded = await viewModel.setLocation(
+                                    selectedResult,
+                                    for: day.date,
+                                    scope: scope,
+                                    saveForReuse: saveForReuse
+                                )
+                            } else if let location = locations.first(where: { $0.id == selectedId }) {
+                                succeeded = await viewModel.setLocation(location, for: day.date, scope: scope)
+                            } else {
+                                succeeded = false
+                            }
+                            if succeeded { dismiss() }
+                            isSaving = false
+                        }
+                    }.disabled((selectedResult == nil && selectedId.isEmpty) || isSaving)
                 }
             }
+        }
+    }
+
+    private func choose(_ result: GeocodingResult) {
+        selectedResult = result
+        selectedId = ""
+        searchText = result.assignmentName
+        searchResults = []
+        searchError = nil
+        isSearching = false
+        searchFocused = false
+    }
+
+    private func choose(_ location: HouseholdLocation) {
+        selectedId = location.id
+        selectedResult = nil
+        searchText = ""
+        searchResults = []
+        searchError = nil
+        isSearching = false
+    }
+
+    @ViewBuilder
+    private func locationRow(title: String, detail: String, selected: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "location.fill")
+                .foregroundStyle(CWTheme.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundStyle(CWTheme.ink)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(CWTheme.accent)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    @MainActor
+    private func search() async {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard selectedResult?.assignmentName != query else { return }
+        guard query.count >= 2 else {
+            searchResults = []
+            searchError = nil
+            isSearching = false
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            isSearching = true
+            searchError = nil
+            let results = try await viewModel.findLocations(matching: query)
+            guard !Task.isCancelled,
+                  searchText.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+            searchResults = results
+            isSearching = false
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            searchResults = []
+            searchError = error.localizedDescription
+            isSearching = false
         }
     }
 }

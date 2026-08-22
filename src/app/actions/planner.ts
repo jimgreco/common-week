@@ -265,6 +265,7 @@ export async function setDailyLocationAction(input: {
 export async function setGeocodedLocationAction(input: {
   startDate: string;
   scope: "day" | "through-sunday" | "week";
+  saveForReuse?: boolean;
   location: {
     name: string;
     latitude: number;
@@ -276,6 +277,7 @@ export async function setGeocodedLocationAction(input: {
     const parsed = z.object({
       startDate: dateOnly,
       scope: z.enum(["day", "through-sunday", "week"]),
+      saveForReuse: z.boolean().default(true),
       location: z.object({
         name: z.string().trim().min(1).max(120),
         latitude: z.number().min(-90).max(90),
@@ -294,9 +296,12 @@ export async function setGeocodedLocationAction(input: {
         is_saved: boolean;
       }>(
         `insert into locations (household_id, name, latitude, longitude, timezone, is_saved)
-         values ($1, $2, $3, $4, $5, true)
+         values ($1, $2, $3, $4, $5, $6)
          on conflict (household_id, name) do update set
-           is_saved = true
+           latitude = excluded.latitude,
+           longitude = excluded.longitude,
+           timezone = excluded.timezone,
+           is_saved = locations.is_saved or excluded.is_saved
          returning id, name, latitude, longitude, timezone, is_saved`,
         [
           context.householdId,
@@ -304,10 +309,11 @@ export async function setGeocodedLocationAction(input: {
           parsed.location.latitude,
           parsed.location.longitude,
           parsed.location.timezone,
+          parsed.saveForReuse,
         ],
       );
       const savedLocation = locationResult.rows[0];
-      if (!savedLocation) throw new Error("The location could not be saved.");
+      if (!savedLocation) throw new Error("The location could not be set.");
 
       await database.query(
         `insert into daily_settings (household_id, date, location_id)
@@ -334,7 +340,7 @@ export async function setGeocodedLocationAction(input: {
     revalidatePath("/planner");
     return { ok: true, data: location };
   } catch (error) {
-    return actionError<HouseholdLocation>(error, "The location could not be saved.");
+    return actionError<HouseholdLocation>(error, "The location could not be set.");
   }
 }
 

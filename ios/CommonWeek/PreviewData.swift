@@ -5,6 +5,14 @@ enum PreviewData {
 
     static var planner: WeeklyPlannerData { planner(weekStart: WeekDate.string(WeekDate.monday())) }
 
+    static let locationSearchResults = [
+        GeocodingResult(id: "demo-boston", name: "Boston", admin1: "Massachusetts", country: "United States", latitude: 42.3601, longitude: -71.0589, timezone: "America/New_York"),
+        GeocodingResult(id: "demo-los-angeles", name: "Los Angeles", admin1: "California", country: "United States", latitude: 34.0522, longitude: -118.2437, timezone: "America/Los_Angeles"),
+        GeocodingResult(id: "demo-palm-beach", name: "Palm Beach", admin1: "Florida", country: "United States", latitude: 26.7056, longitude: -80.0364, timezone: "America/New_York"),
+        GeocodingResult(id: "demo-paris", name: "Paris", admin1: "Île-de-France", country: "France", latitude: 48.8566, longitude: 2.3522, timezone: "Europe/Paris"),
+        GeocodingResult(id: "demo-sag-harbor", name: "Sag Harbor", admin1: "New York", country: "United States", latitude: 41.0007, longitude: -72.2957, timezone: "America/New_York"),
+    ]
+
     static func planner(weekStart: String) -> WeeklyPlannerData {
         let east = HouseholdLocation(id: "20000000-0000-4000-8000-000000000001", name: "East Hampton", latitude: 40.96, longitude: -72.18, timezone: "America/New_York", isSaved: true, isDefault: true)
         let city = HouseholdLocation(id: "20000000-0000-4000-8000-000000000002", name: "Manhattan", latitude: 40.71, longitude: -74.0, timezone: "America/New_York", isSaved: true, isDefault: false)

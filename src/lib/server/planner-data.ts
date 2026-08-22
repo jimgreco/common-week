@@ -156,8 +156,9 @@ export async function getPlannerData(
   const household = householdResult.rows[0];
   if (!household) throw new Error("The household planner could not be loaded.");
 
-  const locations = locationsResult.rows.map((row) => mapLocation(row, household.default_location_id));
-  const locationById = new Map(locations.map((location) => [location.id, location]));
+  const allLocations = locationsResult.rows.map((row) => mapLocation(row, household.default_location_id));
+  const locations = allLocations.filter((location) => location.isSaved);
+  const locationById = new Map(allLocations.map((location) => [location.id, location]));
   const defaultLocation = household.default_location_id
     ? locationById.get(household.default_location_id) ?? null
     : null;
