@@ -163,7 +163,11 @@ async function main() {
 
   try {
     const detail = await request(`/v1/appStoreVersions/${version.id}/appStoreReviewDetail`);
-    await update("appStoreReviewDetails", detail.data.id, { demoAccountRequired: false, notes: reviewNotes });
+    if (detail.data) {
+      await update("appStoreReviewDetails", detail.data.id, { demoAccountRequired: false, notes: reviewNotes });
+    } else {
+      console.log("App Review contact details do not exist yet; leaving them for the account holder because Apple requires a verified phone and email.");
+    }
   } catch (error) {
     if (!String(error.message).includes("404")) throw error;
     console.log("App Review contact details do not exist yet; leaving them for the account holder because Apple requires a verified phone and email.");
