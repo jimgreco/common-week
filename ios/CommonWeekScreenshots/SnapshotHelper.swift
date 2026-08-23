@@ -29,3 +29,5 @@ func snapshot(_ name: String, timeWaitingForIdle timeout: TimeInterval = 1) {
         XCTFail("Unable to save screenshot: \(error)")
     }
 }
+
+// SnapshotHelperVersion [1.30]
