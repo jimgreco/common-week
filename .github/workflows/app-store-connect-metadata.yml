@@ -1,0 +1,40 @@
+name: App Store Connect Metadata
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Audit changes or apply them to App Store Connect
+        required: true
+        default: audit
+        type: choice
+        options:
+          - audit
+          - apply
+
+permissions:
+  contents: read
+
+concurrency:
+  group: common-week-app-store-connect-metadata
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Sync App Store Connect metadata
+        env:
+          ASC_SYNC_MODE: ${{ inputs.mode }}
+          IOS_BUNDLE_ID: com.jimgreco.commonweek
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: node scripts/sync-app-store-connect.mjs
