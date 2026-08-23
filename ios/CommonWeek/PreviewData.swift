@@ -41,7 +41,13 @@ enum PreviewData {
             ],
             weekStart: weekStart,
             days: days,
-            weeklyItems: [PlanningItem(id: "weekly-1", planningDate: nil, weekStartDate: weekStart, type: .task, text: "Order groceries", isCompleted: false, sortOrder: 0, createdBy: "demo-jim", createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved")],
+            weeklyItems: [
+                PlanningItem(id: "weekly-task-1", planningDate: nil, weekStartDate: weekStart, type: .task, text: "Order groceries", isCompleted: false, sortOrder: 0, createdBy: "demo-jim", createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved"),
+                PlanningItem(id: "weekly-task-2", planningDate: nil, weekStartDate: weekStart, type: .task, text: "Confirm weekend plans", isCompleted: false, sortOrder: 1, createdBy: "demo-rachel", createdByName: "Rachel", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved"),
+                PlanningItem(id: "weekly-task-3", planningDate: nil, weekStartDate: weekStart, type: .task, text: "Schedule the car service", isCompleted: true, sortOrder: 2, createdBy: "demo-jim", createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved"),
+                PlanningItem(id: "weekly-plan-1", planningDate: nil, weekStartDate: weekStart, type: .note, text: "Keep Saturday afternoon open", isCompleted: false, sortOrder: 0, createdBy: "demo-rachel", createdByName: "Rachel", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved"),
+                PlanningItem(id: "weekly-plan-2", planningDate: nil, weekStartDate: weekStart, type: .note, text: "Dinner at home Monday through Thursday", isCompleted: false, sortOrder: 1, createdBy: "demo-jim", createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved"),
+            ],
             locations: [east, city],
             editableCalendars: [
                 EditableCalendar(id: "calendar-family", name: "Family", color: "#688173", sectionGroup: "critical"),

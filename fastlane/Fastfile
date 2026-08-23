@@ -1,0 +1,71 @@
+ENV["FASTLANE_SKIP_UPDATE_CHECK"] = "1"
+ENV["FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS"] = "true"
+ENV["DELIVER_NUMBER_OF_THREADS"] ||= "1"
+ENV["FL_MAX_NUMBER_OF_THREADS"] ||= "1"
+
+require "base64"
+
+default_platform(:ios)
+opt_out_usage
+
+APP_IDENTIFIER = "com.jimgreco.commonweek"
+PROJECT_PATH = "ios/CommonWeek.xcodeproj"
+SCREENSHOT_SCHEME = "CommonWeekScreenshots"
+SCREENSHOT_OUTPUT = "fastlane/screenshots"
+
+def screenshot_devices
+  (ENV["SCREENSHOT_DEVICES"] || "iPhone 17 Pro Max").split(",").map(&:strip).reject(&:empty?)
+end
+
+platform :ios do
+  desc "Capture three deterministic Week of Us App Store screenshots"
+  lane :screenshots do
+    capture_ios_screenshots(
+      project: PROJECT_PATH,
+      scheme: SCREENSHOT_SCHEME,
+      app_identifier: APP_IDENTIFIER,
+      configuration: "Debug",
+      devices: screenshot_devices,
+      languages: ["en-US"],
+      output_directory: SCREENSHOT_OUTPUT,
+      clear_previous_screenshots: true,
+      reinstall_app: true,
+      clean: true,
+      override_status_bar: true,
+      skip_open_summary: true
+    )
+  end
+
+  desc "Replace screenshots on editable App Store version 1.0"
+  lane :upload_screenshots do
+    upload_to_app_store(
+      api_key: app_store_api_key,
+      app_identifier: APP_IDENTIFIER,
+      app_version: ENV.fetch("APP_STORE_VERSION", "1.0"),
+      screenshots_path: SCREENSHOT_OUTPUT,
+      skip_binary_upload: true,
+      skip_metadata: true,
+      sync_screenshots: true,
+      force: true,
+      run_precheck_before_submit: false,
+      submit_for_review: false
+    )
+  end
+
+  private_lane :app_store_api_key do
+    content = ENV.fetch("APP_STORE_CONNECT_API_KEY").to_s.strip
+    content = content.gsub("\\n", "\n") if content.include?("\\n") && !content.include?("\n")
+    unless content.include?("BEGIN PRIVATE KEY")
+      decoded = Base64.decode64(content)
+      content = decoded if decoded.include?("BEGIN PRIVATE KEY")
+    end
+    app_store_connect_api_key(
+      key_id: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
+      issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+      key_content: content,
+      is_key_content_base64: false,
+      duration: 1200,
+      in_house: false
+    )
+  end
+end

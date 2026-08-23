@@ -14,10 +14,12 @@
 		51B1B07F6F38A69A7BA7A61F /* PlannerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF76B68EACAAC800419E71B7 /* PlannerViewModel.swift */; };
 		563CD0448C592384B7BEE26B /* OfflineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C7FB1EF7975CDF39025D1F /* OfflineStore.swift */; };
 		580BDC3D8A7E9AF082365A28 /* WeekDateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D280453135ABCB20247AFB /* WeekDateTests.swift */; };
+		59DA9D0C29ACA1D36F85FFEC /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAA864FC8098B23F5DEEEA40 /* SnapshotHelper.swift */; };
 		70E0FC2B4A1E349189F00A0E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66D3F14C98728A22A430B035 /* Assets.xcassets */; };
 		7A8583A7642567A6496565A0 /* BackgroundRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */; };
 		8955D7FD9F3F1732386B80F6 /* PreviewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 486C7DCCE5B01586DDA720F4 /* PreviewData.swift */; };
 		8CB7268C1D33378B37229A52 /* CommonWeekApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E8618295C4BEC334961F6E0 /* CommonWeekApp.swift */; };
+		A4B9F540A8BBDDC3DECAA190 /* CommonWeekScreenshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8331B2E2EC2CFC6ADBA542 /* CommonWeekScreenshots.swift */; };
 		A5017F6AC2B1F3907CDD5535 /* EditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E742DE5970A5A51F2F8406 /* EditorViews.swift */; };
 		A9BC2CB65D4DA11765D861AC /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3014EBACE5446E3C9F0BB9EE /* DetailViews.swift */; };
 		B5B29713E342A3F05A6FF98F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194B7E6770649ECF980A47F1 /* APIClient.swift */; };
@@ -27,6 +29,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		CFAEC57B89D4672AAEAA560D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EBEA60E21C0B540508BFC32F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E0AA6906D86C0A1CC6E8DAFB;
+			remoteInfo = CommonWeek;
+		};
 		ED28886E90455C5536EC5C48 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = EBEA60E21C0B540508BFC32F /* Project object */;
@@ -48,6 +57,7 @@
 		540DB50FE63FB747D5B0822A /* PlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerView.swift; sourceTree = "<group>"; };
 		54C2671E9B1E8A76FE122356 /* CommonWeek.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CommonWeek.entitlements; sourceTree = "<group>"; };
 		66D3F14C98728A22A430B035 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		73103BD7E542B3780C527683 /* CommonWeekScreenshots.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CommonWeekScreenshots.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		78E742DE5970A5A51F2F8406 /* EditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViews.swift; sourceTree = "<group>"; };
 		83231BA8632DDC33D6A60E5A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		91AA3F476AC821FEC7698CC3 /* CommonWeekTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CommonWeekTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -55,6 +65,8 @@
 		AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefresh.swift; sourceTree = "<group>"; };
 		ABF657900C4FFE9A5A8E859F /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
 		DB4AD6D78689E7F9DFED0B9E /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		EAA864FC8098B23F5DEEEA40 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
+		ED8331B2E2EC2CFC6ADBA542 /* CommonWeekScreenshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonWeekScreenshots.swift; sourceTree = "<group>"; };
 		FBB4BD1D591F466CDCAD021F /* DayCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCardView.swift; sourceTree = "<group>"; };
 		FE9DB5960BC4265E4C44FBEA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FF76B68EACAAC800419E71B7 /* PlannerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerViewModel.swift; sourceTree = "<group>"; };
@@ -65,6 +77,7 @@
 			isa = PBXGroup;
 			children = (
 				13927DF55278747670B39822 /* CommonWeek.app */,
+				73103BD7E542B3780C527683 /* CommonWeekScreenshots.xctest */,
 				91AA3F476AC821FEC7698CC3 /* CommonWeekTests.xctest */,
 			);
 			name = Products;
@@ -74,9 +87,19 @@
 			isa = PBXGroup;
 			children = (
 				F79937A2D52A61EAA2E2039B /* CommonWeek */,
+				771669D16ED0DBA8EFC5E62A /* CommonWeekScreenshots */,
 				A4AA45FCCC82DD05E138133B /* CommonWeekTests */,
 				059D81E61159033FDAB2A37F /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		771669D16ED0DBA8EFC5E62A /* CommonWeekScreenshots */ = {
+			isa = PBXGroup;
+			children = (
+				ED8331B2E2EC2CFC6ADBA542 /* CommonWeekScreenshots.swift */,
+				EAA864FC8098B23F5DEEEA40 /* SnapshotHelper.swift */,
+			);
+			path = CommonWeekScreenshots;
 			sourceTree = "<group>";
 		};
 		A4AA45FCCC82DD05E138133B /* CommonWeekTests */ = {
@@ -115,6 +138,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		60DB16454917B71BDE127820 /* CommonWeekScreenshots */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D5917266B18CA21A0B4B2F55 /* Build configuration list for PBXNativeTarget "CommonWeekScreenshots" */;
+			buildPhases = (
+				4A3DE250ABA430334A2850B7 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4FCDD99B205A88511A12E94C /* PBXTargetDependency */,
+			);
+			name = CommonWeekScreenshots;
+			packageProductDependencies = (
+			);
+			productName = CommonWeekScreenshots;
+			productReference = 73103BD7E542B3780C527683 /* CommonWeekScreenshots.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		804BC5B671614AD9FFA0F47E /* CommonWeekTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CF7D741C7AE8732669E3F166 /* Build configuration list for PBXNativeTarget "CommonWeekTests" */;
@@ -160,6 +201,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					60DB16454917B71BDE127820 = {
+						DevelopmentTeam = V6JPQCD336;
+						TestTargetID = E0AA6906D86C0A1CC6E8DAFB;
+					};
 					804BC5B671614AD9FFA0F47E = {
 						DevelopmentTeam = V6JPQCD336;
 					};
@@ -183,6 +228,7 @@
 			projectRoot = "";
 			targets = (
 				E0AA6906D86C0A1CC6E8DAFB /* CommonWeek */,
+				60DB16454917B71BDE127820 /* CommonWeekScreenshots */,
 				804BC5B671614AD9FFA0F47E /* CommonWeekTests */,
 			);
 		};
@@ -201,6 +247,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		4A3DE250ABA430334A2850B7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A4B9F540A8BBDDC3DECAA190 /* CommonWeekScreenshots.swift in Sources */,
+				59DA9D0C29ACA1D36F85FFEC /* SnapshotHelper.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6E2D1B50BFF157CA6673B1BB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -233,6 +288,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		4FCDD99B205A88511A12E94C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E0AA6906D86C0A1CC6E8DAFB /* CommonWeek */;
+			targetProxy = CFAEC57B89D4672AAEAA560D /* PBXContainerItemProxy */;
+		};
 		C74F9A21CA97220E1DFB0ABD /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = E0AA6906D86C0A1CC6E8DAFB /* CommonWeek */;
@@ -241,6 +301,40 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		1394BAE46428D65745915AD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek.screenshots;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CommonWeek;
+			};
+			name = Debug;
+		};
+		2ED7CDFD9340B386853214FB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek.screenshots;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = CommonWeek;
+			};
+			name = Release;
+		};
 		733A66A23E981FF6180493DA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -472,6 +566,15 @@
 			buildConfigurations = (
 				8BFF60DFBBC93D4DBA0611D7 /* Debug */,
 				8AAE585FAE8613DD639281A6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D5917266B18CA21A0B4B2F55 /* Build configuration list for PBXNativeTarget "CommonWeekScreenshots" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1394BAE46428D65745915AD5 /* Debug */,
+				2ED7CDFD9340B386853214FB /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

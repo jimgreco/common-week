@@ -48,3 +48,19 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Week of Us.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Week of Us"
         BUNDLE_LOADER: "$(TEST_HOST)"
+
+  CommonWeekScreenshots:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - CommonWeekScreenshots
+    dependencies:
+      - target: CommonWeek
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jimgreco.commonweek.screenshots
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: CommonWeek
+    scheme:
+      testTargets:
+        - CommonWeekScreenshots

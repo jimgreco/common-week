@@ -1,0 +1,74 @@
+name: App Store Screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Replace screenshots on the editable App Store version
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+      app_store_version:
+        description: Editable App Store version
+        required: true
+        default: "1.0"
+        type: string
+      screenshot_devices:
+        description: Comma-separated simulator names
+        required: true
+        default: "iPhone 17 Pro Max"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: common-week-app-store-screenshots
+  cancel-in-progress: false
+
+jobs:
+  capture-and-upload:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          for candidate in /Applications/Xcode_26.4.app /Applications/Xcode_26.3.app /Applications/Xcode_26.2.app /Applications/Xcode_26.1.app /Applications/Xcode_26.0.app /Applications/Xcode.app; do
+            if [ -d "$candidate" ]; then
+              sudo xcode-select -s "$candidate/Contents/Developer"
+              break
+            fi
+          done
+          xcodebuild -version
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
+      - name: Install Fastlane
+        run: bundle install
+      - name: Generate screenshots
+        env:
+          SCREENSHOT_DEVICES: ${{ inputs.screenshot_devices }}
+        run: bundle exec fastlane ios screenshots
+      - name: Verify exactly three screenshots per device
+        run: |
+          set -euo pipefail
+          count=$(find fastlane/screenshots -type f -name '*.png' | wc -l | tr -d ' ')
+          test "$count" = "3" || { echo "Expected exactly 3 PNG screenshots, found $count"; exit 1; }
+          find fastlane/screenshots -type f -name '*.png' -print
+      - uses: actions/upload-artifact@v4
+        with:
+          name: week-of-us-app-store-screenshots
+          path: fastlane/screenshots
+          if-no-files-found: error
+      - name: Upload screenshots to App Store Connect
+        if: ${{ inputs.upload == 'true' }}
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_STORE_VERSION: ${{ inputs.app_store_version }}
+        run: bundle exec fastlane ios upload_screenshots
