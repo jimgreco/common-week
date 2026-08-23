@@ -407,6 +407,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .settings-form input, .preference-grid select { min-height: 40px; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 5px; background: var(--white); color: var(--ink); font-size: 12px; letter-spacing: normal; text-transform: none; }
 .member-list { max-width: 620px; border: 1px solid var(--rule); }
 .member-row { min-height: 58px; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+.member-row:has(.member-actions) { grid-template-columns: 34px 1fr auto auto; }
+.member-row .member-actions { display: flex; flex-direction: row; align-items: center; gap: 6px; }
 .member-row:last-child { border-bottom: 0; }
 .member-avatar { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 800; }
 .member-row div { display: flex; flex-direction: column; gap: 2px; }
@@ -418,6 +420,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .pending-invitations h3 { margin: 0 0 6px; color: var(--muted); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 .pending-invitations > div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 10px; }
 .pending-invitations small { color: var(--warning); text-transform: capitalize; }
+.pending-invitations > div > span { display: flex; align-items: center; gap: 8px; }
+.pending-invitations > div > span:first-child { align-items: flex-start; flex-direction: column; gap: 2px; }
+.account-delete-confirm { width: 100%; padding: 14px; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--rule)); border-radius: 10px; background: #fff8f7; }
+.account-delete-confirm label { display: grid; gap: 5px; max-width: 240px; margin: 10px 0; font-size: 10px; font-weight: 700; }
+.account-delete-confirm input { min-height: 38px; border: 1px solid var(--rule); border-radius: 7px; padding: 8px 10px; }
 .settings-help { max-width: 620px; margin: 12px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .calendar-privacy-note { max-width: 720px; display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; padding: 11px 13px; border: 1px solid #cfded5; border-radius: 8px; background: var(--accent-wash); color: var(--accent-strong); }
 .calendar-privacy-note svg { flex: 0 0 auto; margin-top: 1px; }

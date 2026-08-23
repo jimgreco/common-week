@@ -72,6 +72,25 @@ export async function exchangeNativeAuthorizationCode(code: string, clientState:
   });
 }
 
+export async function createNativeConnectionCode(userId: string, clientState: string) {
+  const code = randomBytes(32).toString("base64url");
+  await query(
+    `insert into native_connection_codes (code_hash, user_id, client_state_hash, expires_at)
+     values ($1, $2, $3, now() + interval '5 minutes')`,
+    [hashSessionToken(code), userId, hashSessionToken(clientState)],
+  );
+  return code;
+}
+
+export async function consumeNativeConnectionCode(code: string, clientState: string) {
+  if (code.length > 128 || clientState.length > 128) return null;
+  const result = await query<{ user_id: string }>(
+    `delete from native_connection_codes where code_hash = $1 and client_state_hash = $2 and expires_at > now() returning user_id`,
+    [hashSessionToken(code), hashSessionToken(clientState)],
+  );
+  return result.rows[0]?.user_id ?? null;
+}
+
 export async function sessionIdentityForToken(token: string | undefined): Promise<SessionIdentity | null> {
   if (!token || token.length > 128) return null;
   const result = await query<{

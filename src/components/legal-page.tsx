@@ -43,7 +43,7 @@ export function LegalPage({
         <footer>
           <Link href="/privacy">Privacy Policy</Link>
           <Link href="/terms">Terms of Service</Link>
-          <a href="mailto:jgreco@gmail.com">Contact</a>
+          <Link href="/support">Support</Link>
         </footer>
       </article>
     </main>

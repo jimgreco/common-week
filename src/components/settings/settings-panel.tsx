@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { AlertTriangle, Check, LoaderCircle, LockKeyhole, MapPin, Plus, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 import {
   addLocationAction,
+  cancelInvitationAction,
+  deleteAccountAction,
   inviteMemberAction,
+  leaveHouseholdAction,
   refreshGoogleCalendarsAction,
   removeLocationAction,
+  removeMemberAction,
+  resendInvitationAction,
   restoreCalendarEventAction,
   setDefaultLocationAction,
   updateCalendarPreferenceAction,
   updateHouseholdAction,
+  transferOwnershipAction,
 } from "@/app/actions/settings";
 import { signInWithGoogle } from "@/app/actions/auth";
 import { searchLocationsAction } from "@/app/actions/planner";
@@ -19,7 +26,7 @@ import { calendarAbbreviation, normalizeCalendarAbbreviation } from "@/lib/calen
 import { formatMobileDate } from "@/lib/date";
 import type { CalendarPreference, GeocodingResult, HiddenCalendarEvent, HouseholdLocation, HouseholdMember, HouseholdSummary } from "@/types/domain";
 
-interface Invitation { id: string; email: string; status: string; expiresAt: string; }
+interface Invitation { id: string; email: string; status: string; expiresAt: string; sentAt?: string | null; deliveryError?: string | null; }
 
 export function SettingsPanel({
   household,
@@ -30,6 +37,7 @@ export function SettingsPanel({
   hiddenEvents: initialHiddenEvents = [],
   calendarConnected: initialCalendarConnected,
   calendarWriteEnabled,
+  currentUserId,
   isDemo,
 }: {
   household: HouseholdSummary;
@@ -40,8 +48,10 @@ export function SettingsPanel({
   hiddenEvents?: HiddenCalendarEvent[];
   calendarConnected: boolean;
   calendarWriteEnabled: boolean;
+  currentUserId: string;
   isDemo: boolean;
 }) {
+  const router = useRouter();
   const [locations, setLocations] = useState(initialLocations);
   const [calendars, setCalendars] = useState(initialCalendars);
   const [hiddenEvents, setHiddenEvents] = useState(initialHiddenEvents);
@@ -50,9 +60,12 @@ export function SettingsPanel({
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResults, setLocationResults] = useState<GeocodingResult[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [accountConfirmation, setAccountConfirmation] = useState("");
   const [accountDeletionRequested, setAccountDeletionRequested] = useState(false);
   const [pending, startTransition] = useTransition();
   const attemptedCalendarRefresh = useRef(false);
+  const currentMember = members.find((member) => member.userId === currentUserId);
+  const isOwner = currentMember?.role === "owner";
 
   const showMessage = useCallback((value: string) => { setMessage(value); window.setTimeout(() => setMessage(null), 4000); }, []);
   const refreshCalendars = useCallback(() => {
@@ -86,12 +99,13 @@ export function SettingsPanel({
           <form className="settings-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); if (isDemo) { showMessage("Demo household updated for this visit"); return; } startTransition(async () => { const result = await updateHouseholdAction({ name: String(form.get("name")), timezone: household.timezone, temperatureUnit: household.temperatureUnit }); showMessage(result.ok ? "Household name saved" : result.error ?? "Save failed"); }); }}>
             <label>Household name<input name="name" defaultValue={household.name} maxLength={80} /></label><button className="button button-secondary" disabled={pending}>Save</button>
           </form>
-          <div className="member-list">{members.map((member) => <div className="member-row" key={member.id}><span className="member-avatar">{member.displayName.slice(0, 1)}</span><div><strong>{member.displayName}</strong><small>{member.email}</small></div><span>{member.role}</span></div>)}</div>
-          <form className="invite-form" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const email = String(new FormData(form).get("email")); if (isDemo) { showMessage(`Demo invitation created for ${email}`); form.reset(); return; } startTransition(async () => { const result = await inviteMemberAction(email); showMessage(result.ok ? "Invitation created. They’ll join when they sign in with this address." : result.error ?? "Invite failed"); if (result.ok) form.reset(); }); }}>
+          <div className="member-list">{members.map((member) => <div className="member-row" key={member.id}><span className="member-avatar">{member.displayName.slice(0, 1)}</span><div><strong>{member.displayName}{member.userId === currentUserId ? " (you)" : ""}</strong><small>{member.email}</small></div><span>{member.role}</span>{isOwner && member.userId !== currentUserId && <span className="member-actions"><button className="text-button" type="button" disabled={pending} onClick={() => startTransition(async () => { const result = await transferOwnershipAction(member.id); showMessage(result.ok ? "Ownership transferred" : result.error ?? "Transfer failed"); if (result.ok) window.location.reload(); })}>Make owner</button><button className="icon-button danger" type="button" aria-label={`Remove ${member.displayName}`} disabled={pending} onClick={() => { if (!window.confirm(`Remove ${member.displayName} from this household?`)) return; startTransition(async () => { const result = await removeMemberAction(member.id); showMessage(result.ok ? "Member removed" : result.error ?? "Remove failed"); if (result.ok) window.location.reload(); }); }}><Trash2 size={14} /></button></span>}</div>)}</div>
+          {isOwner && <form className="invite-form" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const email = String(new FormData(form).get("email")); if (isDemo) { showMessage(`Demo invitation created for ${email}`); form.reset(); return; } startTransition(async () => { const result = await inviteMemberAction(email); showMessage(result.ok ? "Invitation emailed" : result.error ?? "Invite failed"); if (result.ok) form.reset(); }); }}>
             <UserPlus size={16} /><input name="email" type="email" placeholder="partner@example.com" aria-label="Partner email" required /><button className="button button-primary" disabled={pending}>Invite member</button>
-          </form>
-          {invitations.length > 0 && <div className="pending-invitations"><h3>Pending invitations</h3>{invitations.map((invite) => <div key={invite.id}><span>{invite.email}</span><small>{invite.status}</small></div>)}</div>}
-          <p className="settings-help">The invited person signs in independently with Google. If the email matches, they join this household automatically; credentials are never shared.</p>
+          </form>}
+          {invitations.length > 0 && <div className="pending-invitations"><h3>Pending invitations</h3>{invitations.map((invite) => <div key={invite.id}><span><strong>{invite.email}</strong><small>{invite.deliveryError ? "Delivery needs attention" : invite.sentAt ? "Email sent" : "Pending delivery"}</small></span>{isOwner && <span><button className="text-button" type="button" disabled={pending} onClick={() => startTransition(async () => { const result = await resendInvitationAction(invite.id); showMessage(result.ok ? "Invitation resent" : result.error ?? "Resend failed"); })}>Resend</button><button className="text-button danger" type="button" disabled={pending} onClick={() => startTransition(async () => { const result = await cancelInvitationAction(invite.id); showMessage(result.ok ? "Invitation canceled" : result.error ?? "Cancel failed"); if (result.ok) window.location.reload(); })}>Cancel</button></span>}</div>)}</div>}
+          {!isOwner && <button className="button button-secondary" type="button" disabled={pending} onClick={() => { if (!window.confirm("Leave this household? You’ll lose access to its shared planner.")) return; startTransition(async () => { const result = await leaveHouseholdAction(); if (result.ok) router.push("/onboarding"); else showMessage(result.error ?? "Could not leave household"); }); }}>Leave household</button>}
+          <p className="settings-help">Invitations are sent by email with a private, expiring link. Each person signs in independently with Apple or Google; credentials are never shared.</p>
         </section>
 
         <section className="settings-section" id="calendars">
@@ -143,17 +157,13 @@ export function SettingsPanel({
             <div className="account-privacy-controls" id="privacy">
               <div>
                 <strong>Privacy and account</strong>
-                <p>Review how your Google data is handled or request deletion of your account and associated personal data.</p>
+                <p>Review how your connected account data is handled or permanently delete your account and associated personal data.</p>
               </div>
               <span>
                 <Link className="button button-secondary" href="/privacy">Privacy Policy</Link>
-                <a
-                  className="button button-secondary"
-                  href="mailto:jgreco@gmail.com?subject=Week%20of%20Us%20account%20deletion%20request"
-                  onClick={() => setAccountDeletionRequested(true)}
-                >Request account deletion</a>
+                <button className="button button-secondary" type="button" onClick={() => setAccountDeletionRequested((value) => !value)}>Delete account</button>
               </span>
-              {accountDeletionRequested && <small>Your email app should open with a deletion request addressed to support. Send it from the Google email used for Week of Us so the account can be verified.</small>}
+              {accountDeletionRequested && <div className="account-delete-confirm"><p>This permanently removes your account and planner data. If you own a household with other members, transfer ownership first.</p><label>Type DELETE to confirm<input value={accountConfirmation} onChange={(event) => setAccountConfirmation(event.target.value)} autoComplete="off" /></label><button className="button button-danger" type="button" disabled={pending || accountConfirmation !== "DELETE"} onClick={() => startTransition(async () => { const result = await deleteAccountAction(accountConfirmation); if (result.ok) router.push("/"); else showMessage(result.error ?? "Account deletion failed"); })}>Permanently delete account</button></div>}
             </div>
           )}
         </section>

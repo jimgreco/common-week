@@ -17,10 +17,10 @@ export default function PrivacyPage() {
         {
           title: "Information we collect",
           items: [
-            "Google account information: your Google account identifier, verified email address, display name, and profile image when you sign in.",
+            "Account information: your Apple or Google account identifier, verified email address, display name, and profile image when the provider supplies one.",
             "Google Calendar information: the calendars you can access and events from calendars you explicitly choose to share with your Week of Us household.",
             "Planner information: household membership, invitations, plans, notes, tasks, calendar display preferences, saved locations, and app preferences.",
-            "Service data: encrypted Google OAuth credentials, expiring session records, short-lived provider caches, and technical records needed to operate and secure the service.",
+            "Service data: encrypted Apple and Google OAuth credentials, expiring session and invitation records, short-lived provider caches, protected offline iPhone data, and technical records needed to operate and secure the service.",
           ],
         },
         {
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
         {
           title: "Storage, security, and retention",
           paragraphs: [
-            "Week of Us stores account and planner data in its private PostgreSQL database. Google access and refresh tokens are encrypted before storage. Access is limited by the signed-in user and household, and the browser never receives database credentials or another member’s Google credentials.",
+            "Week of Us stores account and planner data in its private PostgreSQL database. Apple and Google tokens are encrypted before storage. Access is limited by the signed-in user and household, and clients never receive database credentials or another member’s provider credentials.",
             "Calendar event responses are cached for approximately five minutes to keep the planner responsive. Authentication sessions expire after 30 days. Account, planner, calendar preference, and encrypted connection records are kept while your account remains active or as needed to operate the service, resolve security issues, and meet legal obligations.",
           ],
         },
@@ -48,14 +48,14 @@ export default function PrivacyPage() {
           title: "Sharing and service providers",
           paragraphs: [
             "Calendar names and events are shared with members of your Week of Us household only when you choose Share for that calendar. When you also enable Calendar editing and Google grants write access, household owners and members can add, edit, and delete events on that Shared calendar through Week of Us. Private calendars remain visible only to their owner, hidden calendars do not appear in the app, and viewer household roles cannot edit events. We do not sell personal data. We disclose data only to infrastructure providers acting on our behalf, when you direct us to, to protect the service and its users, or when legally required.",
-            "Week of Us sends saved coordinates to Open-Meteo to retrieve weather forecasts and sends location search text to Open-Meteo’s geocoding service. Google Calendar data is not sent to Open-Meteo.",
+            "Week of Us sends invitation recipient addresses to Resend to deliver invitations, saved coordinates to Open-Meteo to retrieve weather forecasts, and location search text to Open-Meteo’s geocoding service. Google Calendar data is not sent to Resend or Open-Meteo.",
           ],
         },
         {
           title: "Your choices and deletion",
           paragraphs: [
             "You can hide individual calendars, keep them private to your account, stop sharing a calendar to remove household editing access, and avoid enabling Calendar editing. You can also revoke Week of Us access at any time from your Google Account’s third-party connections page.",
-            "You can request deletion of your Week of Us account and associated personal data from Settings after signing in, or by emailing jgreco@gmail.com from the Google email address used for the account. We may need to verify emailed requests. Deletion from active systems will be completed within 30 days unless retention is required for security or legal reasons.",
+            "You can permanently delete your Week of Us account and associated personal data directly from Settings on the web or iPhone. Connected Apple and Google authorizations are revoked when credentials are available. A household owner must transfer ownership first if other members remain; a sole-member household is deleted with the account.",
           ],
         },
         {

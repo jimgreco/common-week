@@ -8,6 +8,9 @@ import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
 import { refreshCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
 import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
 import { isGoogleCalendarApiDisabled } from "@/lib/integrations/google-calendar";
+import { deliverInvitation, invitationToken } from "@/lib/server/invitations";
+import { permanentlyDeleteUser } from "@/lib/server/account-deletion";
+import { deleteCurrentSession } from "@/lib/server/session";
 import type { ActionResult, CalendarPreference } from "@/types/domain";
 
 function errorResult(error: unknown, fallback: string): ActionResult {
@@ -77,9 +80,10 @@ export async function inviteMemberAction(email: string): Promise<ActionResult> {
   try {
     const invitedEmail = z.string().trim().toLowerCase().email().max(320).parse(email);
     const context = await requireHouseholdContext();
+    if (context.role !== "owner") throw new Error("Only the household owner can invite members.");
     if (invitedEmail === context.email.toLowerCase()) throw new Error("You already belong to this household.");
 
-    await withTransaction(async (database) => {
+    const invite = await withTransaction(async (database) => {
       const existingMember = await database.query(
         `select 1 from users u
           join household_members hm on hm.user_id = u.id
@@ -89,21 +93,119 @@ export async function inviteMemberAction(email: string): Promise<ActionResult> {
       if (existingMember.rowCount) throw new Error("That person already belongs to this household.");
 
       await database.query(
-        `delete from household_invitations
+        `update household_invitations set status = 'revoked'
           where household_id = $1 and email = $2 and status = 'pending'`,
         [context.householdId, invitedEmail],
       );
-      await database.query(
-        `insert into household_invitations (household_id, email, invited_by)
-         values ($1, $2, $3)`,
-        [context.householdId, invitedEmail, context.userId],
+      const generated = invitationToken();
+      const result = await database.query<{ id: string; household_name: string }>(
+        `insert into household_invitations (household_id, email, invited_by, token_hash)
+         select h.id, $2, $3, $4 from households h where h.id = $1
+         returning id, (select name from households where id = $1) as household_name`,
+        [context.householdId, invitedEmail, context.userId, generated.hash],
       );
+      return { ...result.rows[0], token: generated.token };
     });
-    revalidatePath("/settings");
+    try {
+      await deliverInvitation({ id: invite.id, email: invitedEmail, householdName: invite.household_name, inviterName: context.displayName, token: invite.token });
+    } finally {
+      revalidatePath("/settings");
+    }
     return { ok: true };
   } catch (error) {
     return errorResult(error, "The invitation could not be created.");
   }
+}
+
+export async function resendInvitationAction(invitationId: string): Promise<ActionResult> {
+  try {
+    const id = z.string().uuid().parse(invitationId);
+    const context = await requireHouseholdContext();
+    if (context.role !== "owner") throw new Error("Only the household owner can resend invitations.");
+    const generated = invitationToken();
+    const result = await query<{ id: string; email: string; household_name: string }>(
+      `update household_invitations i set token_hash = $3, expires_at = now() + interval '14 days',
+         delivery_id = null, delivery_error = null
+       from households h where i.id = $1 and i.household_id = $2 and i.household_id = h.id
+         and i.status = 'pending'
+       returning i.id, i.email::text, h.name as household_name`,
+      [id, context.householdId, generated.hash],
+    );
+    const invite = result.rows[0];
+    if (!invite) throw new Error("That invitation is no longer pending.");
+    await deliverInvitation({ id, email: invite.email, householdName: invite.household_name, inviterName: context.displayName, token: generated.token });
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (error) { return errorResult(error, "The invitation could not be resent."); }
+}
+
+export async function cancelInvitationAction(invitationId: string): Promise<ActionResult> {
+  try {
+    const id = z.string().uuid().parse(invitationId);
+    const context = await requireHouseholdContext();
+    if (context.role !== "owner") throw new Error("Only the household owner can cancel invitations.");
+    const result = await query(
+      "update household_invitations set status = 'revoked', token_hash = null where id = $1 and household_id = $2 and status = 'pending'",
+      [id, context.householdId],
+    );
+    if (!result.rowCount) throw new Error("That invitation is no longer pending.");
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (error) { return errorResult(error, "The invitation could not be canceled."); }
+}
+
+export async function removeMemberAction(memberId: string): Promise<ActionResult> {
+  try {
+    const id = z.string().uuid().parse(memberId);
+    const context = await requireHouseholdContext();
+    if (context.role !== "owner") throw new Error("Only the household owner can remove members.");
+    const result = await query(
+      `delete from household_members where id = $1 and household_id = $2 and user_id <> $3 and role <> 'owner'`,
+      [id, context.householdId, context.userId],
+    );
+    if (!result.rowCount) throw new Error("That member cannot be removed.");
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (error) { return errorResult(error, "The member could not be removed."); }
+}
+
+export async function transferOwnershipAction(memberId: string): Promise<ActionResult> {
+  try {
+    const id = z.string().uuid().parse(memberId);
+    const context = await requireHouseholdContext();
+    if (context.role !== "owner") throw new Error("Only the household owner can transfer ownership.");
+    await withTransaction(async (database) => {
+      const target = await database.query<{ user_id: string }>(
+        "select user_id from household_members where id = $1 and household_id = $2 and user_id <> $3 for update",
+        [id, context.householdId, context.userId],
+      );
+      if (!target.rows[0]) throw new Error("Choose another household member.");
+      await database.query("update household_members set role = 'member' where household_id = $1 and user_id = $2", [context.householdId, context.userId]);
+      await database.query("update household_members set role = 'owner' where household_id = $1 and user_id = $2", [context.householdId, target.rows[0].user_id]);
+    });
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (error) { return errorResult(error, "Ownership could not be transferred."); }
+}
+
+export async function leaveHouseholdAction(): Promise<ActionResult> {
+  try {
+    const context = await requireHouseholdContext();
+    if (context.role === "owner") throw new Error("Transfer ownership before leaving the household.");
+    await query("delete from household_members where household_id = $1 and user_id = $2", [context.householdId, context.userId]);
+    revalidatePath("/settings");
+    return { ok: true };
+  } catch (error) { return errorResult(error, "You could not leave the household."); }
+}
+
+export async function deleteAccountAction(confirmation: string): Promise<ActionResult> {
+  try {
+    if (confirmation !== "DELETE") throw new Error("Type DELETE to confirm.");
+    const context = await requireUserContext();
+    await permanentlyDeleteUser(context.userId);
+    await deleteCurrentSession();
+    return { ok: true };
+  } catch (error) { return errorResult(error, "Your account could not be deleted."); }
 }
 
 export async function addLocationAction(input: {

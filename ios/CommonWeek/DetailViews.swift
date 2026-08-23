@@ -123,6 +123,10 @@ struct SettingsView: View {
     @State private var isLoadingCalendars = false
     @State private var isAuthorizingCalendar = false
     @State private var calendarMessage: String?
+    @State private var accountMessage: String?
+    @State private var showingDeleteConfirmation = false
+    @State private var members: [HouseholdMember]
+    @State private var inviteEmail = ""
 
     private let timezones: [TimezoneChoice] = [
         .init(id: "America/New_York", name: "Eastern Time"), .init(id: "America/Chicago", name: "Central Time"),
@@ -135,6 +139,7 @@ struct SettingsView: View {
         _name = State(initialValue: data.household.name)
         _timezone = State(initialValue: data.household.timezone)
         _temperature = State(initialValue: data.household.temperatureUnit)
+        _members = State(initialValue: data.members)
     }
 
     var body: some View {
@@ -149,12 +154,27 @@ struct SettingsView: View {
                 }
                 Section("Household") {
                     TextField("Household name", text: $name)
-                    ForEach(data.members) { member in
+                    ForEach(members) { member in
                         HStack(spacing: 12) {
                             Text(member.displayName.prefix(1)).font(.caption.bold()).foregroundStyle(CWTheme.accentStrong).frame(width: 34, height: 34).background(CWTheme.mint, in: Circle())
                             VStack(alignment: .leading) { Text(member.displayName); Text(member.email).font(.caption).foregroundStyle(.secondary) }
                             Spacer(); Text(member.role.capitalized).font(.caption2).foregroundStyle(.secondary)
+                            if isCurrentUserOwner && member.userId != currentUserId {
+                                Menu {
+                                    Button("Make owner") { Task { await transferOwnership(to: member) } }
+                                    Button("Remove member", role: .destructive) { Task { await removeMember(member) } }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                }
+                            }
                         }
+                    }
+                    if isCurrentUserOwner {
+                        TextField("Invite by email", text: $inviteEmail)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                        Button("Send invitation") { Task { await inviteMember() } }
+                            .disabled(inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
                 Section("Week preferences") {
@@ -170,6 +190,14 @@ struct SettingsView: View {
                 }
                 Section {
                     Button("Sign out", role: .destructive) { Task { await auth.signOut(); dismiss() } }
+                    Button("Delete account", role: .destructive) { showingDeleteConfirmation = true }
+                    if let accountMessage { Text(accountMessage).font(.caption).foregroundStyle(.red) }
+                }
+                Section("Legal and support") {
+                    Link("Manage household on the web", destination: URL(string: "https://weekofus.com/settings")!)
+                    Link("Privacy Policy", destination: URL(string: "https://weekofus.com/privacy")!)
+                    Link("Terms of Service", destination: URL(string: "https://weekofus.com/terms")!)
+                    Link("Contact support", destination: URL(string: "https://weekofus.com/support")!)
                 }
                 Section { Text(appVersion).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center) }
             }
@@ -177,6 +205,22 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { await loadCalendarSettings() }
+            .alert("Permanently delete your account?", isPresented: $showingDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete account", role: .destructive) {
+                    Task {
+                        do {
+                            _ = try await APIClient.shared.deleteAccount()
+                            auth.accountWasDeleted()
+                            dismiss()
+                        } catch {
+                            accountMessage = error.localizedDescription
+                        }
+                    }
+                }
+            } message: {
+                Text("This removes your Week of Us account and planner data. If you own a household with other members, transfer ownership first.")
+            }
         }
     }
 
@@ -237,6 +281,41 @@ struct SettingsView: View {
         let updated = HouseholdSummary(id: data.household.id, name: name.trimmingCharacters(in: .whitespacesAndNewlines), timezone: timezone, temperatureUnit: temperature)
         _ = await viewModel.updateHousehold(updated)
         isSaving = false
+    }
+
+    private var currentUserId: String? {
+        if case .signedIn(let identity) = auth.state { return identity.userId }
+        return nil
+    }
+
+    private var isCurrentUserOwner: Bool {
+        members.first { $0.userId == currentUserId }?.role == "owner"
+    }
+
+    private func inviteMember() async {
+        do {
+            _ = try await APIClient.shared.householdAction("invite", email: inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines))
+            inviteEmail = ""
+            accountMessage = nil
+        } catch { accountMessage = error.localizedDescription }
+    }
+
+    private func transferOwnership(to member: HouseholdMember) async {
+        do {
+            _ = try await APIClient.shared.householdAction("transferOwnership", id: member.id)
+            members = members.map { current in
+                HouseholdMember(id: current.id, userId: current.userId, displayName: current.displayName, email: current.email, role: current.id == member.id ? "owner" : current.userId == currentUserId ? "member" : current.role)
+            }
+            accountMessage = nil
+        } catch { accountMessage = error.localizedDescription }
+    }
+
+    private func removeMember(_ member: HouseholdMember) async {
+        do {
+            _ = try await APIClient.shared.householdAction("removeMember", id: member.id)
+            members.removeAll { $0.id == member.id }
+            accountMessage = nil
+        } catch { accountMessage = error.localizedDescription }
     }
 
     private func loadCalendarSettings(refreshPlanner: Bool = false) async {

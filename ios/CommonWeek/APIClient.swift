@@ -47,6 +47,14 @@ final class APIClient {
         try await send(path: "/api/ios/auth/exchange", method: "POST", body: ["code": code, "state": state], authenticated: false)
     }
 
+    func signInWithApple(identityToken: String, authorizationCode: String, nonce: String, displayName: String?) async throws -> NativeSession {
+        try await send(path: "/api/ios/auth/apple", method: "POST", body: AppleSignInRequest(identityToken: identityToken, authorizationCode: authorizationCode, nonce: nonce, displayName: displayName), authenticated: false)
+    }
+
+    func beginGoogleConnection(state: String, calendarWrite: Bool) async throws -> GoogleConnectionStart {
+        try await send(path: "/api/ios/google-connect", method: "POST", body: GoogleConnectionRequest(state: state, calendarWrite: calendarWrite))
+    }
+
     func restoreSession() async throws -> SessionIdentity {
         try await send(path: "/api/ios/session")
     }
@@ -54,6 +62,13 @@ final class APIClient {
     func signOut() async {
         let _: EmptyResponse? = try? await send(path: "/api/ios/session", method: "DELETE")
         token = nil
+    }
+
+    func deleteAccount() async throws -> EmptyResponse {
+        let result: EmptyResponse = try await send(path: "/api/ios/session", method: "POST", body: ["action": "delete-account", "confirmation": "DELETE"])
+        token = nil
+        await OfflineStore.shared.clearAll()
+        return result
     }
 
     func planner(week: String) async throws -> PlannerPayload {
@@ -116,6 +131,10 @@ final class APIClient {
 
     func updateHousehold(_ household: HouseholdSummary) async throws -> EmptyResponse {
         try await send(path: "/api/ios/settings", method: "PATCH", body: household)
+    }
+
+    func householdAction(_ action: String, id: String? = nil, email: String? = nil) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/settings", method: "PATCH", body: HouseholdActionRequest(action: action, id: id, email: email))
     }
 
     func calendarSettings() async throws -> CalendarSettings {
@@ -228,6 +247,24 @@ final class APIClient {
 
 private struct RealtimePayload: Decodable {
     let table: String?
+}
+
+private struct AppleSignInRequest: Encodable {
+    let identityToken: String
+    let authorizationCode: String
+    let nonce: String
+    let displayName: String?
+}
+
+private struct GoogleConnectionRequest: Encodable {
+    let state: String
+    let calendarWrite: Bool
+}
+
+private struct HouseholdActionRequest: Encodable {
+    let action: String
+    let id: String?
+    let email: String?
 }
 
 private struct HideEventRequest: Encodable {

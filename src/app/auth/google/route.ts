@@ -4,6 +4,7 @@ import {
   createGoogleAuthorization,
   oauthCookieOptions,
   OAUTH_CLIENT_STATE_COOKIE,
+  OAUTH_CONNECT_COOKIE,
   OAUTH_MODE_COOKIE,
   OAUTH_PLATFORM_COOKIE,
   OAUTH_STATE_COOKIE,
@@ -15,6 +16,7 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const platform = request.nextUrl.searchParams.get("platform");
   const clientState = request.nextUrl.searchParams.get("client_state");
+  const connectToken = request.nextUrl.searchParams.get("connect_token");
   try {
     const isNative = platform === "ios";
     if (isNative && !clientState?.match(/^[A-Za-z0-9_-]{20,128}$/)) {
@@ -29,6 +31,7 @@ export async function GET(request: NextRequest) {
     if (isNative && clientState) {
       response.cookies.set(OAUTH_PLATFORM_COOKIE, "ios", oauthCookieOptions());
       response.cookies.set(OAUTH_CLIENT_STATE_COOKIE, clientState, oauthCookieOptions());
+      if (connectToken?.match(/^[A-Za-z0-9_-]{20,128}$/)) response.cookies.set(OAUTH_CONNECT_COOKIE, connectToken, oauthCookieOptions());
     }
     return response;
   } catch {

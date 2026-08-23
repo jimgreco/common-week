@@ -31,7 +31,7 @@ export default async function SettingsPage() {
       sectionGroup: event.sectionGroup,
       accessRole: "owner" as const,
     }));
-    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} calendarConnected={false} calendarWriteEnabled isDemo /></SettingsScaffold>;
+    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} calendarConnected={false} calendarWriteEnabled currentUserId="demo-jim" isDemo /></SettingsScaffold>;
   }
 
   const context = await getUserContext();
@@ -52,8 +52,8 @@ export default async function SettingsPage() {
       "select id, name, latitude, longitude, timezone, is_saved from locations where household_id = $1 and is_saved = true order by name",
       [context.householdId],
     ),
-    query<{ id: string; email: string; status: string; expires_at: Date }>(
-      "select id, email::text, status, expires_at from household_invitations where household_id = $1 and status = 'pending' order by created_at",
+    query<{ id: string; email: string; status: string; expires_at: Date; sent_at: Date | null; delivery_error: string | null }>(
+      "select id, email::text, status, expires_at, sent_at, delivery_error from household_invitations where household_id = $1 and status = 'pending' order by created_at",
       [context.householdId],
     ),
     getCurrentUserCalendarPreferences(context.userId),
@@ -82,7 +82,7 @@ export default async function SettingsPage() {
   const members: HouseholdMember[] = membersResult.rows.map((member) => ({ id: member.id, userId: member.user_id, displayName: member.display_name, email: member.email, role: member.role }));
   const locations: HouseholdLocation[] = locationsResult.rows.map((location) => ({ id: location.id, name: location.name, latitude: Number(location.latitude), longitude: Number(location.longitude), timezone: location.timezone, isSaved: location.is_saved, isDefault: location.id === household.default_location_id }));
   const hiddenEvents: HiddenCalendarEvent[] = hiddenEventsResult.rows.map((event) => ({ id: event.id, eventId: event.event_id, title: event.title, calendarName: event.calendar_name, eventStart: event.event_start, hiddenAt: event.hidden_at.toISOString() }));
-  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString() }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} calendarConnected={Boolean(connectionResult.rowCount)} calendarWriteEnabled={hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE)} isDemo={false} /></SettingsScaffold>;
+  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString(), sentAt: invite.sent_at?.toISOString() ?? null, deliveryError: invite.delivery_error }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} calendarConnected={Boolean(connectionResult.rowCount)} calendarWriteEnabled={hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE)} currentUserId={context.userId} isDemo={false} /></SettingsScaffold>;
 }
 
 function SettingsScaffold({ children }: { children: React.ReactNode }) {

@@ -55,6 +55,7 @@ private struct PlannerSnapshot: Codable {
 }
 
 actor OfflineStore {
+    static let shared = OfflineStore()
     private let fileManager: FileManager
     private let directory: URL
     private let encoder: JSONEncoder
@@ -95,6 +96,10 @@ actor OfflineStore {
         var mutations = pendingMutations(userId: userId)
         mutations.removeAll { $0.id == id }
         try write(mutations, to: queueURL(userId: userId))
+    }
+
+    func clearAll() {
+        try? fileManager.removeItem(at: directory)
     }
 
     private func snapshotURL(userId: String, weekStart: String) -> URL {

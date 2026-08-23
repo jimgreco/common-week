@@ -2,7 +2,9 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
   inviteMemberAction,
+  removeMemberAction,
   refreshGoogleCalendarsAction,
+  transferOwnershipAction,
   updateCalendarPreferenceAction,
   updateHouseholdAction,
 } from "@/app/actions/settings";
@@ -42,6 +44,12 @@ export async function PATCH(request: NextRequest) {
     const body = z.record(z.string(), z.unknown()).parse(await request.json());
     if (body.action === "invite") {
       return actionResponse(await inviteMemberAction(z.string().email().parse(body.email)));
+    }
+    if (body.action === "removeMember") {
+      return actionResponse(await removeMemberAction(z.string().uuid().parse(body.id)));
+    }
+    if (body.action === "transferOwnership") {
+      return actionResponse(await transferOwnershipAction(z.string().uuid().parse(body.id)));
     }
     if (body.action === "refreshCalendars") {
       return actionResponse(await refreshGoogleCalendarsAction());

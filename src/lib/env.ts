@@ -11,6 +11,13 @@ export const isGoogleOAuthConfigured = Boolean(
     Buffer.from(process.env.GOOGLE_TOKEN_ENCRYPTION_KEY, "base64").length === 32,
 );
 
+export const isAppleOAuthConfigured = Boolean(
+  process.env.APPLE_TEAM_ID &&
+  process.env.APPLE_KEY_ID &&
+  process.env.APPLE_PRIVATE_KEY &&
+  process.env.APPLE_SERVICE_ID,
+);
+
 export function applicationOrigin(): string {
   const configured = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const url = new URL(configured);

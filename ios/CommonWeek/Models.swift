@@ -13,6 +13,10 @@ struct NativeSession: Codable {
     let expiresAt: String
 }
 
+struct GoogleConnectionStart: Codable {
+    let path: String
+}
+
 struct SessionIdentity: Codable, Equatable {
     let userId: String
     let email: String

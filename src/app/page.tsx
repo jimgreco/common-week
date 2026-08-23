@@ -3,7 +3,7 @@ import { ArrowRight, CalendarDays, Check, CloudSun, MapPin } from "lucide-react"
 import { signInWithGoogle } from "@/app/actions/auth";
 import { BrandMark } from "@/components/brand-mark";
 import { currentWeekStart } from "@/lib/date";
-import { isDemoMode, isGoogleOAuthConfigured } from "@/lib/env";
+import { isAppleOAuthConfigured, isDemoMode, isGoogleOAuthConfigured } from "@/lib/env";
 import { getUserContext } from "@/lib/server/auth";
 import { redirect } from "next/navigation";
 
@@ -39,6 +39,11 @@ export default async function Home() {
             requested separately only when you choose to enable it.
           </p>
           <div className="landing-actions">
+            {!isDemoMode && isAppleOAuthConfigured && (
+              <a className="button button-primary button-large apple-sign-in" href="/auth/apple">
+                <span aria-hidden="true"></span> Continue with Apple
+              </a>
+            )}
             {!isDemoMode && isGoogleOAuthConfigured ? (
               <form action={signInWithGoogle}>
                 <button className="button button-primary button-large" type="submit">
@@ -102,7 +107,7 @@ export default async function Home() {
         <nav aria-label="Legal links">
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
-          <a href="mailto:jgreco@gmail.com">Contact</a>
+          <Link href="/support">Support</Link>
         </nav>
       </footer>
     </main>

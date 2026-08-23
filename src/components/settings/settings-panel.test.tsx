@@ -8,16 +8,23 @@ const restoreCalendarEventAction = vi.fn();
 
 vi.mock("@/app/actions/settings", () => ({
   addLocationAction: vi.fn(),
+  cancelInvitationAction: vi.fn(),
+  deleteAccountAction: vi.fn(),
   inviteMemberAction: vi.fn(),
+  leaveHouseholdAction: vi.fn(),
   refreshGoogleCalendarsAction: (...args: unknown[]) => refreshGoogleCalendarsAction(...args),
   removeLocationAction: vi.fn(),
+  removeMemberAction: vi.fn(),
+  resendInvitationAction: vi.fn(),
   restoreCalendarEventAction: (...args: unknown[]) => restoreCalendarEventAction(...args),
   setDefaultLocationAction: vi.fn(),
   updateCalendarPreferenceAction: (...args: unknown[]) => updateCalendarPreferenceAction(...args),
   updateHouseholdAction: vi.fn(),
+  transferOwnershipAction: vi.fn(),
 }));
 vi.mock("@/app/actions/auth", () => ({ signInWithGoogle: vi.fn() }));
 vi.mock("@/app/actions/planner", () => ({ searchLocationsAction: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 describe("SettingsPanel calendar degradation", () => {
   beforeEach(() => {
@@ -40,6 +47,7 @@ describe("SettingsPanel calendar degradation", () => {
       calendars={[]}
       calendarConnected
       calendarWriteEnabled={false}
+      currentUserId="user"
       isDemo={false}
     />);
 
@@ -48,6 +56,31 @@ describe("SettingsPanel calendar degradation", () => {
     expect(screen.getByRole("button", { name: "Try Calendar again" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Connect Google Calendar" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Enable calendar editing" })).toHaveAttribute("href", "/auth/google?calendar_write=1");
+  });
+
+  it("shows the complete owner and self-service account lifecycle", () => {
+    render(<SettingsPanel
+      household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
+      members={[
+        { id: "owner-member", userId: "owner", displayName: "Jim", email: "jim@example.com", role: "owner" },
+        { id: "other-member", userId: "other", displayName: "Rachel", email: "rachel@example.com", role: "member" },
+      ]}
+      invitations={[{ id: "invite", email: "guest@example.com", status: "pending", expiresAt: "2026-09-01T00:00:00Z", sentAt: "2026-08-21T00:00:00Z" }]}
+      locations={[]}
+      calendars={[]}
+      calendarConnected={false}
+      calendarWriteEnabled={false}
+      currentUserId="owner"
+      isDemo={false}
+    />);
+
+    expect(screen.getByRole("button", { name: "Make owner" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove Rachel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resend" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    expect(screen.getByLabelText("Type DELETE to confirm")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Permanently delete account" })).toBeDisabled();
   });
 
   it("offers hide, private, and share visibility states", async () => {
@@ -73,6 +106,7 @@ describe("SettingsPanel calendar degradation", () => {
       }]}
       calendarConnected
       calendarWriteEnabled={false}
+      currentUserId="user"
       isDemo={false}
     />);
 
@@ -129,6 +163,7 @@ describe("SettingsPanel calendar degradation", () => {
       }]}
       calendarConnected
       calendarWriteEnabled
+      currentUserId="user"
       isDemo={false}
     />);
 
@@ -175,6 +210,7 @@ describe("SettingsPanel calendar degradation", () => {
       }]}
       calendarConnected={false}
       calendarWriteEnabled={false}
+      currentUserId="user"
       isDemo={false}
     />);
 

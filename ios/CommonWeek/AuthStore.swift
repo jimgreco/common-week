@@ -1,4 +1,5 @@
 import AuthenticationServices
+import CryptoKit
 import Security
 import SwiftUI
 import UIKit
@@ -32,6 +33,7 @@ final class AuthStore: NSObject, ObservableObject, ASWebAuthenticationPresentati
     @Published var errorMessage: String?
     private let api: APIClient
     private var authenticationSession: ASWebAuthenticationSession?
+    private var appleNonce: String?
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -98,8 +100,55 @@ final class AuthStore: NSObject, ObservableObject, ASWebAuthenticationPresentati
         }
     }
 
+    func prepareAppleRequest(_ request: ASAuthorizationAppleIDRequest) {
+        guard case .signedOut = state else { return }
+        state = .signingIn
+        errorMessage = nil
+        let nonce = Self.secureState()
+        appleNonce = nonce
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = SHA256.hash(data: Data(nonce.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func completeAppleSignIn(_ result: Result<ASAuthorization, Error>) {
+        guard let nonce = appleNonce else { state = .signedOut; return }
+        appleNonce = nil
+        switch result {
+        case .failure(let error):
+            state = .signedOut
+            if (error as? ASAuthorizationError)?.code != .canceled { errorMessage = error.localizedDescription }
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let tokenData = credential.identityToken,
+                  let identityToken = String(data: tokenData, encoding: .utf8),
+                  let codeData = credential.authorizationCode,
+                  let authorizationCode = String(data: codeData, encoding: .utf8) else {
+                state = .signedOut
+                errorMessage = "Apple sign-in did not return the required credentials."
+                return
+            }
+            let name = PersonNameComponentsFormatter().string(from: credential.fullName ?? PersonNameComponents()).trimmingCharacters(in: .whitespacesAndNewlines)
+            Task {
+                do {
+                    let session = try await api.signInWithApple(identityToken: identityToken, authorizationCode: authorizationCode, nonce: nonce, displayName: name.isEmpty ? nil : name)
+                    api.token = session.token
+                    state = .signedIn(try await api.restoreSession())
+                } catch {
+                    api.token = nil
+                    state = .signedOut
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
     func signOut() async {
         await api.signOut()
+        state = .signedOut
+    }
+
+    func accountWasDeleted() {
+        api.token = nil
         state = .signedOut
     }
 
@@ -143,15 +192,11 @@ final class AuthStore: NSObject, ObservableObject, ASWebAuthenticationPresentati
 
     private func beginGoogleAuthorization(calendarWrite: Bool) async throws -> (code: String, state: String) {
         let clientState = Self.secureState()
-        var components = URLComponents(url: api.baseURL.appending(path: "/auth/google"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "platform", value: "ios"),
-            URLQueryItem(name: "client_state", value: clientState),
-        ]
-        if calendarWrite { components.queryItems?.append(URLQueryItem(name: "calendar_write", value: "1")) }
+        let start = try await api.beginGoogleConnection(state: clientState, calendarWrite: calendarWrite)
+        let authorizationURL = api.baseURL.appending(path: start.path)
 
         return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: components.url!, callbackURLScheme: "commonweek") { [weak self] callback, error in
+            let session = ASWebAuthenticationSession(url: authorizationURL, callbackURLScheme: "commonweek") { [weak self] callback, error in
                 Task { @MainActor in
                     self?.authenticationSession = nil
                     if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {

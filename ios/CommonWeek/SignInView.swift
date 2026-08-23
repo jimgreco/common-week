@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 struct SignInView: View {
@@ -21,6 +22,13 @@ struct SignInView: View {
                     .lineSpacing(7)
                     .padding(.top, 28)
 
+                SignInWithAppleButton(.continue, onRequest: auth.prepareAppleRequest, onCompletion: auth.completeAppleSignIn)
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .disabled(auth.state == .signingIn)
+                    .padding(.top, 36)
+
                 Button(action: auth.signIn) {
                     HStack(spacing: 12) {
                         if auth.state == .signingIn { ProgressView().tint(.white) }
@@ -40,7 +48,7 @@ struct SignInView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(auth.state == .signingIn)
-                .padding(.top, 36)
+                .padding(.top, 12)
 
                 if let error = auth.errorMessage {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -53,6 +61,15 @@ struct SignInView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 18)
+
+                HStack(spacing: 18) {
+                    Link("Privacy", destination: URL(string: "https://weekofus.com/privacy")!)
+                    Link("Terms", destination: URL(string: "https://weekofus.com/terms")!)
+                    Link("Support", destination: URL(string: "https://weekofus.com/support")!)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 18)
             }
             .padding(.horizontal, 24)
             .padding(.top, 34)

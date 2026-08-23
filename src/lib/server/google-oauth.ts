@@ -18,6 +18,7 @@ export const OAUTH_VERIFIER_COOKIE = "common_week_oauth_verifier";
 export const OAUTH_MODE_COOKIE = "common_week_oauth_mode";
 export const OAUTH_PLATFORM_COOKIE = "common_week_oauth_platform";
 export const OAUTH_CLIENT_STATE_COOKIE = "common_week_oauth_client_state";
+export const OAUTH_CONNECT_COOKIE = "common_week_oauth_connect";
 
 export function hasGoogleScope(scope: string | null | undefined, expected: string): boolean {
   return new Set((scope ?? "").split(/\s+/).filter(Boolean)).has(expected);

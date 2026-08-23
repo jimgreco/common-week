@@ -114,6 +114,7 @@ jobs:
           actual_profile_name="$(plutil -extract Name raw -o - "$PROFILE_PLIST")"
           actual_app_id="$(plutil -extract Entitlements.application-identifier raw -o - "$PROFILE_PLIST")"
           actual_team_id="$(plutil -extract TeamIdentifier.0 raw -o - "$PROFILE_PLIST")"
+          apple_sign_in="$(plutil -extract Entitlements.com.apple.developer.applesignin.0 raw -o - "$PROFILE_PLIST" 2>/dev/null || true)"
           echo "Provisioning profile: $actual_profile_name"
           echo "Application ID: $actual_app_id"
           echo "Team: $actual_team_id"
@@ -129,6 +130,10 @@ jobs:
           fi
           if [ "$actual_team_id" != "$TEAM_ID" ]; then
             echo "Provisioning profile team mismatch."
+            exit 1
+          fi
+          if [ "$apple_sign_in" != "Default" ]; then
+            echo "Provisioning profile does not include the Sign in with Apple entitlement. Regenerate it after enabling the capability."
             exit 1
           fi
 

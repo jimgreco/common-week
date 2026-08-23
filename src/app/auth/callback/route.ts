@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { applicationOrigin } from "@/lib/env";
+import { acceptPendingInvitation, findOrCreateProviderUser } from "@/lib/server/account-identity";
 import { refreshCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
 import { withTransaction } from "@/lib/server/database";
 import {
@@ -8,12 +9,14 @@ import {
   GOOGLE_SCOPES,
   googleOAuthClient,
   OAUTH_CLIENT_STATE_COOKIE,
+  OAUTH_CONNECT_COOKIE,
   OAUTH_MODE_COOKIE,
   OAUTH_PLATFORM_COOKIE,
   OAUTH_STATE_COOKIE,
   OAUTH_VERIFIER_COOKIE,
 } from "@/lib/server/google-oauth";
 import { createDatabaseSession, createNativeAuthorizationCode, SESSION_COOKIE, sessionCookieOptions } from "@/lib/server/session";
+import { consumeNativeConnectionCode } from "@/lib/server/session";
 import { encryptProviderToken } from "@/lib/server/token-crypto";
 
 export const runtime = "nodejs";
@@ -31,6 +34,7 @@ function clearOAuthCookies(response: NextResponse) {
   response.cookies.delete(OAUTH_MODE_COOKIE);
   response.cookies.delete(OAUTH_PLATFORM_COOKIE);
   response.cookies.delete(OAUTH_CLIENT_STATE_COOKIE);
+  response.cookies.delete(OAUTH_CONNECT_COOKIE);
 }
 
 function authFailure(reason: string, platform?: string, clientState?: string) {
@@ -55,6 +59,7 @@ export async function GET(request: NextRequest) {
   const oauthMode = request.cookies.get(OAUTH_MODE_COOKIE)?.value;
   const oauthPlatform = request.cookies.get(OAUTH_PLATFORM_COOKIE)?.value;
   const clientState = request.cookies.get(OAUTH_CLIENT_STATE_COOKIE)?.value;
+  const connectToken = request.cookies.get(OAUTH_CONNECT_COOKIE)?.value;
   if (!code || !codeVerifier || !equalState(expectedState, state)) return authFailure("state", oauthPlatform, clientState);
 
   try {
@@ -75,17 +80,29 @@ export async function GET(request: NextRequest) {
     const accessToken = encryptProviderToken(tokens.access_token);
     const refreshToken = tokens.refresh_token ? encryptProviderToken(tokens.refresh_token) : null;
     const session = await withTransaction(async (database) => {
-      const userResult = await database.query<{ id: string }>(
-        `insert into users (google_subject, email, display_name, avatar_url)
-         values ($1, $2, $3, $4)
-         on conflict (google_subject) do update set
-           email = excluded.email,
-           display_name = excluded.display_name,
-           avatar_url = excluded.avatar_url
-         returning id`,
-        [payload.sub, email, displayName, payload.picture ?? null],
-      );
-      const userId = userResult.rows[0].id;
+      const linkedUserId = connectToken && clientState ? await consumeNativeConnectionCode(connectToken, clientState) : null;
+      const userId = linkedUserId ?? await findOrCreateProviderUser(database, {
+        provider: "google",
+        subject: payload.sub,
+        email,
+        displayName,
+        avatarUrl: payload.picture ?? null,
+      });
+      if (linkedUserId) {
+        const existingGoogleIdentity = await database.query<{ user_id: string }>(
+          "select user_id from user_identities where provider = 'google' and provider_subject = $1",
+          [payload.sub],
+        );
+        if (existingGoogleIdentity.rows[0] && existingGoogleIdentity.rows[0].user_id !== linkedUserId) {
+          throw new Error("That Google account is already connected to another Week of Us account.");
+        }
+        await database.query(
+          `insert into user_identities (user_id, provider, provider_subject) values ($1, 'google', $2)
+           on conflict (provider, provider_subject) do nothing`,
+          [linkedUserId, payload.sub],
+        );
+        await database.query("update users set google_subject = $2, updated_at = now() where id = $1", [linkedUserId, payload.sub]);
+      }
 
       await database.query(
         `insert into google_connections (
@@ -108,33 +125,7 @@ export async function GET(request: NextRequest) {
         ],
       );
 
-      const membership = await database.query<{ household_id: string }>(
-        "select household_id from household_members where user_id = $1",
-        [userId],
-      );
-      let householdId = membership.rows[0]?.household_id ?? null;
-      if (!householdId) {
-        const invitation = await database.query<{ id: string; household_id: string }>(
-          `select id, household_id
-             from household_invitations
-            where email = $1 and status = 'pending' and expires_at > now()
-            order by created_at desc
-            limit 1
-            for update skip locked`,
-          [email],
-        );
-        if (invitation.rows[0]) {
-          householdId = invitation.rows[0].household_id;
-          await database.query(
-            "insert into household_members (household_id, user_id, role) values ($1, $2, 'member')",
-            [householdId, userId],
-          );
-          await database.query(
-            "update household_invitations set status = 'accepted', accepted_at = now() where id = $1",
-            [invitation.rows[0].id],
-          );
-        }
-      }
+      const householdId = await acceptPendingInvitation(database, userId, email);
 
       const authorization = oauthPlatform === "ios" && clientState
         ? { kind: "native" as const, ...(await createNativeAuthorizationCode(database, userId, clientState)) }

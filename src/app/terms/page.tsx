@@ -23,7 +23,7 @@ export default function TermsPage() {
         {
           title: "Your account and household",
           paragraphs: [
-            "You are responsible for your Google account, the accuracy of information you provide, and activity performed through your Week of Us session. Invite only people you trust to join your household. Household owners and members can see and change calendar data that you explicitly Share into the common planner when Calendar editing is enabled.",
+            "You are responsible for your Apple or Google account, the accuracy of information you provide, and activity performed through your Week of Us session. Invite only people you trust to join your household. Household owners and members can see and change calendar data that you explicitly Share into the common planner when Calendar editing is enabled.",
           ],
         },
         {

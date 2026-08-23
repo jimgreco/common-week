@@ -1,4 +1,4 @@
-# PostgreSQL and Google setup
+# PostgreSQL, Apple, Google, and email setup
 
 ## 1. Configure local PostgreSQL
 
@@ -72,19 +72,32 @@ The OAuth flow uses state validation and PKCE. Each member's access/refresh toke
 
 Configure the Google Auth Platform Data Access screen with exactly the same three Calendar scopes requested by the app: `calendar.calendarlist.readonly`, `calendar.events.readonly`, and `calendar.events`. Complete Google's verification process for general public use. While the consent screen is in testing, both household accounts must remain listed as test users.
 
-## 3. Create and join a household
+## 3. Configure Sign in with Apple
 
-1. Sign in with the first Google account.
+1. Enable **Sign in with Apple** for the App ID `com.jimgreco.commonweek` and regenerate the App Store provisioning profile with that entitlement.
+2. Create a Services ID for the website, associate it with the primary App ID, verify `weekofus.com`, and register `https://weekofus.com/auth/apple/callback` as a return URL.
+3. Create a Sign in with Apple key associated with the primary App ID and securely store its `.p8` private key.
+4. Configure `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`, `APPLE_SERVICE_ID`, and `APPLE_BUNDLE_ID`. The private key can use literal `\n` sequences in an environment variable.
+
+The server verifies Apple signatures, issuer, audience, expiry, verified email, and nonce; validates the one-use authorization code; encrypts the returned refresh token; and revokes that authorization during self-service account deletion.
+
+## 4. Configure invitation email
+
+Verify a sending domain in Resend and set `RESEND_API_KEY` and `INVITATION_EMAIL_FROM`. Invitation delivery uses a unique idempotency key, and every resend rotates the 256-bit private link and resets its 14-day expiry.
+
+## 5. Create and join a household
+
+1. Sign in with Apple or Google.
 2. Create the household on the onboarding page.
 3. Add a saved location and make it the default.
-4. Invite the second member's exact Google email in Settings.
-5. Sign out, then sign in with the invited account. A current invitation matching Google's verified email is accepted atomically.
+4. Invite the second member's exact sign-in email in Settings and open the delivered private link.
+5. Sign out, then sign in with the invited Apple or Google account. A current invitation matching the provider's verified email is accepted atomically.
 6. Each member chooses Hide, Private, or Share for every calendar, then optionally sets aliases and badges for visible calendars.
 7. Each calendar owner who wants household event editing enables it separately in Settings and confirms that their Shared writable calendars are editable by the other household member.
 
 On iPhone, these controls are native: open the account menu, choose **Settings**, then use the **Google Calendar** section to connect or reconnect, enable editing, refresh calendars, and configure Hide, Private, Share, aliases, badges, and planner sections.
 
-## 4. Verify PostgreSQL isolation
+## 6. Verify PostgreSQL isolation
 
 Against a migrated disposable database:
 
@@ -96,7 +109,7 @@ This exercises household-scoped item reads/writes, cross-household location reje
 
 The browser never connects to PostgreSQL. Household identity comes from the server-side session, not form/query input, and every shared-data query includes that authenticated household boundary.
 
-## 5. Production acceptance checklist
+## 7. Production acceptance checklist
 
 - Sign in/out and exercise both the app session and Google access-token refresh.
 - Revoke Google authorization for one member and confirm only Calendar degrades to reconnect state.
@@ -107,4 +120,6 @@ The browser never connects to PostgreSQL. Household identity comes from the serv
 - From both household accounts, create, edit, and delete an event on each Shared writable calendar. Confirm a recurring edit or deletion affects only the selected occurrence; Private, hidden, viewer-access, and Google read-only calendars stay read-only; and Hide affects Week of Us without deleting from Google.
 - Exercise month, year, and DST boundaries.
 - Change Friday's location through Sunday and confirm all three weather summaries refresh.
-- Interrupt the network during quick entry and confirm typed text stays visible with Retry.
+- Interrupt the iPhone network, confirm the protected cached week remains visible, create/update/complete/delete planner items and change a location, then restore connectivity and confirm the queued edit count returns to zero without duplicates.
+- Exercise invite delivery, resend, cancel, member removal, leave, and owner transfer. Confirm expired/revoked links fail closed.
+- Delete a non-owner account and a sole-owner account from both web and iPhone; confirm data and local cache are removed and Apple/Google access is revoked. Confirm an owner with remaining members must transfer ownership first.
