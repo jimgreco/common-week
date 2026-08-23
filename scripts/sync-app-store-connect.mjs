@@ -49,6 +49,36 @@ const reviewNotes = [
   "Support: https://weekofus.com/support",
 ].join("\n");
 
+const ageRatingAttributes = {
+  advertising: false,
+  alcoholTobaccoOrDrugUseOrReferences: "NONE",
+  contests: "NONE",
+  gambling: false,
+  gamblingSimulated: "NONE",
+  gunsOrOtherWeapons: "NONE",
+  healthOrWellnessTopics: false,
+  lootBox: false,
+  medicalOrTreatmentInformation: "NONE",
+  messagingAndChat: false,
+  parentalControls: false,
+  profanityOrCrudeHumor: "NONE",
+  ageAssurance: false,
+  sexualContentGraphicAndNudity: "NONE",
+  sexualContentOrNudity: "NONE",
+  socialMedia: false,
+  socialMediaAgeRestricted: false,
+  horrorOrFearThemes: "NONE",
+  matureOrSuggestiveThemes: "NONE",
+  unrestrictedWebAccess: false,
+  userGeneratedContent: true,
+  violenceCartoonOrFantasy: "NONE",
+  violenceRealisticProlongedGraphicOrSadistic: "NONE",
+  violenceRealistic: "NONE",
+  ageRatingOverrideV2: "NONE",
+  koreaAgeRatingOverride: "NONE",
+  developerAgeRatingInfoUrl: "https://weekofus.com/support",
+};
+
 function required(name) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing ${name}`);
@@ -112,11 +142,24 @@ async function main() {
   if (apps.data.length !== 1) throw new Error(`Expected one App Store Connect app for ${bundleId}; found ${apps.data.length}`);
   const app = apps.data[0];
   console.log(`App: ${app.attributes.name} (${app.id}), bundle ${app.attributes.bundleId}, mode ${mode}`);
+  await update("apps", app.id, { contentRightsDeclaration: "USES_THIRD_PARTY_CONTENT" });
 
   const infos = await request(`/v1/apps/${app.id}/appInfos?limit=10`);
   if (!infos.data.length) throw new Error("App Store Connect has no appInfo record for this app");
   const info = infos.data.find((item) => ["PREPARE_FOR_SUBMISSION", "READY_FOR_REVIEW", "DEVELOPER_REJECTED", "REJECTED"].includes(item.attributes.appStoreState)) || infos.data[0];
   console.log(`App info: ${info.id}, state ${info.attributes.appStoreState}`);
+  if (mode === "apply") {
+    await request(`/v1/appInfos/${info.id}`, {
+      method: "PATCH",
+      body: { data: { type: "appInfos", id: info.id, relationships: { primaryCategory: { data: { type: "appCategories", id: "PRODUCTIVITY" } } } } },
+    });
+  } else {
+    console.log(`AUDIT would set appInfos/${info.id} primary category to PRODUCTIVITY`);
+  }
+
+  const ageRating = await request(`/v1/appInfos/${info.id}/ageRatingDeclaration`);
+  if (!ageRating.data) throw new Error("App Store Connect has no age rating declaration for this app info");
+  await update("ageRatingDeclarations", ageRating.data.id, ageRatingAttributes);
 
   const infoLocalizations = await request(`/v1/appInfos/${info.id}/appInfoLocalizations?limit=50`);
   const infoLocalization = infoLocalizations.data.find((item) => item.attributes.locale === locale);
