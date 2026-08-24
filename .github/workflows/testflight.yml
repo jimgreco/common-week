@@ -177,12 +177,11 @@ jobs:
           APP_PATH="$(find "$RUNNER_TEMP/CommonWeek.xcarchive/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
           test -n "$APP_PATH"
           codesign -d --entitlements - "$APP_PATH" > "$RUNNER_TEMP/signed-entitlements.plist"
-          apple_sign_in="$(plutil -extract com.apple.developer.applesignin.0 raw -o - "$RUNNER_TEMP/signed-entitlements.plist" 2>/dev/null || true)"
-          if [ "$apple_sign_in" != "Default" ]; then
+          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.applesignin" "$RUNNER_TEMP/signed-entitlements.plist" 2>/dev/null | grep -Fq "Default"; then
             echo "The signed archive does not include the Sign in with Apple entitlement."
             exit 1
           fi
-          echo "Signed archive includes Sign in with Apple: $apple_sign_in"
+          echo "Signed archive includes Sign in with Apple: Default"
 
       - name: Export IPA
         env:
