@@ -176,8 +176,9 @@ jobs:
           set -euo pipefail
           APP_PATH="$(find "$RUNNER_TEMP/CommonWeek.xcarchive/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
           test -n "$APP_PATH"
-          codesign -d --entitlements - "$APP_PATH" > "$RUNNER_TEMP/signed-entitlements.plist"
-          if ! /usr/libexec/PlistBuddy -c "Print :com.apple.developer.applesignin" "$RUNNER_TEMP/signed-entitlements.plist" 2>/dev/null | grep -Fq "Default"; then
+          SIGNED_ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>&1)"
+          echo "$SIGNED_ENTITLEMENTS"
+          if ! grep -Fq "com.apple.developer.applesignin" <<< "$SIGNED_ENTITLEMENTS" || ! grep -Fq "Default" <<< "$SIGNED_ENTITLEMENTS"; then
             echo "The signed archive does not include the Sign in with Apple entitlement."
             exit 1
           fi
