@@ -70,17 +70,24 @@ async function ensureBundle(authToken, identifier) {
 
 async function ensureAppleSignIn(authToken, bundleId) {
   const capabilities = await pages(authToken, `/bundleIds/${bundleId}/bundleIdCapabilities?fields[bundleIdCapabilities]=capabilityType`);
-  if (capabilities.some((value) => value.attributes?.capabilityType === 'APPLE_ID_AUTH')) return;
-  await request(authToken, 'POST', '/bundleIdCapabilities', {
-    data: {
-      type: 'bundleIdCapabilities',
-      attributes: {
-        capabilityType: 'APPLE_ID_AUTH',
-        settings: [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }],
+  const existing = capabilities.find((value) => value.attributes?.capabilityType === 'APPLE_ID_AUTH');
+  const attributes = {
+    capabilityType: 'APPLE_ID_AUTH',
+    settings: [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }],
+  };
+  if (existing) {
+    await request(authToken, 'PATCH', `/bundleIdCapabilities/${existing.id}`, {
+      data: { type: 'bundleIdCapabilities', id: existing.id, attributes },
+    });
+  } else {
+    await request(authToken, 'POST', '/bundleIdCapabilities', {
+      data: {
+        type: 'bundleIdCapabilities',
+        attributes,
+        relationships: { bundleId: { data: { type: 'bundleIds', id: bundleId } } },
       },
-      relationships: { bundleId: { data: { type: 'bundleIds', id: bundleId } } },
-    },
-  });
+    });
+  }
 }
 
 async function matchingCertificate(authToken, certificatePath) {
