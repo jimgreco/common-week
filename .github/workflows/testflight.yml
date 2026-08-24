@@ -17,7 +17,7 @@ jobs:
     env:
       IOS_BUNDLE_ID: com.jimgreco.commonweek
       IOS_API_BASE_URL: ${{ vars.IOS_API_BASE_URL || 'https://weekofus.com' }}
-      IOS_PROFILE_NAME: Week of Us App Store ${{ github.run_id }}-${{ github.run_attempt }}
+      IOS_PROFILE_NAME: Week of Us App Store Manual 20260824
 
     steps:
       - uses: actions/checkout@v5

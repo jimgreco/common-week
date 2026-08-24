@@ -109,6 +109,16 @@ async function main() {
   const bundle = await ensureBundle(authToken, bundleIdentifier);
   await ensureAppleSignIn(authToken, bundle.id);
   const certificate = await matchingCertificate(authToken, certificatePath);
+  const existingProfiles = await pages(
+    authToken,
+    `/profiles?filter[name]=${encodeURIComponent(profileName)}&fields[profiles]=name,uuid,profileContent&limit=200`,
+  );
+  const existingProfile = existingProfiles.find((profile) => profile.attributes?.name === profileName);
+  if (existingProfile?.attributes?.profileContent) {
+    writeFileSync(output, Buffer.from(existingProfile.attributes.profileContent, 'base64'));
+    console.log(`Downloaded existing ${profileName} for ${bundleIdentifier}.`);
+    return;
+  }
   const created = await request(authToken, 'POST', '/profiles', {
     data: {
       type: 'profiles',
