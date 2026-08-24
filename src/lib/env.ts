@@ -14,7 +14,7 @@ export const isGoogleOAuthConfigured = Boolean(
 export const isAppleOAuthConfigured = Boolean(
   process.env.APPLE_TEAM_ID &&
   process.env.APPLE_KEY_ID &&
-  process.env.APPLE_PRIVATE_KEY &&
+  (process.env.APPLE_PRIVATE_KEY || process.env.APPLE_PRIVATE_KEY_BASE64) &&
   process.env.APPLE_SERVICE_ID,
 );
 

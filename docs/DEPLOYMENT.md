@@ -20,6 +20,10 @@ Configure these GitHub Actions secrets at the repository level or in the `produc
 - `EC2_SSH_KEY`
 - `COMMON_WEEK_GOOGLE_CLIENT_ID`
 - `COMMON_WEEK_GOOGLE_CLIENT_SECRET`
+- `APPLE_TEAM_ID`
+- `COMMON_WEEK_APPLE_KEY_ID`
+- `COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64`
+- `COMMON_WEEK_APPLE_SERVICE_ID`
 
 Set the Actions variable:
 
@@ -27,7 +31,7 @@ Set the Actions variable:
 PRODUCTION_BASE_URL=https://weekofus.com
 ```
 
-The deployment transfers the Google credentials through a permission-restricted temporary file, updates `~/deploy/.env`, and removes the temporary copy. The first application deployment also generates `COMMON_WEEK_DB_PASSWORD` and `COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY` directly in that protected server file. The remaining runtime values are:
+The deployment transfers the Google and Apple credentials through a permission-restricted temporary file, updates `~/deploy/.env`, and removes the temporary copy. The Apple private key is base64 encoded so the one-line Compose environment file preserves it exactly. The first application deployment also generates `COMMON_WEEK_DB_PASSWORD` and `COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY` directly in that protected server file. The remaining runtime values are:
 
 ```dotenv
 COMMON_WEEK_APP_URL=https://weekofus.com

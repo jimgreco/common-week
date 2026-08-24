@@ -14,17 +14,28 @@ function required(name: string): string {
   return value;
 }
 
+function applePrivateKey(): string {
+  const configured = process.env.APPLE_PRIVATE_KEY?.trim();
+  if (configured) return configured.replace(/\\n/g, "\n");
+  const encoded = process.env.APPLE_PRIVATE_KEY_BASE64?.trim();
+  if (!encoded) throw new Error("APPLE_PRIVATE_KEY or APPLE_PRIVATE_KEY_BASE64 is not configured.");
+  const decoded = Buffer.from(encoded, "base64").toString("utf8").trim();
+  if (!decoded.includes("BEGIN PRIVATE KEY")) throw new Error("APPLE_PRIVATE_KEY_BASE64 is invalid.");
+  return `${decoded}\n`;
+}
+
 export function appleWebClientId() { return required("APPLE_SERVICE_ID"); }
 export function appleNativeClientId() { return process.env.APPLE_BUNDLE_ID?.trim() || "com.jimgreco.commonweek"; }
 export function appleRedirectUri() { return new URL("/auth/apple/callback", applicationOrigin()).toString(); }
 
 export function isAppleAuthConfigured(): boolean {
-  return Boolean(process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID && process.env.APPLE_PRIVATE_KEY && process.env.APPLE_SERVICE_ID);
+  return Boolean(process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID
+    && (process.env.APPLE_PRIVATE_KEY || process.env.APPLE_PRIVATE_KEY_BASE64)
+    && process.env.APPLE_SERVICE_ID);
 }
 
 async function clientSecret(clientId: string): Promise<string> {
-  const privateKey = required("APPLE_PRIVATE_KEY").replace(/\\n/g, "\n");
-  const key = await importPKCS8(privateKey, "ES256");
+  const key = await importPKCS8(applePrivateKey(), "ES256");
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({})
     .setProtectedHeader({ alg: "ES256", kid: required("APPLE_KEY_ID") })
