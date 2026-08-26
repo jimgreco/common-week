@@ -58,6 +58,8 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
+          echo "=== Xcode Selection ==="
+          
           # Ensure we have a proper Xcode version selected
           if [[ -n "${XCODE_VERSION:-}" ]]; then
             echo "Using specified Xcode version: $XCODE_VERSION"
@@ -69,59 +71,108 @@ jobs:
               xcodebuild -version
             else
               echo "Specified Xcode version not found: $path"
-              exit 1
+              # Fallback to system default
+              echo "Falling back to system default Xcode"
+              sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+              xcodebuild -version
             fi
           else
             # Try to find a working Xcode version or default to the system one
             echo "Checking for available Xcode versions..."
-            for path in /Applications/Xcode_26.4.app /Applications/Xcode_26.3.app /Applications/Xcode_26.2.app /Applications/Xcode_26.1.app /Applications/Xcode_26.0.app /Applications/Xcode_26.app /Applications/Xcode-26.app /Applications/Xcode.app; do
+            found_xcode=false
+            
+            # Check in reverse order (most recent first)
+            for path in /Applications/Xcode.app /Applications/Xcode-26.app /Applications/Xcode_26.0.app /Applications/Xcode_26.1.app /Applications/Xcode_26.2.app /Applications/Xcode_26.3.app /Applications/Xcode_26.4.app; do
               if [ -d "$path" ]; then
                 sudo xcode-select -s "$path/Contents/Developer"
                 echo "Selected: $path"
                 xcodebuild -version
-                exit 0
+                found_xcode=true
+                break
               fi
             done
             
-            # If no specific version found, use the system default
-            echo "No specific Xcode version found, using default"
-            xcodebuild -version
+            if [ "$found_xcode" = false ]; then
+              echo "No specific Xcode version found, using system default (fallback)"
+              sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+              xcodebuild -version || echo "Failed to get Xcode version"
+            fi
           fi
+          
+          echo "Xcode selection complete"
 
       - name: Run iOS tests
         run: |
           set -euo pipefail
+          echo "=== iOS Tests ==="
           mkdir -p output/ci output/xcode
           
           # Ensure we have a proper simulator available
           echo "Checking for available simulators..."
+          
+          # Debug: List all devices first
+          echo "All available devices:"
+          xcrun simctl list devices
+          
           SIMULATORS=$(xcrun simctl list devices available | grep -E 'iPhone.*Shutdown|iPhone.*Booted' | head -1)
           
           if [ -z "$SIMULATORS" ]; then
             echo "No available iPhone simulator found. Creating a new one..."
-            # Create a new standard simulator as fallback
-            SIMULATOR_NAME="iPhone 15"
+            
+            # First try to create a basic simulator with simpler command
+            echo "Creating default iPhone 15 simulator..."
+            xcrun simctl create "iOS Simulator" com.apple.CoreSimulator.SimDeviceType.iPhone-15 com.apple.CoreSimulator.SimRuntime.iOS-17-0 2>&1 || echo "Failed to create simulator with simple method"
+            
+            # Try a different approach - list specifically by runtime
             SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-17-0"
-            SIMULATOR_DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-15"
+            if [ -n "$SIMULATOR_RUNTIME" ]; then
+              echo "Trying to find or create simulator for runtime $SIMULATOR_RUNTIME"
+              # List available runtimes 
+              xcrun simctl list runtimes | grep -i ios
+              
+              # Try creating with more specific format if previous fails
+              created_simulator=false
+              echo "Creating simulator with alternative method..."
             
-            echo "Creating simulator: $SIMULATOR_NAME"
-            simulator_id="$(xcrun simctl create "$SIMULATOR_NAME" "$SIMULATOR_DEVICE_TYPE" "$SIMULATOR_RUNTIME" 2>&1 | grep -E '^[a-zA-Z0-9\-]+$' | head -1)"
-            
-            if [ -z "$simulator_id" ]; then
-              echo "Failed to create simulator, trying with default options..."
-              # Try simpler creation approach
-              xcrun simctl create "iOS Simulator" com.apple.CoreSimulator.SimDeviceType.iPhone-15 com.apple.CoreSimulator.SimRuntime.iOS-17-0
-              simulator_id="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone.*com\.apple\.CoreSimulator\.SimDeviceType\.iPhone-15/ && /(Shutdown|Booted)/ { print $2; exit }')"
-            fi
-            
-            if [ -z "$simulator_id" ]; then
-              echo "Failed to create or find simulator"
+              # Check if a default simulator already exists first before creating new ones
+              existing_sim=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone.*com\.apple\.CoreSimulator\.SimDeviceType\.iPhone-15/ && /(Shutdown|Booted)/ { print $2; exit }')
+              if [ -n "$existing_sim" ]; then
+                echo "Using existing simulator: $existing_sim"
+                simulator_id="$existing_sim"
+                created_simulator=true
+              else
+                # Try the simpler version for creation
+                SIMULATOR_NAME="iPhone 15"
+                echo "Checking for device types..."
+                xcrun simctl list devicetypes | grep -i iphone
+                
+                # Attempt a simple create
+                sim_id=$(xcrun simctl create "$SIMULATOR_NAME" com.apple.CoreSimulator.SimDeviceType.iPhone-15 com.apple.CoreSimulator.SimRuntime.iOS-17-0 2>&1 | grep -E '^[a-zA-Z0-9\-]+$' | head -1)
+                
+                if [ -n "$sim_id" ]; then
+                  simulator_id="$sim_id"
+                  created_simulator=true
+                  echo "Created simulator: $simulator_id"
+                fi
+              fi
+              
+              if [ "$created_simulator" = false ]; then
+                echo "Failed to create or find simulator, exiting"
+                exit 1
+              fi
+              
+            else
+              echo "No valid runtime found for simulator creation"
               exit 1
             fi
             
-            # Boot the created simulator
-            xcrun simctl boot "$simulator_id" || true
-            echo "Created and booted simulator: $simulator_id"
+            # Boot the simulator if we created one
+            if [ -n "$simulator_id" ]; then
+              echo "Booting simulator: $simulator_id"
+              xcrun simctl boot "$simulator_id" || true
+              echo "Simulator is now booted with ID: $simulator_id"
+            fi
+            
           else
             echo "Found existing simulator(s)"
             # Use first available simulator
@@ -134,6 +185,10 @@ jobs:
           
           echo "Using simulator ID: $simulator_id"
           
+          # Final test to verify the simulator works
+          echo "Verifying simulator setup..."
+          xcrun simctl list devices | grep -i "$simulator_id" || echo "Warning: Could not verify simulator state"
+          
           xcodebuild test \
             -project ios/CommonWeek.xcodeproj \
             -scheme CommonWeek \
@@ -141,6 +196,8 @@ jobs:
             -resultBundlePath output/xcode/CommonWeekTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee output/ci/ios-tests.log
+          
+          echo "iOS tests completed"
 
       - name: Upload iOS diagnostics
         if: always()
