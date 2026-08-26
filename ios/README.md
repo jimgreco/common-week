@@ -19,7 +19,9 @@ For a network-free interactive preview in Simulator, launch the app with `COMMON
 
 Sign-in starts the existing Google OAuth flow in `ASWebAuthenticationSession`. The server returns a five-minute, one-use authorization code through the `commonweek://auth` callback. The app exchanges that code and its original random state for a 30-day opaque session token, which is stored in Keychain and sent as a Bearer credential.
 
-After sign-in, iPhone Settings can connect or reconnect Google Calendar, request the separate editing permission, refresh calendar discovery, and manage each calendar's Hide, Private, Share, alias, badge, and planner-section settings without leaving the app. Google tokens and database credentials remain server-side.
+After sign-in, iPhone Settings can connect or reconnect Google Calendar, request the separate editing permission, refresh calendar discovery, manage each calendar's Hide, Private, Share, alias, badge, and planner-section settings, and configure notification delivery without leaving the app. Calendar search, RSVP, reminders, and recurring occurrence-or-series controls are native as well. Google tokens and database credentials remain server-side.
+
+For push delivery, enable Push Notifications for `com.jimgreco.commonweek` and use a provisioning profile containing `aps-environment`. The app requests notification permission only when the user enables push, registers the APNs token with the server, and keeps the token associated with the signed-in account.
 
 ## Offline and live synchronization
 
@@ -55,6 +57,8 @@ Configure these GitHub Actions secrets before the first release:
 - `APP_STORE_CONNECT_KEY_ID`
 - `APP_STORE_CONNECT_ISSUER_ID`
 - `APP_STORE_CONNECT_API_KEY` — PEM text or base64-encoded PEM
+
+The server deployment also requires `COMMON_WEEK_RESEND_API_KEY`, both email-from secrets, and a dedicated `COMMON_WEEK_APNS_KEY_ID` / `COMMON_WEEK_APNS_PRIVATE_KEY_BASE64` pair.
 
 App Store Connect must also contain a Week of Us app record for `com.jimgreco.commonweek`, and the provisioning profile must be an active App Store distribution profile for that identifier.
 

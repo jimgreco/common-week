@@ -143,6 +143,7 @@ final class AuthStore: NSObject, ObservableObject, ASWebAuthenticationPresentati
     }
 
     func signOut() async {
+        await NotificationCoordinator.shared.unregisterCurrentAccount()
         await api.signOut()
         state = .signedOut
     }

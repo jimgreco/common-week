@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowLeft, ArrowRight, CalendarRange, CloudOff, Menu, Search, Settings, Users, WifiOff, X } from "lucide-react";
 import { signOut } from "@/app/actions/auth";
-import { createCalendarEventAction, deleteCalendarEventAction, updateCalendarEventAction } from "@/app/actions/calendar";
+import { createCalendarEventAction, deleteCalendarEventAction, respondToCalendarEventAction, updateCalendarEventAction } from "@/app/actions/calendar";
+import { setCalendarReminderAction } from "@/app/actions/notifications";
 import {
   createPlanningItemAction,
   deletePlanningItemAction,
   hideCalendarEventAction,
   loadPlannerSourcesAction,
-  searchPlanningItemsAction,
+  searchPlannerAction,
   setDailyLocationAction,
   setGeocodedLocationAction,
   togglePlanningItemAction,
@@ -21,7 +22,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
-import type { CalendarEvent, CalendarEventDraft, DayPlan, HouseholdLocation, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
 export function WeeklyPlanner({ initialData, currentUserName }: { initialData: WeeklyPlannerData; currentUserName: string }) {
   const router = useRouter();
@@ -34,7 +35,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
   const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<PlanningItem[]>([]);
+  const [searchResults, setSearchResults] = useState<PlannerSearchResult[]>([]);
   const [searching, startSearch] = useTransition();
   const [online, setOnline] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
@@ -184,6 +185,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       type: item.type,
       planningDate: item.planningDate,
       weekStartDate: item.weekStartDate,
+      remindAt: item.reminder?.remindAt ?? null,
     });
     if (!result.ok) {
       placeItem({ ...optimistic, saveState: "failed" });
@@ -254,10 +256,10 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     return null;
   }, [initialData.isDemo, refreshPlannerSources]);
 
-  const deleteCalendarEvent = useCallback(async (event: CalendarEvent): Promise<string | null> => {
+  const deleteCalendarEvent = useCallback(async (event: CalendarEvent, scope: "occurrence" | "series"): Promise<string | null> => {
     if (!event.calendarPreferenceId || !event.providerEventId || !event.etag) return "Refresh the week before deleting this event.";
     if (!initialData.isDemo) {
-      const result = await deleteCalendarEventAction({ calendarPreferenceId: event.calendarPreferenceId, providerEventId: event.providerEventId, etag: event.etag });
+      const result = await deleteCalendarEventAction({ calendarPreferenceId: event.calendarPreferenceId, providerEventId: event.providerEventId, etag: event.etag, recurringEventId: event.recurringEventId, recurringScope: scope });
       if (!result.ok) return result.error ?? "Google Calendar could not delete this event.";
       await refreshPlannerSources();
     } else {
@@ -267,6 +269,26 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     setNotice("Google Calendar event deleted.");
     return null;
   }, [initialData.isDemo, refreshPlannerSources]);
+
+  const respondToCalendarEvent = useCallback(async (event: CalendarEvent, responseStatus: CalendarResponseStatus): Promise<string | null> => {
+    if (!event.calendarPreferenceId || !event.providerEventId || !event.etag) return "Refresh the week before responding.";
+    if (!initialData.isDemo) {
+      const result = await respondToCalendarEventAction({ calendarPreferenceId: event.calendarPreferenceId, providerEventId: event.providerEventId, etag: event.etag, responseStatus });
+      if (!result.ok) return result.error ?? "Google Calendar could not save your response.";
+      await refreshPlannerSources();
+    }
+    setNotice("Your Calendar response was saved.");
+    return null;
+  }, [initialData.isDemo, refreshPlannerSources]);
+
+  const setCalendarReminder = useCallback(async (event: CalendarEvent, remindAt: string | null): Promise<{ error: string | null; reminder: NotificationReminder | null }> => {
+    if (!event.calendarPreferenceId || !event.providerEventId) return { error: "Refresh the week before setting a reminder.", reminder: null };
+    if (initialData.isDemo) return { error: null, reminder: remindAt ? { id: "demo-reminder", resourceKind: "calendar_event", remindAt } : null };
+    const result = await setCalendarReminderAction({ calendarPreferenceId: event.calendarPreferenceId, providerEventId: event.providerEventId, remindAt });
+    if (!result.ok) return { error: result.error ?? "The reminder could not be saved.", reminder: null };
+    setNotice(remindAt ? "Event reminder saved." : "Event reminder removed.");
+    return { error: null, reminder: result.data ?? null };
+  }, [initialData.isDemo]);
 
   const setLocation = useCallback(async (selection: LocationSelection, scope: "day" | "through-sunday" | "week"): Promise<string | null> => {
     if (!locationDate) return "Choose a day before setting its location.";
@@ -317,14 +339,17 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     if (query.trim().length < 2) { setSearchResults([]); return; }
     if (initialData.isDemo) {
       const lowered = query.toLowerCase();
-      setSearchResults(allItems.filter((item) => item.text.toLowerCase().includes(lowered)));
+      setSearchResults([
+        ...days.flatMap((day) => day.events).filter((event) => event.title.toLowerCase().includes(lowered)).map((event) => ({ kind: "calendar_event" as const, event })),
+        ...allItems.filter((item) => item.text.toLowerCase().includes(lowered)).map((item) => ({ kind: "planning_item" as const, item })),
+      ]);
       return;
     }
     startSearch(async () => {
-      const result = await searchPlanningItemsAction(query);
+      const result = await searchPlannerAction(query);
       setSearchResults(result.data ?? []);
     });
-  }, [allItems, initialData.isDemo]);
+  }, [allItems, days, initialData.isDemo]);
 
   return (
     <main className="app-frame">
@@ -395,10 +420,10 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
 
       {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
-      {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onDelete={deleteCalendarEvent} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
+      {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onDelete={deleteCalendarEvent} onRespond={respondToCalendarEvent} onReminder={setCalendarReminder} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
       {calendarEditor && <CalendarEventEditorDialog date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
-      {editingItem && <ItemEditorDialog item={editingItem} weekDates={weekDates(initialData.weekStart)} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
-      {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
+      {editingItem && <ItemEditorDialog item={editingItem} weekDates={weekDates(initialData.weekStart)} timeZone={initialData.household.timezone} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
+      {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} timeZone={initialData.household.timezone} onEvent={(event) => { setSearchOpen(false); setSelectedEvent(event); }} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
     </main>
   );
 }

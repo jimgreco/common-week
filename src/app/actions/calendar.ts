@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { buildGoogleCalendarEventInput, deterministicGoogleEventId } from "@/lib/calendar-event-input";
+import { buildGoogleCalendarEventInput, buildGoogleCalendarSeriesInput, deterministicGoogleEventId } from "@/lib/calendar-event-input";
 import { isDateOnly } from "@/lib/date";
 import { canHouseholdMemberWriteGoogleCalendar } from "@/lib/google-calendar-permissions";
 import { GoogleCalendarApiError, googleCalendarService } from "@/lib/integrations/google-calendar";
@@ -10,7 +10,8 @@ import { requireHouseholdContext } from "@/lib/server/auth";
 import { query } from "@/lib/server/database";
 import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import { getGoogleAccessToken } from "@/lib/server/google-tokens";
-import type { ActionResult, CalendarEventDraft, GoogleCalendarAccessRole } from "@/types/domain";
+import { queueHouseholdChange } from "@/lib/server/notifications";
+import type { ActionResult, CalendarEventDraft, CalendarResponseStatus, GoogleCalendarAccessRole } from "@/types/domain";
 
 const dateOnly = z.string().refine(isDateOnly, "Choose a valid date.");
 const eventDraftSchema = z.object({
@@ -26,6 +27,8 @@ const eventDraftSchema = z.object({
   endDate: dateOnly,
   startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  recurringEventId: z.string().trim().min(1).max(1024).optional(),
+  recurringScope: z.enum(["occurrence", "series"]).optional(),
 }).refine((draft) => draft.endDate >= draft.startDate, {
   message: "End date must not be before the start date.",
 });
@@ -104,6 +107,12 @@ export async function createCalendarEventAction(input: CalendarEventDraft): Prom
       await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, providerEventId);
     }
     await finishMutation(calendar.calendar_owner_user_id, context.householdId);
+    await queueHouseholdChange({
+      actorUserId: context.userId,
+      householdId: context.householdId,
+      title: `${context.displayName} added a calendar event`,
+      body: draft.title,
+    });
     return { ok: true };
   } catch (error) {
     return mutationFailure(error);
@@ -115,37 +124,99 @@ export async function updateCalendarEventAction(input: CalendarEventDraft): Prom
     const draft = eventDraftSchema.parse(input);
     if (!draft.providerEventId || !draft.etag) throw new Error("Refresh the week before editing this event.");
     const { context, calendar, accessToken } = await requireWritableCalendar(draft.calendarPreferenceId);
-    const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, draft.providerEventId);
-    if (!current.etag || current.etag !== draft.etag) {
+    const targetEventId = draft.recurringScope === "series" && draft.recurringEventId
+      ? draft.recurringEventId
+      : draft.providerEventId;
+    const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, targetEventId);
+    if (!current.etag || (targetEventId === draft.providerEventId && current.etag !== draft.etag)) {
       return { ok: false, error: "This event changed in Google Calendar. Refresh the week and try again." };
     }
     await googleCalendarService.updateEvent(
       accessToken,
       calendar.google_calendar_id,
-      draft.providerEventId,
+      targetEventId,
       current.etag,
-      buildGoogleCalendarEventInput(draft, calendar.timezone),
+      targetEventId === draft.providerEventId
+        ? buildGoogleCalendarEventInput(draft, calendar.timezone)
+        : buildGoogleCalendarSeriesInput(draft, current, calendar.timezone),
     );
     await finishMutation(calendar.calendar_owner_user_id, context.householdId);
+    await queueHouseholdChange({
+      actorUserId: context.userId,
+      householdId: context.householdId,
+      title: `${context.displayName} updated ${targetEventId === draft.providerEventId ? "a calendar event" : "a recurring series"}`,
+      body: draft.title,
+    });
     return { ok: true };
   } catch (error) {
     return mutationFailure(error);
   }
 }
 
-export async function deleteCalendarEventAction(input: Pick<CalendarEventDraft, "calendarPreferenceId" | "providerEventId" | "etag">): Promise<ActionResult> {
+export async function deleteCalendarEventAction(input: Pick<CalendarEventDraft, "calendarPreferenceId" | "providerEventId" | "etag" | "recurringEventId" | "recurringScope">): Promise<ActionResult> {
   try {
     const parsed = z.object({
       calendarPreferenceId: z.string().uuid(),
       providerEventId: z.string().trim().min(1).max(1024),
       etag: z.string().trim().min(1).max(1024),
+      recurringEventId: z.string().trim().min(1).max(1024).optional(),
+      recurringScope: z.enum(["occurrence", "series"]).optional(),
     }).parse(input);
     const { context, calendar, accessToken } = await requireWritableCalendar(parsed.calendarPreferenceId);
-    const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, parsed.providerEventId);
-    if (!current.etag || current.etag !== parsed.etag) {
+    const targetEventId = parsed.recurringScope === "series" && parsed.recurringEventId
+      ? parsed.recurringEventId
+      : parsed.providerEventId;
+    const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, targetEventId);
+    if (!current.etag || (targetEventId === parsed.providerEventId && current.etag !== parsed.etag)) {
       return { ok: false, error: "This event changed in Google Calendar. Refresh the week and try again." };
     }
-    await googleCalendarService.deleteEvent(accessToken, calendar.google_calendar_id, parsed.providerEventId, current.etag);
+    await googleCalendarService.deleteEvent(accessToken, calendar.google_calendar_id, targetEventId, current.etag);
+    await finishMutation(calendar.calendar_owner_user_id, context.householdId);
+    await queueHouseholdChange({
+      actorUserId: context.userId,
+      householdId: context.householdId,
+      title: `${context.displayName} removed ${targetEventId === parsed.providerEventId ? "a calendar event" : "a recurring series"}`,
+      body: "Open Week of Us to see the updated shared week.",
+    });
+    return { ok: true };
+  } catch (error) {
+    return mutationFailure(error);
+  }
+}
+
+export async function respondToCalendarEventAction(input: {
+  calendarPreferenceId: string;
+  providerEventId: string;
+  etag: string;
+  responseStatus: CalendarResponseStatus;
+}): Promise<ActionResult> {
+  try {
+    const parsed = z.object({
+      calendarPreferenceId: z.string().uuid(),
+      providerEventId: z.string().trim().min(1).max(1024),
+      etag: z.string().trim().min(1).max(1024),
+      responseStatus: z.enum(["needsAction", "declined", "tentative", "accepted"]),
+    }).parse(input);
+    const { context, calendar, accessToken } = await requireWritableCalendar(parsed.calendarPreferenceId);
+    if (calendar.calendar_owner_user_id !== context.userId) {
+      throw new Error("Respond from the Google account that received this invitation.");
+    }
+    const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, parsed.providerEventId);
+    if (!current.etag || current.etag !== parsed.etag) {
+      return { ok: false, error: "This invitation changed in Google Calendar. Refresh the week and try again." };
+    }
+    const attendees = current.attendees ?? [];
+    const selfIndex = attendees.findIndex((attendee) => attendee.self);
+    if (selfIndex < 0) throw new Error("Google did not mark this account as an attendee.");
+    const nextAttendees = attendees.map((attendee, index) => index === selfIndex ? { ...attendee, responseStatus: parsed.responseStatus } : attendee);
+    await googleCalendarService.patchEvent(
+      accessToken,
+      calendar.google_calendar_id,
+      parsed.providerEventId,
+      current.etag,
+      { attendees: nextAttendees },
+      "all",
+    );
     await finishMutation(calendar.calendar_owner_user_id, context.householdId);
     return { ok: true };
   } catch (error) {

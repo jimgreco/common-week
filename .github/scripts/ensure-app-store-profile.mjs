@@ -85,6 +85,18 @@ async function ensureAppleSignIn(authToken, bundleId) {
   });
 }
 
+async function ensurePushNotifications(authToken, bundleId) {
+  const capabilities = await pages(authToken, `/bundleIds/${bundleId}/bundleIdCapabilities?fields[bundleIdCapabilities]=capabilityType`);
+  if (capabilities.some((value) => value.attributes?.capabilityType === 'PUSH_NOTIFICATIONS')) return;
+  await request(authToken, 'POST', '/bundleIdCapabilities', {
+    data: {
+      type: 'bundleIdCapabilities',
+      attributes: { capabilityType: 'PUSH_NOTIFICATIONS' },
+      relationships: { bundleId: { data: { type: 'bundleIds', id: bundleId } } },
+    },
+  });
+}
+
 async function matchingCertificate(authToken, certificatePath) {
   const localHash = createHash('sha256').update(readFileSync(certificatePath)).digest('hex');
   const certificates = await pages(authToken, '/certificates?fields[certificates]=certificateType,displayName,certificateContent,activated,expirationDate&limit=200');
@@ -108,6 +120,7 @@ async function main() {
   const output = argument('output');
   const bundle = await ensureBundle(authToken, bundleIdentifier);
   await ensureAppleSignIn(authToken, bundle.id);
+  await ensurePushNotifications(authToken, bundle.id);
   const certificate = await matchingCertificate(authToken, certificatePath);
   const existingProfiles = await pages(
     authToken,

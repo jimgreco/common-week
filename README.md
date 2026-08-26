@@ -12,6 +12,8 @@ The production application uses the existing self-hosted PostgreSQL 16 service. 
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
 - Native SwiftUI iPhone companion with Keychain sessions, Google OAuth handoff, in-app Calendar connection and management, protected offline snapshots, queued planner/location edits, and background refresh
 - Daily and weekly notes/tasks, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
+- Email and iPhone-push reminders, morning agendas, Sunday planning prompts, and opt-in household-change alerts with per-user delivery preferences
+- Calendar search, attendee status and RSVP, plus occurrence-or-series editing and deletion for recurring Google events
 - Saved/default/travel locations, day/through-Sunday/whole-week assignment, and Open-Meteo geocoding
 - Location-specific daily/hourly weather with honest forecast-unavailable states and PostgreSQL caching
 - Prompt collaboration through PostgreSQL `LISTEN/NOTIFY`, authenticated server-sent events on web and iPhone, automatic reconnect, background native refresh, and a web polling fallback
@@ -78,8 +80,7 @@ Key paths:
 
 ## Current V1 constraints
 
-- Invitations are recorded securely but not emailed. The partner opens the app and signs in with the invited Google address.
-- Household owners and members can create, edit, and delete events on visible calendars they connected and on calendars another member explicitly Shared when that calendar's Google connection has write access. Private, hidden, read-only, and viewer-access calendars remain non-editable. For recurring events, editing or deleting in Week of Us affects only the selected occurrence; whole-series editing, RSVP, and Calendar search remain absent.
+- Household owners and members can create, edit, and delete events on visible calendars they connected and on calendars another member explicitly Shared when that calendar's Google connection has write access. Private, hidden, read-only, and viewer-access calendars remain non-editable. RSVP is intentionally limited to the signed-in member's own connected Google account.
 - Forecasts use Open-Meteo's useful forecast horizon. Past weather is not reconstructed.
 - Collaboration is item-level last-write-wins, not simultaneous rich-text editing.
 - Offline iPhone replay covers plans, tasks, completion, deletion, and location assignment. Google Calendar changes remain online-only so stale provider ETags are never replayed.
@@ -87,4 +88,4 @@ Key paths:
 
 ## Recommended next feature
 
-After both household accounts complete production acceptance, add transactional invitation email with a signed deep link. It closes the only manual onboarding step without expanding the product into a task manager.
+After both household accounts complete production acceptance, add a household activity history so members can review recent changes without turning every change into an immediate alert.

@@ -8,6 +8,8 @@ struct ItemEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text: String
     @State private var type: PlanningItemType
+    @State private var reminderEnabled: Bool
+    @State private var reminderDate: Date
     @State private var isSaving = false
 
     init(item: PlanningItem?, planningDate: String?, defaultType: PlanningItemType, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
@@ -17,6 +19,9 @@ struct ItemEditorView: View {
         self.viewModel = viewModel
         _text = State(initialValue: item?.text ?? "")
         _type = State(initialValue: item?.type ?? defaultType)
+        let existingReminder = item?.reminder.flatMap { WeekDate.iso8601.date(from: $0.remindAt) }
+        _reminderEnabled = State(initialValue: existingReminder != nil)
+        _reminderDate = State(initialValue: existingReminder ?? Date().addingTimeInterval(3600))
     }
 
     var body: some View {
@@ -29,6 +34,10 @@ struct ItemEditorView: View {
                 }
                 Section("Schedule") {
                     LabeledContent("When", value: planningDate.map(WeekDate.longDay) ?? "This week")
+                    Toggle("Remind me", isOn: $reminderEnabled)
+                    if reminderEnabled {
+                        DatePicker("Reminder", selection: $reminderDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    }
                 }
                 if let item {
                     Section { Button("Delete item", role: .destructive) { Task { if await viewModel.deleteItem(item) { dismiss() } } } }
@@ -42,7 +51,7 @@ struct ItemEditorView: View {
                     Button(isSaving ? "Saving…" : "Save") {
                         Task {
                             isSaving = true
-                            let draft = PlanningItemDraft(id: item?.id, text: text.trimmingCharacters(in: .whitespacesAndNewlines), type: type, planningDate: item?.planningDate ?? planningDate, weekStartDate: data.weekStart)
+                            let draft = PlanningItemDraft(id: item?.id, text: text.trimmingCharacters(in: .whitespacesAndNewlines), type: type, planningDate: item?.planningDate ?? planningDate, weekStartDate: data.weekStart, remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil)
                             if await viewModel.saveItem(draft) { dismiss() }
                             isSaving = false
                         }
@@ -314,6 +323,9 @@ struct EventDetailView: View {
     @State private var editing = false
     @State private var confirmingDelete = false
     @State private var deleting = false
+    @State private var responding = false
+    @State private var reminderSelection = "none"
+    @State private var reminderLoaded = false
 
     var body: some View {
         NavigationStack {
@@ -334,7 +346,9 @@ struct EventDetailView: View {
                     if let description = event.description, !description.isEmpty {
                         Divider(); Eyebrow(text: "Notes"); Text(description).font(.body).foregroundStyle(CWTheme.secondaryInk)
                     }
-                    Text(event.canEdit == true ? (event.recurringEventId == nil ? "This event can be edited in Week of Us." : "Changes here apply only to this occurrence. Use Google Calendar to change the entire series.") : "This calendar is read-only here. You can still hide the event from the shared planner.")
+                    guestContent
+                    reminderContent
+                    Text(event.canEdit == true ? (event.recurringEventId == nil ? "This event can be edited in Week of Us." : "You can update or delete this occurrence or its recurring series.") : "This calendar is read-only here. You can still hide the event from the shared planner.")
                         .font(.footnote).foregroundStyle(.secondary).padding(14).background(CWTheme.mint.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
                     if event.canEdit == true {
                         HStack {
@@ -356,12 +370,29 @@ struct EventDetailView: View {
                 if event.canEdit == true { ToolbarItem(placement: .confirmationAction) { Button("Edit") { editing = true } } }
             }
             .sheet(isPresented: $editing) { CalendarEventEditorView(event: event, date: String(event.start.prefix(10)), data: data, viewModel: viewModel) }
-            .confirmationDialog(event.recurringEventId == nil ? "Delete this event from Google Calendar?" : "Delete this occurrence from Google Calendar?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            .task {
+                reminderSelection = reminderValue
+                reminderLoaded = true
+            }
+            .onChange(of: reminderSelection) { _, value in
+                guard reminderLoaded else { return }
+                Task { _ = await viewModel.setCalendarReminder(event, remindAt: reminderDate(for: value)) }
+            }
+            .confirmationDialog(event.recurringEventId == nil ? "Delete this event from Google Calendar?" : "Delete this recurring event?", isPresented: $confirmingDelete, titleVisibility: .visible) {
                 Button(event.recurringEventId == nil ? "Delete event" : "Delete occurrence", role: .destructive) {
                     Task {
                         deleting = true
-                        if await viewModel.deleteEvent(event) { dismiss() }
+                        if await viewModel.deleteEvent(event, scope: "occurrence") { dismiss() }
                         deleting = false
+                    }
+                }
+                if event.recurringEventId != nil {
+                    Button("Delete entire series", role: .destructive) {
+                        Task {
+                            deleting = true
+                            if await viewModel.deleteEvent(event, scope: "series") { dismiss() }
+                            deleting = false
+                        }
                     }
                 }
                 Button("Cancel", role: .cancel) { }
@@ -373,6 +404,95 @@ struct EventDetailView: View {
 
     private func detail(_ icon: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 12) { Image(systemName: icon).foregroundStyle(CWTheme.accent).frame(width: 22); Text(text).frame(maxWidth: .infinity, alignment: .leading) }
+    }
+
+    @ViewBuilder
+    private var guestContent: some View {
+        if let attendees = event.attendees, !attendees.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Eyebrow(text: "Guests")
+                ForEach(attendees) { attendee in
+                    attendeeRow(attendee)
+                }
+                if event.canRespond == true {
+                    HStack {
+                        responseButton("Going", status: "accepted", icon: "checkmark.circle")
+                        responseButton("Maybe", status: "tentative", icon: "questionmark.circle")
+                        responseButton("Can't go", status: "declined", icon: "xmark.circle")
+                    }
+                }
+            }
+        }
+    }
+
+    private func attendeeRow(_ attendee: CalendarAttendee) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: responseIcon(attendee.responseStatus))
+                .foregroundStyle(responseColor(attendee.responseStatus))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(attendee.displayName ?? attendee.email)
+                Text(responseLabel(attendee.responseStatus)).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if attendee.`self` == true { Text("You").font(.caption.bold()).foregroundStyle(CWTheme.accentStrong) }
+        }
+    }
+
+    @ViewBuilder
+    private var reminderContent: some View {
+        if !event.allDay {
+            VStack(alignment: .leading, spacing: 10) {
+                Eyebrow(text: "Reminder")
+                Picker("Notify me", selection: $reminderSelection) {
+                    Text("None").tag("none")
+                    Text("At start time").tag("0")
+                    Text("10 minutes before").tag("10")
+                    Text("30 minutes before").tag("30")
+                    Text("1 hour before").tag("60")
+                    Text("1 day before").tag("1440")
+                }
+                .pickerStyle(.menu)
+            }
+        }
+    }
+
+    private func responseButton(_ title: String, status: String, icon: String) -> some View {
+        Button {
+            Task {
+                responding = true
+                _ = await viewModel.respondToEvent(event, responseStatus: status)
+                responding = false
+            }
+        } label: {
+            Label(title, systemImage: icon).font(.caption.bold())
+        }
+        .buttonStyle(.bordered)
+        .disabled(responding)
+    }
+
+    private func responseLabel(_ status: String) -> String {
+        switch status { case "accepted": "Going"; case "declined": "Declined"; case "tentative": "Maybe"; default: "Awaiting response" }
+    }
+
+    private func responseIcon(_ status: String) -> String {
+        switch status { case "accepted": "checkmark.circle.fill"; case "declined": "xmark.circle.fill"; case "tentative": "questionmark.circle.fill"; default: "circle" }
+    }
+
+    private func responseColor(_ status: String) -> Color {
+        switch status { case "accepted": CWTheme.accent; case "declined": .red; case "tentative": .orange; default: .secondary }
+    }
+
+    private var reminderValue: String {
+        guard let reminder = event.reminder,
+              let start = WeekDate.iso8601.date(from: event.start),
+              let remindAt = WeekDate.iso8601.date(from: reminder.remindAt) else { return "none" }
+        return String(max(0, Int((start.timeIntervalSince(remindAt) / 60).rounded())))
+    }
+
+    private func reminderDate(for value: String) -> String? {
+        guard value != "none", let minutes = Int(value),
+              let start = WeekDate.iso8601.date(from: event.start) else { return nil }
+        return WeekDate.iso8601.string(from: start.addingTimeInterval(TimeInterval(-minutes * 60)))
     }
 }
 
@@ -391,6 +511,7 @@ struct CalendarEventEditorView: View {
     @State private var end: Date
     @State private var isSaving = false
     @State private var confirmingDelete = false
+    @State private var recurringScope = "occurrence"
 
     init(event: CalendarEvent?, date: String, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
         self.event = event; self.date = date; self.data = data; self.viewModel = viewModel
@@ -422,7 +543,15 @@ struct CalendarEventEditorView: View {
                     TextField("Notes", text: $notes, axis: .vertical).lineLimit(3...7)
                 }
                 if event?.recurringEventId != nil {
-                    Section { Text("Changes apply only to this occurrence. Use Google Calendar to change the entire series.").font(.footnote).foregroundStyle(.secondary) }
+                    Section("Recurring event") {
+                        Picker("Apply changes to", selection: $recurringScope) {
+                            Text("This occurrence").tag("occurrence")
+                            Text("Entire series").tag("series")
+                        }
+                        .pickerStyle(.segmented)
+                        Text(recurringScope == "series" ? "Event details and times will be updated for the full series while its recurrence schedule stays intact." : "Only this occurrence will change.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
                 if let event {
                     Section { Button(event.recurringEventId == nil ? "Delete from Google Calendar" : "Delete this occurrence", role: .destructive) { confirmingDelete = true } }
@@ -442,7 +571,12 @@ struct CalendarEventEditorView: View {
         .confirmationDialog(event?.recurringEventId == nil ? "Delete this event from Google Calendar?" : "Delete this occurrence from Google Calendar?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             if let event {
                 Button(event.recurringEventId == nil ? "Delete event" : "Delete occurrence", role: .destructive) {
-                    Task { if await viewModel.deleteEvent(event) { dismiss() } }
+                    Task { if await viewModel.deleteEvent(event, scope: "occurrence") { dismiss() } }
+                }
+                if event.recurringEventId != nil {
+                    Button("Delete entire series", role: .destructive) {
+                        Task { if await viewModel.deleteEvent(event, scope: "series") { dismiss() } }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) { }
@@ -454,7 +588,7 @@ struct CalendarEventEditorView: View {
     private func save() async {
         isSaving = true
         let time = DateFormatter(); time.locale = Locale(identifier: "en_US_POSIX"); time.timeZone = TimeZone(identifier: data.household.timezone) ?? .current; time.dateFormat = "HH:mm"
-        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start, timeZoneIdentifier: data.household.timezone), endDate: WeekDate.string(end, timeZoneIdentifier: data.household.timezone), startTime: time.string(from: start), endTime: time.string(from: end))
+        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start, timeZoneIdentifier: data.household.timezone), endDate: WeekDate.string(end, timeZoneIdentifier: data.household.timezone), startTime: time.string(from: start), endTime: time.string(from: end), recurringEventId: event?.recurringEventId, recurringScope: event?.recurringEventId == nil ? nil : recurringScope)
         if await viewModel.saveEvent(draft, editing: event != nil) { dismiss() }
         isSaving = false
     }

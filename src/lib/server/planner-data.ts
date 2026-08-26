@@ -48,6 +48,8 @@ interface PlanningRow {
   created_by: string;
   created_by_name: string;
   updated_at: Date;
+  reminder_id: string | null;
+  remind_at: Date | null;
 }
 
 function mapLocation(row: LocationRow, defaultLocationId: string | null): HouseholdLocation {
@@ -75,6 +77,9 @@ function mapPlanningItem(row: PlanningRow): PlanningItem {
     createdByName: row.created_by_name,
     updatedAt: row.updated_at.toISOString(),
     saveState: "saved",
+    reminder: row.reminder_id && row.remind_at
+      ? { id: row.reminder_id, resourceKind: "planning_item", remindAt: row.remind_at.toISOString() }
+      : null,
   };
 }
 
@@ -106,12 +111,15 @@ export async function getPlannerData(
       query<PlanningRow>(
         `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
-                u.display_name as created_by_name, pi.updated_at
+                u.display_name as created_by_name, pi.updated_at,
+                nr.id as reminder_id, nr.remind_at
            from planning_items pi
            join users u on u.id = pi.created_by
+           left join notification_reminders nr
+             on nr.planning_item_id = pi.id and nr.user_id = $3 and nr.delivered_at is null
           where pi.household_id = $1 and pi.week_start_date = $2::date
           order by pi.sort_order, pi.created_at`,
-        [context.householdId, weekStart],
+        [context.householdId, weekStart, context.userId],
       ),
       query<{
         id: string;
@@ -190,6 +198,22 @@ export async function getPlannerData(
     ]);
 
   const items = planningResult.rows.map(mapPlanningItem);
+  const calendarReminders = calendarBundle.events.length
+    ? await query<{ id: string; calendar_preference_id: string; provider_event_id: string; remind_at: Date }>(
+      `select id, calendar_preference_id, provider_event_id, remind_at
+         from notification_reminders
+        where user_id = $1 and resource_kind = 'calendar_event' and delivered_at is null
+          and calendar_preference_id = any($2::uuid[])`,
+      [
+        context.userId,
+        Array.from(new Set(calendarBundle.events.map((event) => event.calendarPreferenceId).filter(Boolean))),
+      ],
+    )
+    : { rows: [] as Array<{ id: string; calendar_preference_id: string; provider_event_id: string; remind_at: Date }> };
+  const reminderByEvent = new Map(calendarReminders.rows.map((row) => [
+    `${row.calendar_preference_id}:${row.provider_event_id}`,
+    { id: row.id, resourceKind: "calendar_event" as const, remindAt: row.remind_at.toISOString() },
+  ]));
   const hiddenEventIds = new Set(hiddenEventsResult.rows.map((row) => row.event_id));
   const actorRole = members.find((member) => member.userId === context.userId)?.role ?? "viewer";
   const writablePreferenceIds = new Set(
@@ -225,6 +249,10 @@ export async function getPlannerData(
           ).map((event) => ({
             ...event,
             canEdit: Boolean(event.calendarPreferenceId && writablePreferenceIds.has(event.calendarPreferenceId)),
+            canRespond: event.sourceUserId === context.userId && Boolean(event.attendees?.some((attendee) => attendee.self)),
+            reminder: event.calendarPreferenceId && event.providerEventId
+              ? reminderByEvent.get(`${event.calendarPreferenceId}:${event.providerEventId}`) ?? null
+              : null,
           })),
         ),
       ),

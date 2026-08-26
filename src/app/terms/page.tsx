@@ -11,13 +11,13 @@ export default function TermsPage() {
     <LegalPage
       eyebrow="Terms"
       title="Terms of Service"
-      updated="August 21, 2026"
+      updated="August 26, 2026"
       introduction="These terms govern your use of Week of Us. By using the service, you agree to these terms. If you do not agree, do not use the service."
       sections={[
         {
           title: "The service",
           paragraphs: [
-            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, and tasks. Features may change as the service improves. Google Calendar editing is optional and applies only to events on calendars where the connected Google account has write permission. Choosing Share authorizes household owners and members to add, edit, and delete events on that calendar through Week of Us. Changes to recurring events apply only to the selected occurrence.",
+            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, tasks, reminders, and optional notifications. Features may change as the service improves. Google Calendar editing is optional and applies only to events on calendars where the connected Google account has write permission. Choosing Share authorizes household owners and members to add, edit, and delete permitted events or recurring series on that calendar through Week of Us. Invitation responses are limited to the connected account that received them.",
           ],
         },
         {

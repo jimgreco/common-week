@@ -24,6 +24,7 @@ vi.mock("@/app/actions/settings", () => ({
 }));
 vi.mock("@/app/actions/auth", () => ({ signInWithGoogle: vi.fn() }));
 vi.mock("@/app/actions/planner", () => ({ searchLocationsAction: vi.fn() }));
+vi.mock("@/app/actions/notifications", () => ({ updateNotificationPreferencesAction: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
 describe("SettingsPanel calendar degradation", () => {

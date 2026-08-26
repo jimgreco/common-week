@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   deleteEvent: vi.fn(),
   getEvent: vi.fn(),
   getGoogleAccessToken: vi.fn(),
+  patchEvent: vi.fn(),
+  queueHouseholdChange: vi.fn(),
   query: vi.fn(),
   requireHouseholdContext: vi.fn(),
   revalidatePath: vi.fn(),
@@ -25,6 +27,9 @@ vi.mock("@/lib/server/google-oauth", () => ({
 vi.mock("@/lib/server/google-tokens", () => ({
   getGoogleAccessToken: (...args: unknown[]) => mocks.getGoogleAccessToken(...args),
 }));
+vi.mock("@/lib/server/notifications", () => ({
+  queueHouseholdChange: (...args: unknown[]) => mocks.queueHouseholdChange(...args),
+}));
 vi.mock("@/lib/integrations/google-calendar", () => {
   class GoogleCalendarApiError extends Error {
     statusCode = 500;
@@ -35,12 +40,13 @@ vi.mock("@/lib/integrations/google-calendar", () => {
       createEvent: (...args: unknown[]) => mocks.createEvent(...args),
       deleteEvent: (...args: unknown[]) => mocks.deleteEvent(...args),
       getEvent: (...args: unknown[]) => mocks.getEvent(...args),
+      patchEvent: (...args: unknown[]) => mocks.patchEvent(...args),
       updateEvent: (...args: unknown[]) => mocks.updateEvent(...args),
     },
   };
 });
 
-import { createCalendarEventAction, deleteCalendarEventAction, updateCalendarEventAction } from "@/app/actions/calendar";
+import { createCalendarEventAction, deleteCalendarEventAction, respondToCalendarEventAction, updateCalendarEventAction } from "@/app/actions/calendar";
 
 describe("Google Calendar write privacy", () => {
   beforeEach(() => {
@@ -54,6 +60,7 @@ describe("Google Calendar write privacy", () => {
     mocks.deleteEvent.mockResolvedValue(undefined);
     mocks.getEvent.mockResolvedValue({ id: "occurrence-1", etag: "etag-1", recurringEventId: "series-1" });
     mocks.updateEvent.mockResolvedValue({ id: "occurrence-1" });
+    mocks.patchEvent.mockResolvedValue({ id: "occurrence-1" });
   });
 
   it("does not allow event writes through a hidden calendar", async () => {
@@ -209,6 +216,89 @@ describe("Google Calendar write privacy", () => {
       "family@example.com",
       "occurrence-1",
       "etag-1",
+    );
+  });
+
+  it("updates the recurring master while preserving its schedule", async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("from calendar_preferences")) return {
+        rows: [{
+          calendar_owner_user_id: "member-a", google_calendar_id: "family@example.com", access_role: "owner",
+          visibility: "share", actor_role: "member", scope: "calendar.events", timezone: "America/New_York",
+        }],
+        rowCount: 1,
+      };
+      return { rows: [], rowCount: 0 };
+    });
+    mocks.getEvent.mockResolvedValue({
+      id: "series-1", etag: "series-etag", summary: "Weekly lesson",
+      start: { dateTime: "2026-08-16T10:00:00-04:00", timeZone: "America/New_York" },
+      end: { dateTime: "2026-08-16T11:00:00-04:00", timeZone: "America/New_York" },
+      recurrence: ["RRULE:FREQ=WEEKLY"],
+    });
+
+    const result = await updateCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      calendarPreferenceId: "00000000-0000-4000-8000-000000000011",
+      providerEventId: "occurrence-1",
+      recurringEventId: "series-1",
+      recurringScope: "series",
+      etag: "occurrence-etag",
+      title: "Weekly lesson, later",
+      description: "Bring a notebook",
+      location: "Studio",
+      allDay: false,
+      startDate: "2026-09-20",
+      endDate: "2026-09-20",
+      startTime: "11:00",
+      endTime: "12:00",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.updateEvent).toHaveBeenCalledWith(
+      "token-a", "family@example.com", "series-1", "series-etag",
+      expect.objectContaining({
+        summary: "Weekly lesson, later",
+        start: expect.objectContaining({ dateTime: "2026-08-16T15:00:00.000Z" }),
+      }),
+    );
+  });
+
+  it("changes only the signed-in attendee's RSVP", async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("from calendar_preferences")) return {
+        rows: [{
+          calendar_owner_user_id: "member-a", google_calendar_id: "primary@example.com", access_role: "owner",
+          visibility: "private", actor_role: "member", scope: "calendar.events", timezone: "America/New_York",
+        }],
+        rowCount: 1,
+      };
+      return { rows: [], rowCount: 0 };
+    });
+    mocks.getEvent.mockResolvedValue({
+      id: "invite-1", etag: "invite-etag", summary: "Dinner",
+      start: { dateTime: "2026-08-16T18:00:00-04:00" }, end: { dateTime: "2026-08-16T19:00:00-04:00" },
+      attendees: [
+        { email: "member@example.com", responseStatus: "needsAction", self: true },
+        { email: "host@example.com", responseStatus: "accepted", organizer: true },
+      ],
+    });
+
+    const result = await respondToCalendarEventAction({
+      calendarPreferenceId: "00000000-0000-4000-8000-000000000011",
+      providerEventId: "invite-1",
+      etag: "invite-etag",
+      responseStatus: "accepted",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.patchEvent).toHaveBeenCalledWith(
+      "token-a", "primary@example.com", "invite-1", "invite-etag",
+      { attendees: [
+        { email: "member@example.com", responseStatus: "accepted", self: true },
+        { email: "host@example.com", responseStatus: "accepted", organizer: true },
+      ] },
+      "all",
     );
   });
 });

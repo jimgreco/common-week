@@ -71,6 +71,7 @@ struct PlannerSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var searchTask: Task<Void, Never>?
+    @State private var selectedEvent: CalendarEvent?
 
     var body: some View {
         NavigationStack {
@@ -82,19 +83,33 @@ struct PlannerSearchView: View {
                 } else if viewModel.searchResults.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
-                    List(viewModel.searchResults) { item in
-                        HStack(spacing: 12) {
-                            Image(systemName: item.type == .task ? (item.isCompleted ? "checkmark.square.fill" : "square") : "circle.fill")
-                                .foregroundStyle(item.type == .task ? CWTheme.accent : Color(hex: "#7B8983"))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(item.text).font(.body)
-                                Text(item.planningDate.map(WeekDate.longDay) ?? "Week of \(item.weekStartDate)").font(.caption).foregroundStyle(.secondary)
+                    List(viewModel.searchResults) { result in
+                        switch result {
+                        case .planningItem(let item):
+                            HStack(spacing: 12) {
+                                Image(systemName: item.type == .task ? (item.isCompleted ? "checkmark.square.fill" : "square") : "circle.fill")
+                                    .foregroundStyle(item.type == .task ? CWTheme.accent : Color(hex: "#7B8983"))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.text).font(.body)
+                                    Text(item.planningDate.map(WeekDate.longDay) ?? "Week of \(item.weekStartDate)").font(.caption).foregroundStyle(.secondary)
+                                }
                             }
+                        case .calendarEvent(let event):
+                            Button { selectedEvent = event } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "calendar").foregroundStyle(Color(hex: event.calendarColor))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(event.title).font(.body).foregroundStyle(CWTheme.ink)
+                                        Text("\(WeekDate.longDay(event.start)) · \(event.calendarAlias)").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }.listStyle(.plain)
                 }
             }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search plans and tasks")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search events, plans, and tasks")
             .onChange(of: query) { _, newValue in
                 searchTask?.cancel()
                 searchTask = Task {
@@ -106,6 +121,11 @@ struct PlannerSearchView: View {
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .sheet(item: $selectedEvent) { event in
+                if let data = viewModel.data {
+                    EventDetailView(event: event, data: data, viewModel: viewModel)
+                }
+            }
         }
     }
 }
@@ -127,6 +147,10 @@ struct SettingsView: View {
     @State private var showingDeleteConfirmation = false
     @State private var members: [HouseholdMember]
     @State private var inviteEmail = ""
+    @State private var notificationPreferences: NotificationPreferences?
+    @State private var notificationMessage: String?
+    @State private var isSavingNotifications = false
+    @StateObject private var notificationCoordinator = NotificationCoordinator.shared
 
     private let timezones: [TimezoneChoice] = [
         .init(id: "America/New_York", name: "Eastern Time"), .init(id: "America/Chicago", name: "Central Time"),
@@ -185,6 +209,9 @@ struct SettingsView: View {
                 Section("Google Calendar") {
                     calendarManagement
                 }
+                Section("Notifications") {
+                    notificationManagement
+                }
                 Section("Locations") {
                     Label("\(data.locations.count) saved location\(data.locations.count == 1 ? "" : "s")", systemImage: "location")
                 }
@@ -204,7 +231,11 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .task { await loadCalendarSettings() }
+            .task {
+                async let calendars: Void = loadCalendarSettings()
+                async let notifications: Void = loadNotificationPreferences()
+                _ = await (calendars, notifications)
+            }
             .alert("Permanently delete your account?", isPresented: $showingDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete account", role: .destructive) {
@@ -274,6 +305,88 @@ struct SettingsView: View {
             ContentUnavailableView("Calendars unavailable", systemImage: "calendar.badge.exclamationmark", description: Text(calendarMessage ?? "Try loading Calendar settings again."))
             Button("Try again") { Task { await loadCalendarSettings() } }
         }
+    }
+
+    @ViewBuilder
+    private var notificationManagement: some View {
+        if let preferences = notificationPreferences {
+            Toggle("Morning agenda", isOn: notificationBinding(\NotificationPreferences.morningDigestEnabled))
+            if preferences.morningDigestEnabled {
+                Picker("Delivery time", selection: notificationBinding(\NotificationPreferences.morningDigestTime)) {
+                    ForEach(["06:00", "07:00", "08:00", "09:00"], id: \.self) { Text(displayTime($0)).tag($0) }
+                }
+            }
+            Toggle("Sunday planning prompt", isOn: notificationBinding(\NotificationPreferences.sundayPlanningEnabled))
+            if preferences.sundayPlanningEnabled {
+                Picker("Sunday time", selection: notificationBinding(\NotificationPreferences.sundayPlanningTime)) {
+                    ForEach(["16:00", "17:00", "18:00", "19:00", "20:00"], id: \.self) { Text(displayTime($0)).tag($0) }
+                }
+            }
+            Toggle("Household change alerts", isOn: notificationBinding(\NotificationPreferences.householdChangeAlerts))
+            Toggle("Email", isOn: notificationBinding(\NotificationPreferences.emailEnabled))
+            Toggle("Push notifications", isOn: notificationBinding(\NotificationPreferences.pushEnabled))
+                .onChange(of: notificationPreferences?.pushEnabled) { _, enabled in
+                    guard enabled == true else { return }
+                    Task {
+                        if !(await notificationCoordinator.enablePush()) {
+                            notificationPreferences?.pushEnabled = false
+                            notificationMessage = "Push permission wasn’t enabled. You can allow notifications in iPhone Settings."
+                        }
+                    }
+                }
+            Button(isSavingNotifications ? "Saving…" : "Save notifications") { Task { await saveNotificationPreferences() } }
+                .disabled(isSavingNotifications)
+            if let notificationMessage {
+                Text(notificationMessage).font(.caption).foregroundStyle(notificationMessage.hasPrefix("Couldn’t") ? .red : .secondary)
+            }
+            if preferences.pushEnabled, notificationCoordinator.authorizationStatus == .denied {
+                Text("Push notifications are blocked in iPhone Settings.").font(.caption).foregroundStyle(.orange)
+            }
+        } else {
+            HStack { ProgressView(); Text("Loading notification settings…").foregroundStyle(.secondary) }
+        }
+    }
+
+    private func notificationBinding<Value>(_ keyPath: WritableKeyPath<NotificationPreferences, Value>) -> Binding<Value> {
+        Binding(
+            get: { notificationPreferences![keyPath: keyPath] },
+            set: { notificationPreferences?[keyPath: keyPath] = $0 }
+        )
+    }
+
+    private func loadNotificationPreferences() async {
+        await notificationCoordinator.refreshAuthorizationStatus()
+        if data.isDemo {
+            notificationPreferences = NotificationPreferences(emailEnabled: true, pushEnabled: true, morningDigestEnabled: false, morningDigestTime: "07:00", sundayPlanningEnabled: false, sundayPlanningTime: "18:00", householdChangeAlerts: false)
+            return
+        }
+        do {
+            notificationPreferences = try await APIClient.shared.notificationPreferences()
+        } catch {
+            notificationMessage = "Couldn’t load notifications: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveNotificationPreferences() async {
+        guard let notificationPreferences else { return }
+        isSavingNotifications = true
+        defer { isSavingNotifications = false }
+        if data.isDemo {
+            notificationMessage = "Demo notification settings saved."
+            return
+        }
+        do {
+            self.notificationPreferences = try await APIClient.shared.updateNotificationPreferences(notificationPreferences)
+            notificationMessage = "Notification settings saved."
+        } catch {
+            notificationMessage = "Couldn’t save notifications: \(error.localizedDescription)"
+        }
+    }
+
+    private func displayTime(_ value: String) -> String {
+        let input = DateFormatter(); input.locale = Locale(identifier: "en_US_POSIX"); input.dateFormat = "HH:mm"
+        let output = DateFormatter(); output.timeStyle = .short
+        return input.date(from: value).map(output.string) ?? value
     }
 
     private func save() async {

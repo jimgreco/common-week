@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 45
     env:
       IOS_BUNDLE_ID: com.jimgreco.commonweek
-      IOS_PROFILE_NAME: Week of Us App Store Manual 20260824
+      IOS_PROFILE_NAME: Week of Us App Store Notifications 20260826
       IOS_API_BASE_URL: ${{ vars.IOS_API_BASE_URL || 'https://weekofus.com' }}
 
     steps:
@@ -151,10 +151,12 @@ jobs:
           security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
           apple_sign_in="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin:0' "$PROFILE_PLIST")"
           test "$apple_sign_in" = "Default"
+          push_environment="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$PROFILE_PLIST")"
+          test "$push_environment" = "production"
           PROFILE_UUID="$(plutil -extract UUID raw -o - "$PROFILE_PLIST")"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
-          echo "Installed $IOS_PROFILE_NAME with Sign in with Apple: $apple_sign_in"
+          echo "Installed $IOS_PROFILE_NAME with Sign in with Apple: $apple_sign_in and APNs: $push_environment"
 
 
       - name: Compute build metadata
@@ -191,7 +193,7 @@ jobs:
             -authenticationKeyIssuerID "$ISSUER_ID" \
             archive
 
-      - name: Validate signed Sign in with Apple entitlement
+      - name: Validate signed Apple entitlements
         run: |
           set -euo pipefail
           APP_PATH="$(find "$RUNNER_TEMP/CommonWeek.xcarchive/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
@@ -202,7 +204,12 @@ jobs:
             echo "The signed archive does not include the Sign in with Apple entitlement."
             exit 1
           fi
+          if ! grep -Fq "aps-environment" <<< "$SIGNED_ENTITLEMENTS" || ! grep -Fq "production" <<< "$SIGNED_ENTITLEMENTS"; then
+            echo "The signed archive does not include the production APNs entitlement."
+            exit 1
+          fi
           echo "Signed archive includes Sign in with Apple: Default"
+          echo "Signed archive includes APNs: production"
 
       - name: Export IPA
         env:

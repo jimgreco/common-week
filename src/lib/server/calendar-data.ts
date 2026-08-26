@@ -4,8 +4,10 @@ import { createHash } from "node:crypto";
 import { fromZonedTime } from "date-fns-tz";
 import { calendarAbbreviation, decorateCalendarEvents } from "@/lib/calendar-utils";
 import { addDateDays } from "@/lib/date";
+import { canHouseholdMemberWriteGoogleCalendar } from "@/lib/google-calendar-permissions";
 import { googleCalendarService, type GoogleCalendarListEntry } from "@/lib/integrations/google-calendar";
 import { query, withTransaction } from "@/lib/server/database";
+import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import { getGoogleAccessToken } from "@/lib/server/google-tokens";
 import type { CalendarEvent, CalendarPreference, PlannerSourceState } from "@/types/domain";
 
@@ -243,4 +245,84 @@ export async function refreshCurrentUserCalendarPreferences(
   if (!token) return { calendars: [], connected: false };
   const calendars = await ensurePreferences(householdId, userId, token, true);
   return { calendars, connected: true };
+}
+
+export async function searchHouseholdCalendarEvents(
+  context: { userId: string; householdId: string },
+  search: string,
+): Promise<CalendarEvent[]> {
+  const household = await query<{ timezone: string; actor_role: "owner" | "member" | "viewer" }>(
+    `select h.timezone, hm.role as actor_role
+       from households h join household_members hm on hm.household_id = h.id
+      where h.id = $1 and hm.user_id = $2`,
+    [context.householdId, context.userId],
+  );
+  const settings = household.rows[0];
+  if (!settings) return [];
+  const preferences = await query<PreferenceRow & { scope: string | null }>(
+    `select cp.id, cp.user_id, cp.google_calendar_id, cp.calendar_name, cp.display_alias,
+            cp.display_abbreviation, cp.color, cp.visibility, cp.is_primary,
+            cp.section_group, cp.access_role, gc.scope
+       from calendar_preferences cp
+       join google_connections gc on gc.user_id = cp.user_id
+      where cp.household_id = $1
+        and (cp.visibility = 'share' or (cp.visibility = 'private' and cp.user_id = $2))`,
+    [context.householdId, context.userId],
+  );
+  const timeMin = new Date(Date.now() - 365 * 24 * 60 * 60_000).toISOString();
+  const timeMax = new Date(Date.now() + 2 * 365 * 24 * 60 * 60_000).toISOString();
+  const groups = new Map<string, typeof preferences.rows>();
+  for (const preference of preferences.rows) {
+    groups.set(preference.user_id, [...(groups.get(preference.user_id) ?? []), preference]);
+  }
+  const eventGroups = await Promise.all(Array.from(groups.entries()).map(async ([ownerUserId, rows]) => {
+    const token = await getGoogleAccessToken(ownerUserId);
+    if (!token) return [];
+    const results = await Promise.all(rows.map(async (row) => {
+      const preference = mapPreferences([row])[0]!;
+      const events = await googleCalendarService.searchEvents(
+        token,
+        preference,
+        search,
+        timeMin,
+        timeMax,
+        settings.timezone,
+        attributionFor(preference),
+      );
+      const canEdit = canHouseholdMemberWriteGoogleCalendar({
+        actorRole: settings.actor_role,
+        actorUserId: context.userId,
+        calendarOwnerUserId: row.user_id,
+        visibility: row.visibility,
+        accessRole: row.access_role,
+        calendarWriteEnabled: hasGoogleScope(row.scope, GOOGLE_CALENDAR_WRITE_SCOPE),
+      });
+      return events.map((event) => ({
+        ...event,
+        canEdit,
+        canRespond: row.user_id === context.userId && Boolean(event.attendees?.some((attendee) => attendee.self)),
+      }));
+    }));
+    return results.flat();
+  }));
+  const events = eventGroups.flat()
+    .sort((a, b) => a.start.localeCompare(b.start))
+    .slice(0, 60);
+  if (!events.length) return [];
+  const reminders = await query<{ id: string; calendar_preference_id: string; provider_event_id: string; remind_at: Date }>(
+    `select id, calendar_preference_id, provider_event_id, remind_at
+       from notification_reminders
+      where user_id = $1 and resource_kind = 'calendar_event' and delivered_at is null`,
+    [context.userId],
+  );
+  const reminderByEvent = new Map(reminders.rows.map((row) => [
+    `${row.calendar_preference_id}:${row.provider_event_id}`,
+    { id: row.id, resourceKind: "calendar_event" as const, remindAt: row.remind_at.toISOString() },
+  ]));
+  return events.map((event) => ({
+    ...event,
+    reminder: event.calendarPreferenceId && event.providerEventId
+      ? reminderByEvent.get(`${event.calendarPreferenceId}:${event.providerEventId}`) ?? null
+      : null,
+  }));
 }

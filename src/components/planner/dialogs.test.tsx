@@ -153,10 +153,10 @@ describe("EventDetailDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(onDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete from Google" }));
-    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(event));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(event, "occurrence"));
   });
 
-  it("explains that a recurring edit applies to one occurrence", () => {
+  it("offers occurrence and series controls for a recurring event", () => {
     const event: CalendarEvent = {
       id: "family:occurrence-1",
       providerEventId: "occurrence-1",
@@ -178,7 +178,7 @@ describe("EventDetailDialog", () => {
 
     render(<EventDetailDialog event={event} timeZone="America/New_York" onClose={vi.fn()} onHide={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />);
 
-    expect(screen.getByText(/changes only this occurrence/i)).toBeInTheDocument();
+    expect(screen.getByText(/occurrence or the entire recurring series/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
 });
@@ -229,6 +229,6 @@ describe("CalendarEventEditorDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete from Google" }));
     expect(onDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete from Google" }));
-    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(event));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(event, "occurrence"));
   });
 });

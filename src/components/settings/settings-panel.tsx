@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { AlertTriangle, Check, LoaderCircle, LockKeyhole, MapPin, Plus, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, Bell, Check, LoaderCircle, LockKeyhole, MapPin, Plus, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
+import { updateNotificationPreferencesAction } from "@/app/actions/notifications";
 import {
   addLocationAction,
   cancelInvitationAction,
@@ -24,9 +25,19 @@ import { signInWithGoogle } from "@/app/actions/auth";
 import { searchLocationsAction } from "@/app/actions/planner";
 import { calendarAbbreviation, normalizeCalendarAbbreviation } from "@/lib/calendar-utils";
 import { formatMobileDate } from "@/lib/date";
-import type { CalendarPreference, GeocodingResult, HiddenCalendarEvent, HouseholdLocation, HouseholdMember, HouseholdSummary } from "@/types/domain";
+import type { CalendarPreference, GeocodingResult, HiddenCalendarEvent, HouseholdLocation, HouseholdMember, HouseholdSummary, NotificationPreferences } from "@/types/domain";
 
 interface Invitation { id: string; email: string; status: string; expiresAt: string; sentAt?: string | null; deliveryError?: string | null; }
+
+const defaultNotificationPreferences: NotificationPreferences = {
+  emailEnabled: true,
+  pushEnabled: true,
+  morningDigestEnabled: false,
+  morningDigestTime: "07:00",
+  sundayPlanningEnabled: false,
+  sundayPlanningTime: "18:00",
+  householdChangeAlerts: false,
+};
 
 export function SettingsPanel({
   household,
@@ -35,6 +46,7 @@ export function SettingsPanel({
   locations: initialLocations,
   calendars: initialCalendars,
   hiddenEvents: initialHiddenEvents = [],
+  notificationPreferences: initialNotificationPreferences = defaultNotificationPreferences,
   calendarConnected: initialCalendarConnected,
   calendarWriteEnabled,
   currentUserId,
@@ -46,6 +58,7 @@ export function SettingsPanel({
   locations: HouseholdLocation[];
   calendars: CalendarPreference[];
   hiddenEvents?: HiddenCalendarEvent[];
+  notificationPreferences?: NotificationPreferences;
   calendarConnected: boolean;
   calendarWriteEnabled: boolean;
   currentUserId: string;
@@ -62,6 +75,7 @@ export function SettingsPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [accountConfirmation, setAccountConfirmation] = useState("");
   const [accountDeletionRequested, setAccountDeletionRequested] = useState(false);
+  const [notificationPreferences, setNotificationPreferences] = useState(initialNotificationPreferences);
   const [pending, startTransition] = useTransition();
   const attemptedCalendarRefresh = useRef(false);
   const currentMember = members.find((member) => member.userId === currentUserId);
@@ -91,7 +105,7 @@ export function SettingsPanel({
     <div className="settings-layout">
       {message && <div className="settings-toast" role="status"><Check size={14} />{message}</div>}
       <aside className="settings-index" aria-label="Settings sections">
-        <a href="#household">Household</a><a href="#calendars">Calendars</a><a href="#locations">Locations</a><a href="#preferences">Preferences</a><a href="#privacy">Privacy</a>
+        <a href="#household">Household</a><a href="#calendars">Calendars</a><a href="#locations">Locations</a><a href="#notifications">Notifications</a><a href="#preferences">Preferences</a><a href="#privacy">Privacy</a>
       </aside>
       <div className="settings-sections">
         <section className="settings-section" id="household">
@@ -113,7 +127,7 @@ export function SettingsPanel({
           <div className="calendar-privacy-note"><LockKeyhole size={17} /><div><strong>Hidden by default</strong><p>New Google calendars stay hidden until you choose Private or Share. Calendar names and events are never shared unless you choose Share. <Link href="/privacy">Read how Google data is handled.</Link></p></div></div>
           {!isDemo && calendarConnected && (
             <div className={`calendar-editing-access ${calendarWriteEnabled ? "is-enabled" : ""}`}>
-              <div><strong>{calendarWriteEnabled ? "Calendar editing enabled" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "You and your household members can create, edit, and delete events on calendars you Share where Google gives you write access. Changes to a recurring event apply to the selected occurrence." : "Enable this separately to keep the default Google connection read-only. Shared calendars stay view-only until their owner enables editing."}</p></div>
+              <div><strong>{calendarWriteEnabled ? "Calendar editing enabled" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "You and your household members can create, edit, and delete events or recurring series on calendars you Share where Google gives you write access." : "Enable this separately to keep the default Google connection read-only. Shared calendars stay view-only until their owner enables editing."}</p></div>
               {!calendarWriteEnabled && <a className="button button-secondary" href="/auth/google?calendar_write=1">Enable calendar editing</a>}
             </div>
           )}
@@ -143,6 +157,19 @@ export function SettingsPanel({
             {pending && <LoaderCircle className="spin" size={15} />}
             {locationResults.length > 0 && <div className="location-search-results">{locationResults.map((result) => <button type="button" key={result.id} onClick={() => { const name = [result.name, result.admin1].filter(Boolean).join(", "); if (isDemo) { setLocations((current) => [...current, { id: result.id, name, latitude: result.latitude, longitude: result.longitude, timezone: result.timezone, isSaved: true }]); setLocationResults([]); setLocationQuery(""); return; } startTransition(async () => { const saved = await addLocationAction({ name, latitude: result.latitude, longitude: result.longitude, timezone: result.timezone }); if (saved.ok && saved.data) { setLocations((current) => [...current, { id: saved.data!.id, name, latitude: result.latitude, longitude: result.longitude, timezone: result.timezone, isSaved: true }]); setLocationResults([]); setLocationQuery(""); } else showMessage(saved.error ?? "Location could not be added"); }); }}><Plus size={14} /><span><strong>{result.name}</strong><small>{[result.admin1, result.country].filter(Boolean).join(", ")}</small></span></button>)}</div>}
           </div>
+        </section>
+
+        <section className="settings-section" id="notifications">
+          <header><p className="eyebrow">Notifications</p><h2>Keep the household in the loop</h2><p>Choose the reminders that help without turning the shared week into noise. Delivery follows the household timezone.</p></header>
+          <form className="notification-preferences" onSubmit={(event) => { event.preventDefault(); if (isDemo) { showMessage("Demo notification preferences saved"); return; } startTransition(async () => { const result = await updateNotificationPreferencesAction(notificationPreferences); if (result.ok && result.data) setNotificationPreferences(result.data); showMessage(result.ok ? "Notification preferences saved" : result.error ?? "Preferences could not be saved"); }); }}>
+            <label className="notification-choice"><Bell size={17} /><span><strong>Morning agenda</strong><small>Your events, daily items, and open weekly tasks.</small></span><input type="checkbox" checked={notificationPreferences.morningDigestEnabled} onChange={(event) => setNotificationPreferences({ ...notificationPreferences, morningDigestEnabled: event.target.checked })} /></label>
+            {notificationPreferences.morningDigestEnabled && <label className="notification-time">Send at<input type="time" value={notificationPreferences.morningDigestTime} onChange={(event) => setNotificationPreferences({ ...notificationPreferences, morningDigestTime: event.target.value })} /></label>}
+            <label className="notification-choice"><Bell size={17} /><span><strong>Sunday planning prompt</strong><small>A gentle reminder to look ahead at the next week.</small></span><input type="checkbox" checked={notificationPreferences.sundayPlanningEnabled} onChange={(event) => setNotificationPreferences({ ...notificationPreferences, sundayPlanningEnabled: event.target.checked })} /></label>
+            {notificationPreferences.sundayPlanningEnabled && <label className="notification-time">Send Sunday at<input type="time" value={notificationPreferences.sundayPlanningTime} onChange={(event) => setNotificationPreferences({ ...notificationPreferences, sundayPlanningTime: event.target.value })} /></label>}
+            <label className="notification-choice"><Bell size={17} /><span><strong>Household change alerts</strong><small>Know when someone adds, changes, completes, or removes a shared item or event.</small></span><input type="checkbox" checked={notificationPreferences.householdChangeAlerts} onChange={(event) => setNotificationPreferences({ ...notificationPreferences, householdChangeAlerts: event.target.checked })} /></label>
+            <div className="notification-channels"><label><input type="checkbox" checked={notificationPreferences.emailEnabled} onChange={(event) => setNotificationPreferences({ ...notificationPreferences, emailEnabled: event.target.checked })} /> Email</label><label><input type="checkbox" checked={notificationPreferences.pushEnabled} onChange={(event) => setNotificationPreferences({ ...notificationPreferences, pushEnabled: event.target.checked })} /> iPhone push</label></div>
+            <button className="button button-primary" disabled={pending}>Save notifications</button>
+          </form>
         </section>
 
         <section className="settings-section" id="preferences">

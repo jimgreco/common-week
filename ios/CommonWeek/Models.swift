@@ -78,6 +78,23 @@ struct PlanningItem: Codable, Identifiable, Hashable {
     let createdByName: String?
     let updatedAt: String
     let saveState: String?
+    let reminder: NotificationReminder?
+}
+
+struct NotificationReminder: Codable, Hashable {
+    let id: String
+    let resourceKind: String
+    let remindAt: String
+}
+
+struct NotificationPreferences: Codable, Equatable {
+    var emailEnabled: Bool
+    var pushEnabled: Bool
+    var morningDigestEnabled: Bool
+    var morningDigestTime: String
+    var sundayPlanningEnabled: Bool
+    var sundayPlanningTime: String
+    var householdChangeAlerts: Bool
 }
 
 enum PlanningItemType: String, Codable, CaseIterable, Identifiable {
@@ -181,6 +198,18 @@ struct CalendarEvent: Codable, Identifiable, Hashable {
     let attribution: String
     let sectionGroup: String
     let isConflict: Bool?
+    let attendees: [CalendarAttendee]?
+    let canRespond: Bool?
+    let reminder: NotificationReminder?
+}
+
+struct CalendarAttendee: Codable, Hashable, Identifiable {
+    var id: String { email }
+    let email: String
+    let displayName: String?
+    let responseStatus: String
+    let `self`: Bool?
+    let organizer: Bool?
 }
 
 struct EditableCalendar: Codable, Identifiable, Hashable {
@@ -251,6 +280,8 @@ struct CalendarEventDraft: Encodable {
     let endDate: String
     let startTime: String
     let endTime: String
+    let recurringEventId: String?
+    let recurringScope: String?
 }
 
 struct CalendarPreferenceUpdate: Encodable {
@@ -302,10 +333,41 @@ struct PlanningItemDraft: Codable, Equatable {
     let type: PlanningItemType
     let planningDate: String?
     let weekStartDate: String
+    let remindAt: String?
 }
 
-struct SearchResponse: Codable {
-    let items: [PlanningItem]?
+enum PlannerSearchResult: Codable, Identifiable {
+    case planningItem(PlanningItem)
+    case calendarEvent(CalendarEvent)
+
+    var id: String {
+        switch self {
+        case .planningItem(let item): "item:\(item.id)"
+        case .calendarEvent(let event): "event:\(event.id)"
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case kind, item, event }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .kind) {
+        case "calendar_event": self = .calendarEvent(try container.decode(CalendarEvent.self, forKey: .event))
+        default: self = .planningItem(try container.decode(PlanningItem.self, forKey: .item))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .planningItem(let item):
+            try container.encode("planning_item", forKey: .kind)
+            try container.encode(item, forKey: .item)
+        case .calendarEvent(let event):
+            try container.encode("calendar_event", forKey: .kind)
+            try container.encode(event, forKey: .event)
+        }
+    }
 }
 
 enum WeekDate {

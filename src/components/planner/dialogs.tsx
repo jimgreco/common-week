@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { AlertTriangle, CalendarDays, Check, Clock, CloudRain, ExternalLink, EyeOff, LoaderCircle, MapPin, Pencil, Search, Sunrise, Sunset, Trash2, Wind, X } from "lucide-react";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
+import { AlertTriangle, Bell, CalendarDays, Check, Clock, CloudRain, ExternalLink, EyeOff, LoaderCircle, MapPin, Pencil, Search, Sunrise, Sunset, Trash2, Users, Wind, X } from "lucide-react";
 import { searchLocationsAction } from "@/app/actions/planner";
 import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, CalendarEventDraft, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, PlanningItem } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
 
 export type LocationSelection =
   | { kind: "saved"; location: HouseholdLocation }
@@ -91,18 +92,41 @@ export function EventDetailDialog({
   onHide,
   onEdit,
   onDelete,
+  onRespond = async () => null,
+  onReminder = async () => ({ error: null, reminder: null }),
 }: {
   event: CalendarEvent;
   timeZone: string;
   onClose: () => void;
   onHide: (event: CalendarEvent) => Promise<string | null>;
   onEdit: (event: CalendarEvent) => void;
-  onDelete: (event: CalendarEvent) => Promise<string | null>;
+  onDelete: (event: CalendarEvent, scope: "occurrence" | "series") => Promise<string | null>;
+  onRespond?: (event: CalendarEvent, status: CalendarResponseStatus) => Promise<string | null>;
+  onReminder?: (event: CalendarEvent, remindAt: string | null) => Promise<{ error: string | null; reminder: NotificationReminder | null }>;
 }) {
   const [hiding, setHiding] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [responding, setResponding] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reminder, setReminder] = useState(event.reminder ?? null);
+  const selfAttendee = event.attendees?.find((attendee) => attendee.self);
+  const reminderLead = reminder
+    ? Math.max(0, Math.round((new Date(event.start).getTime() - new Date(reminder.remindAt).getTime()) / 60_000))
+    : -1;
+  const saveReminder = async (leadMinutes: number) => {
+    const remindAt = leadMinutes < 0 ? null : new Date(new Date(event.start).getTime() - leadMinutes * 60_000).toISOString();
+    const result = await onReminder(event, remindAt);
+    if (result.error) setError(result.error);
+    else setReminder(result.reminder);
+  };
+  const respond = async (status: CalendarResponseStatus) => {
+    setResponding(true);
+    setError(null);
+    const responseError = await onRespond(event, status);
+    setResponding(false);
+    if (responseError) setError(responseError);
+  };
   return (
     <Modal title="Calendar event" onClose={onClose}>
       <div className="modal-body event-detail-body">
@@ -117,18 +141,21 @@ export function EventDetailDialog({
           {event.isConflict && <div className="event-conflict-detail"><dt><AlertTriangle size={15} /><span className="sr-only">Conflict</span></dt><dd><strong>Time conflict</strong><span>This event overlaps another scheduled event.</span></dd></div>}
         </dl>
         {event.description && <div className="event-description"><h4>Notes</h4><p>{event.description}</p></div>}
-        {event.recurringEventId && event.canEdit && <p className="event-edit-note">Editing or deleting this event changes only this occurrence. Use Google Calendar to change the entire series.</p>}
+        {event.attendees?.length ? <div className="event-attendees"><h4><Users size={14} />Attendees</h4>{event.attendees.map((attendee) => <span key={attendee.email}><strong>{attendee.displayName || attendee.email}{attendee.self ? " (you)" : ""}</strong><small>{attendee.responseStatus === "needsAction" ? "Awaiting response" : attendee.responseStatus}</small></span>)}</div> : null}
+        {event.canRespond && <div className="event-response-actions"><span>Your response: <strong>{selfAttendee?.responseStatus === "needsAction" ? "Not answered" : selfAttendee?.responseStatus}</strong></span><div><button type="button" disabled={responding} onClick={() => void respond("accepted")}>Accept</button><button type="button" disabled={responding} onClick={() => void respond("tentative")}>Maybe</button><button type="button" disabled={responding} onClick={() => void respond("declined")}>Decline</button></div></div>}
+        {event.calendarPreferenceId && event.providerEventId && !event.allDay && <label className="event-reminder-control"><Bell size={15} /><span>Remind me</span><select value={reminder ? String(reminderLead) : "-1"} onChange={(change) => void saveReminder(Number(change.target.value))}><option value="-1">No reminder</option><option value="0">At start time</option><option value="10">10 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>}
+        {event.recurringEventId && event.canEdit && <p className="event-edit-note">You can change this occurrence or the entire recurring series.</p>}
         {!event.canEdit && <p className="event-edit-note">This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only.</p>}
         <div className="event-hide-note"><p>Hiding affects Week of Us for the household. It does not change Google Calendar, and you can restore the event in Settings.</p><button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Week of Us"}</button></div>
         {error && <p className="location-picker-error" role="alert">{error}</p>}
-        {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event.recurringEventId ? "Delete this occurrence from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
+        {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event.recurringEventId ? "What should be deleted from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
           setDeleting(true);
           setError(null);
-          const deleteError = await onDelete(event);
+          const deleteError = await onDelete(event, "occurrence");
           setDeleting(false);
           if (deleteError) setError(deleteError);
           else onClose();
-        }}>{deleting ? "Deleting…" : event.recurringEventId ? "Yes, delete occurrence" : "Yes, delete from Google"}</button></div>}
+        }}>{deleting ? "Deleting…" : event.recurringEventId ? "Delete this occurrence" : "Yes, delete from Google"}</button>{event.recurringEventId && <button className="button button-danger" type="button" disabled={deleting} onClick={async () => { setDeleting(true); setError(null); const deleteError = await onDelete(event, "series"); setDeleting(false); if (deleteError) setError(deleteError); else onClose(); }}>Delete entire series</button>}</div>}
       </div>
       <footer className="modal-footer split-footer event-detail-footer">
         {event.canEdit && <button className="button button-danger-quiet" type="button" disabled={deleting} onClick={() => setConfirmDelete((current) => !current)}><Trash2 size={13} />Delete</button>}
@@ -176,6 +203,8 @@ function initialEventDraft(date: string, calendars: EditableCalendar[], timeZone
     calendarPreferenceId: event.calendarPreferenceId ?? "",
     providerEventId: event.providerEventId,
     etag: event.etag,
+    recurringEventId: event.recurringEventId,
+    recurringScope: event.recurringEventId ? "occurrence" : undefined,
     title: event.title,
     description: event.description ?? "",
     location: event.location ?? "",
@@ -202,7 +231,7 @@ export function CalendarEventEditorDialog({
   timeZone: string;
   onClose: () => void;
   onSave: (draft: CalendarEventDraft) => Promise<string | null>;
-  onDelete: (event: CalendarEvent) => Promise<string | null>;
+  onDelete: (event: CalendarEvent, scope: "occurrence" | "series") => Promise<string | null>;
 }) {
   const [draft, setDraft] = useState(() => initialEventDraft(date, calendars, timeZone, event));
   const [saving, setSaving] = useState(false);
@@ -225,25 +254,26 @@ export function CalendarEventEditorDialog({
         <div className="modal-body form-stack calendar-event-form">
           <label>Title<input data-modal-autofocus value={draft.title} required maxLength={1000} onChange={(change) => setDraft({ ...draft, title: change.target.value })} /></label>
           <label>Calendar<select value={draft.calendarPreferenceId} disabled={editing} onChange={(change) => setDraft({ ...draft, calendarPreferenceId: change.target.value })}>{calendars.map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.name}</option>)}</select></label>
+          {event?.recurringEventId && <label>Apply changes to<select value={draft.recurringScope ?? "occurrence"} onChange={(change) => setDraft({ ...draft, recurringScope: change.target.value as "occurrence" | "series" })}><option value="occurrence">This occurrence</option><option value="series">Entire series</option></select></label>}
           <label className="all-day-control"><input type="checkbox" checked={draft.allDay} onChange={(change) => setDraft({ ...draft, allDay: change.target.checked })} /><span>All-day event</span></label>
           <div className="event-date-row">
-            <label>Starts<input type="date" value={draft.startDate} required onChange={(change) => setDraft({ ...draft, startDate: change.target.value, endDate: draft.endDate < change.target.value ? change.target.value : draft.endDate })} /></label>
+            <label>Starts<input type="date" value={draft.startDate} disabled={draft.recurringScope === "series"} required onChange={(change) => setDraft({ ...draft, startDate: change.target.value, endDate: draft.endDate < change.target.value ? change.target.value : draft.endDate })} /></label>
             {!draft.allDay && <label>Time<input type="time" value={draft.startTime} required onChange={(change) => setDraft({ ...draft, startTime: change.target.value })} /></label>}
           </div>
           <div className="event-date-row">
-            <label>Ends<input type="date" value={draft.endDate} min={draft.startDate} required onChange={(change) => setDraft({ ...draft, endDate: change.target.value })} /></label>
+            <label>Ends<input type="date" value={draft.endDate} disabled={draft.recurringScope === "series"} min={draft.startDate} required onChange={(change) => setDraft({ ...draft, endDate: change.target.value })} /></label>
             {!draft.allDay && <label>Time<input type="time" value={draft.endTime} required onChange={(change) => setDraft({ ...draft, endTime: change.target.value })} /></label>}
           </div>
           <label>Location<input value={draft.location} maxLength={1000} placeholder="Optional" onChange={(change) => setDraft({ ...draft, location: change.target.value })} /></label>
           <label>Notes<textarea value={draft.description} maxLength={8192} placeholder="Optional" onChange={(change) => setDraft({ ...draft, description: change.target.value })} /></label>
           <p className="event-timezone-note">Times use the household timezone: {timeZone}</p>
-          {event?.recurringEventId && <p className="event-edit-note">These changes apply only to this occurrence. Use Google Calendar to change the entire series.</p>}
+          {event?.recurringEventId && <p className="event-edit-note">Series edits keep the original recurrence dates and apply title, notes, location, all-day state, and time changes to every occurrence.</p>}
           {error && <p className="location-picker-error" role="alert">{error}</p>}
           {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event?.recurringEventId ? "Delete this occurrence from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
             if (!event) return;
             setDeleting(true);
             setError(null);
-            const deleteError = await onDelete(event);
+            const deleteError = await onDelete(event, draft.recurringScope ?? "occurrence");
             setDeleting(false);
             if (deleteError) setError(deleteError);
             else onClose();
@@ -490,12 +520,14 @@ export function WeatherDialog({ day, timeZone, temperatureUnit, onClose }: { day
 export function ItemEditorDialog({
   item,
   weekDates,
+  timeZone,
   onClose,
   onSave,
   onDelete,
 }: {
   item: PlanningItem;
   weekDates: string[];
+  timeZone: string;
   onClose: () => void;
   onSave: (item: PlanningItem) => void;
   onDelete: (item: PlanningItem) => void;
@@ -516,6 +548,7 @@ export function ItemEditorDialog({
             <label>Type<select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as "note" | "task" })}><option value="note">Note</option><option value="task">Task</option></select></label>
           </div>
           <label>When<select value={draft.planningDate ?? "weekly"} onChange={(event) => setDraft({ ...draft, planningDate: event.target.value === "weekly" ? null : event.target.value })}><option value="weekly">This week</option>{weekDates.map((date) => <option value={date} key={date}>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(parseDateOnly(date))}</option>)}</select></label>
+          <label>Reminder<input type="datetime-local" value={draft.reminder ? formatInTimeZone(new Date(draft.reminder.remindAt), timeZone, "yyyy-MM-dd'T'HH:mm") : ""} onChange={(event) => setDraft({ ...draft, reminder: event.target.value ? { id: draft.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: fromZonedTime(event.target.value, timeZone).toISOString() } : null })} /></label>
           {item.createdByName && <p className="attribution-note">Added by {item.createdByName}</p>}
         </div>
         <footer className="modal-footer split-footer">
@@ -533,25 +566,34 @@ export function SearchDialog({
   loading,
   onQuery,
   onClose,
+  onEvent,
+  timeZone,
 }: {
-  results: PlanningItem[];
+  results: PlannerSearchResult[];
   query: string;
   loading: boolean;
   onQuery: (query: string) => void;
   onClose: () => void;
+  onEvent: (event: CalendarEvent) => void;
+  timeZone: string;
 }) {
   return (
-    <Modal title="Search plans and tasks" onClose={onClose}>
+    <Modal title="Search Week of Us" onClose={onClose}>
       <div className="modal-body search-modal-body">
         <label className="search-field"><Search size={16} /><input autoFocus value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search household planning…" /></label>
         <div className="search-results" aria-live="polite">
           {loading && <p className="empty-section">Searching…</p>}
-          {!loading && query.length >= 2 && !results.length && <p className="empty-section">No matching plans or tasks.</p>}
-          {results.map((item) => (
-            <a href={`/planner?week=${item.weekStartDate}`} className="search-result" key={item.id}>
-              <span>{item.type === "task" ? (item.isCompleted ? "☑" : "□") : "•"}</span>
-              <div><strong>{item.text}</strong><small>{item.planningDate ? formatMobileDate(item.planningDate) : `Week of ${item.weekStartDate}`}</small></div>
+          {!loading && query.length >= 2 && !results.length && <p className="empty-section">No matching plans, tasks, or Calendar events.</p>}
+          {results.map((result) => result.kind === "planning_item" ? (
+            <a href={`/planner?week=${result.item.weekStartDate}`} className="search-result" key={`item:${result.item.id}`}>
+              <span>{result.item.type === "task" ? (result.item.isCompleted ? "☑" : "□") : "•"}</span>
+              <div><strong>{result.item.text}</strong><small>{result.item.planningDate ? formatMobileDate(result.item.planningDate) : `Week of ${result.item.weekStartDate}`}</small></div>
             </a>
+          ) : (
+            <button type="button" className="search-result" key={`event:${result.event.id}`} onClick={() => onEvent(result.event)}>
+              <CalendarDays size={15} />
+              <div><strong>{result.event.title}</strong><small>{eventSchedule(result.event, timeZone)} · {result.event.calendarAlias}</small></div>
+            </button>
           ))}
         </div>
       </div>

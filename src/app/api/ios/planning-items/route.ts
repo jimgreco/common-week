@@ -16,6 +16,7 @@ const itemSchema = z.object({
   type: z.enum(["note", "task"]),
   planningDate: z.string().nullable(),
   weekStartDate: z.string(),
+  remindAt: z.string().datetime().nullable().optional(),
 });
 
 async function isAuthorized(request: NextRequest) {

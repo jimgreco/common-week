@@ -121,12 +121,37 @@ final class APIClient {
         try await send(path: "/api/ios/calendar-events", method: editing ? "PATCH" : "POST", body: draft)
     }
 
-    func deleteEvent(_ event: CalendarEvent) async throws -> EmptyResponse {
-        try await send(path: "/api/ios/calendar-events", method: "DELETE", body: DeleteEventRequest(calendarPreferenceId: event.calendarPreferenceId ?? "", providerEventId: event.providerEventId ?? "", etag: event.etag ?? ""))
+    func deleteEvent(_ event: CalendarEvent, scope: String = "occurrence") async throws -> EmptyResponse {
+        try await send(path: "/api/ios/calendar-events", method: "DELETE", body: DeleteEventRequest(calendarPreferenceId: event.calendarPreferenceId ?? "", providerEventId: event.providerEventId ?? "", etag: event.etag ?? "", recurringEventId: event.recurringEventId, recurringScope: scope))
     }
 
-    func search(_ query: String) async throws -> [PlanningItem] {
+    func respondToEvent(_ event: CalendarEvent, responseStatus: String) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/calendar-events", method: "PATCH", body: EventResponseRequest(action: "respond", calendarPreferenceId: event.calendarPreferenceId ?? "", providerEventId: event.providerEventId ?? "", etag: event.etag ?? "", responseStatus: responseStatus))
+    }
+
+    func search(_ query: String) async throws -> [PlannerSearchResult] {
         try await send(path: "/api/ios/search", query: [URLQueryItem(name: "q", value: query)])
+    }
+
+    func notificationPreferences() async throws -> NotificationPreferences {
+        try await send(path: "/api/ios/notifications")
+    }
+
+    func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws -> NotificationPreferences {
+        try await send(path: "/api/ios/notifications", method: "PATCH", body: preferences)
+    }
+
+    func registerPushDevice(token: String, environment: String) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/notifications", method: "POST", body: PushDeviceRequest(deviceToken: token, environment: environment))
+    }
+
+    func unregisterPushDevice(token: String) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/notifications", method: "DELETE", body: PushDeviceRemovalRequest(deviceToken: token))
+    }
+
+    func setCalendarReminder(_ event: CalendarEvent, remindAt: String?) async throws -> NotificationReminder? {
+        let response: CalendarReminderResponse = try await send(path: "/api/ios/notifications", method: "PATCH", body: CalendarReminderRequest(action: "calendarReminder", calendarPreferenceId: event.calendarPreferenceId ?? "", providerEventId: event.providerEventId ?? "", remindAt: remindAt))
+        return response.reminder
     }
 
     func updateHousehold(_ household: HouseholdSummary) async throws -> EmptyResponse {
@@ -285,6 +310,36 @@ private struct DeleteEventRequest: Encodable {
     let calendarPreferenceId: String
     let providerEventId: String
     let etag: String
+    let recurringEventId: String?
+    let recurringScope: String
+}
+
+private struct EventResponseRequest: Encodable {
+    let action: String
+    let calendarPreferenceId: String
+    let providerEventId: String
+    let etag: String
+    let responseStatus: String
+}
+
+private struct PushDeviceRequest: Encodable {
+    let deviceToken: String
+    let environment: String
+}
+
+private struct PushDeviceRemovalRequest: Encodable {
+    let deviceToken: String
+}
+
+private struct CalendarReminderRequest: Encodable {
+    let action: String
+    let calendarPreferenceId: String
+    let providerEventId: String
+    let remindAt: String?
+}
+
+private struct CalendarReminderResponse: Decodable {
+    let reminder: NotificationReminder?
 }
 
 struct AnyEncodable: Encodable {

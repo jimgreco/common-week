@@ -6,7 +6,7 @@ final class PlannerViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var toast: String?
-    @Published var searchResults: [PlanningItem] = []
+    @Published var searchResults: [PlannerSearchResult] = []
     @Published var isSearching = false
     @Published private(set) var isOffline = false
     @Published private(set) var pendingChangeCount = 0
@@ -128,7 +128,8 @@ final class PlannerViewModel: ObservableObject {
             text: draft.text,
             type: draft.type,
             planningDate: draft.planningDate,
-            weekStartDate: draft.weekStartDate
+            weekStartDate: draft.weekStartDate,
+            remindAt: draft.remindAt
         )
         let previous = onlineDraft.id.flatMap(item(withId:))
         applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saving")
@@ -267,14 +268,33 @@ final class PlannerViewModel: ObservableObject {
         }
     }
 
-    func deleteEvent(_ event: CalendarEvent) async -> Bool {
+    func deleteEvent(_ event: CalendarEvent, scope: String = "occurrence") async -> Bool {
         if isDemo { return await hideEvent(event) }
         do {
-            _ = try await api.deleteEvent(event)
+            _ = try await api.deleteEvent(event, scope: scope)
             await refreshAfterMutation(week: data?.weekStart)
             show("Calendar event deleted")
             return true
         } catch { show(APIClient.isConnectivityFailure(error) ? "Connect to the internet to change calendar events." : error.localizedDescription); return false }
+    }
+
+    func respondToEvent(_ event: CalendarEvent, responseStatus: String) async -> Bool {
+        if isDemo { show("Calendar response saved"); return true }
+        do {
+            _ = try await api.respondToEvent(event, responseStatus: responseStatus)
+            await refreshAfterMutation(week: data?.weekStart)
+            show("Calendar response saved")
+            return true
+        } catch { show(APIClient.isConnectivityFailure(error) ? "Connect to the internet to respond." : error.localizedDescription); return false }
+    }
+
+    func setCalendarReminder(_ event: CalendarEvent, remindAt: String?) async -> NotificationReminder? {
+        if isDemo { return remindAt.map { NotificationReminder(id: "demo-reminder", resourceKind: "calendar_event", remindAt: $0) } }
+        do {
+            let reminder = try await api.setCalendarReminder(event, remindAt: remindAt)
+            show(remindAt == nil ? "Reminder removed" : "Reminder saved")
+            return reminder
+        } catch { show(error.localizedDescription); return event.reminder }
     }
 
     func search(_ query: String) async {
@@ -283,7 +303,8 @@ final class PlannerViewModel: ObservableObject {
         defer { isSearching = false }
         if isDemo {
             guard let data else { return }
-            searchResults = (data.days.flatMap(\.items) + data.weeklyItems).filter { $0.text.localizedCaseInsensitiveContains(query) }
+            searchResults = data.days.flatMap(\.events).filter { $0.title.localizedCaseInsensitiveContains(query) }.map(PlannerSearchResult.calendarEvent)
+                + (data.days.flatMap(\.items) + data.weeklyItems).filter { $0.text.localizedCaseInsensitiveContains(query) }.map(PlannerSearchResult.planningItem)
             return
         }
         do { searchResults = try await api.search(query) }
@@ -466,7 +487,8 @@ final class PlannerViewModel: ObservableObject {
             createdBy: previous?.createdBy ?? activeUser?.userId ?? "local",
             createdByName: previous?.createdByName ?? activeUser?.displayName,
             updatedAt: ISO8601DateFormatter().string(from: Date()),
-            saveState: saveState
+            saveState: saveState,
+            reminder: draft.remindAt.map { NotificationReminder(id: previous?.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: $0) }
         )
         insert(item)
     }

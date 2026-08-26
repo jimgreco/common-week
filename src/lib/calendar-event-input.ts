@@ -1,6 +1,6 @@
-import { fromZonedTime } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { addDateDays } from "@/lib/date";
-import type { GoogleCalendarEventInput } from "@/lib/integrations/google-calendar";
+import type { GoogleCalendarEventInput, GoogleCalendarEventResource } from "@/lib/integrations/google-calendar";
 import type { CalendarEventDraft } from "@/types/domain";
 
 export function buildGoogleCalendarEventInput(
@@ -33,6 +33,27 @@ export function buildGoogleCalendarEventInput(
     start: { dateTime: start.toISOString(), timeZone },
     end: { dateTime: end.toISOString(), timeZone },
   };
+}
+
+export function buildGoogleCalendarSeriesInput(
+  draft: CalendarEventDraft,
+  master: GoogleCalendarEventResource,
+  timeZone: string,
+): GoogleCalendarEventInput {
+  if (draft.allDay) {
+    if (!master.start.date || !master.end.date) throw new Error("Refresh the recurring event before changing the series.");
+    return buildGoogleCalendarEventInput({
+      ...draft,
+      startDate: master.start.date,
+      endDate: addDateDays(master.end.date, -1),
+    }, timeZone);
+  }
+  if (!master.start.dateTime || !master.end.dateTime) throw new Error("Refresh the recurring event before changing the series.");
+  return buildGoogleCalendarEventInput({
+    ...draft,
+    startDate: formatInTimeZone(new Date(master.start.dateTime), timeZone, "yyyy-MM-dd"),
+    endDate: formatInTimeZone(new Date(master.end.dateTime), timeZone, "yyyy-MM-dd"),
+  }, timeZone);
 }
 
 export function deterministicGoogleEventId(requestId: string): string {

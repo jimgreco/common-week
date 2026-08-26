@@ -26,6 +26,7 @@
 		C452C1A3ECFC0FCB44393F8F /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 966E7B5827AF770CFD268416 /* Models.swift */; };
 		D5EF93696546C88F02D480AC /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83231BA8632DDC33D6A60E5A /* DesignSystem.swift */; };
 		D64C4B2C7F21A9FA87564205 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4AD6D78689E7F9DFED0B9E /* SignInView.swift */; };
+		E52A6401F00DBBD59B705A23 /* NotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A1CA4C82B995948B44F51A /* NotificationCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -48,6 +49,7 @@
 /* Begin PBXFileReference section */
 		0B0876CEA88D6489E9350516 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		13927DF55278747670B39822 /* CommonWeek.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CommonWeek.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		14A1CA4C82B995948B44F51A /* NotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCoordinator.swift; sourceTree = "<group>"; };
 		15D280453135ABCB20247AFB /* WeekDateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekDateTests.swift; sourceTree = "<group>"; };
 		194B7E6770649ECF980A47F1 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		2E8618295C4BEC334961F6E0 /* CommonWeekApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonWeekApp.swift; sourceTree = "<group>"; };
@@ -125,6 +127,7 @@
 				78E742DE5970A5A51F2F8406 /* EditorViews.swift */,
 				0B0876CEA88D6489E9350516 /* Info.plist */,
 				966E7B5827AF770CFD268416 /* Models.swift */,
+				14A1CA4C82B995948B44F51A /* NotificationCoordinator.swift */,
 				46C7FB1EF7975CDF39025D1F /* OfflineStore.swift */,
 				540DB50FE63FB747D5B0822A /* PlannerView.swift */,
 				FF76B68EACAAC800419E71B7 /* PlannerViewModel.swift */,
@@ -269,6 +272,7 @@
 				A9BC2CB65D4DA11765D861AC /* DetailViews.swift in Sources */,
 				A5017F6AC2B1F3907CDD5535 /* EditorViews.swift in Sources */,
 				C452C1A3ECFC0FCB44393F8F /* Models.swift in Sources */,
+				E52A6401F00DBBD59B705A23 /* NotificationCoordinator.swift in Sources */,
 				563CD0448C592384B7BEE26B /* OfflineStore.swift in Sources */,
 				33D0F8A5E3F3A191AB66C3A4 /* PlannerView.swift in Sources */,
 				51B1B07F6F38A69A7BA7A61F /* PlannerViewModel.swift in Sources */,

@@ -7,7 +7,9 @@ import { geocodingService } from "@/lib/integrations/geocoding";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
 import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
 import { getPlannerData } from "@/lib/server/planner-data";
-import type { ActionResult, GeocodingResult, HouseholdLocation, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
+import { searchHouseholdCalendarEvents } from "@/lib/server/calendar-data";
+import { queueHouseholdChange, upsertPlanningReminder } from "@/lib/server/notifications";
+import type { ActionResult, GeocodingResult, HouseholdLocation, PlannerSearchResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
 
 const uuid = z.string().uuid();
 const itemText = z.string().trim().min(1).max(1000);
@@ -127,6 +129,7 @@ export async function createPlanningItemAction(input: {
   type: PlanningItemType;
   planningDate: string | null;
   weekStartDate: string;
+  remindAt?: string | null;
 }): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
@@ -135,10 +138,11 @@ export async function createPlanningItemAction(input: {
       type: z.enum(["note", "task"]),
       planningDate: dateOnly.nullable(),
       weekStartDate: dateOnly,
+      remindAt: z.string().datetime().nullable().optional(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
-    const result = await withTransaction(async (database) => {
+    const saved = await withTransaction(async (database) => {
       const inserted = await database.query<PlanningRow>(
         `insert into planning_items (
            id, household_id, created_by, planning_date, week_start_date, type, text
@@ -157,18 +161,36 @@ export async function createPlanningItemAction(input: {
           parsed.text,
         ],
       );
-      if (inserted.rows[0]) return inserted;
-      return database.query<PlanningRow>(
+      if (inserted.rows[0]) return { result: inserted, inserted: true };
+      return { result: await database.query<PlanningRow>(
         `select id, planning_date::text, week_start_date::text, type,
                 text, is_completed, sort_order, created_by, updated_at
            from planning_items
           where id = $1 and household_id = $2 and created_by = $3`,
         [parsed.id, context.householdId, context.userId],
-      );
+      ), inserted: false };
     });
-    if (!result.rows[0]) throw new Error("That offline change is not available to this household.");
+    const row = saved.result.rows[0];
+    if (!row) throw new Error("That offline change is not available to this household.");
+    const reminder = parsed.remindAt !== undefined
+      ? await upsertPlanningReminder({
+        userId: context.userId,
+        householdId: context.householdId,
+        itemId: row.id,
+        title: row.text,
+        remindAt: parsed.remindAt ? new Date(parsed.remindAt) : null,
+      })
+      : null;
+    if (saved.inserted) {
+      await queueHouseholdChange({
+        actorUserId: context.userId,
+        householdId: context.householdId,
+        title: `${context.displayName} added ${parsed.type === "task" ? "a task" : "a plan"}`,
+        body: parsed.text,
+      });
+    }
     revalidatePath("/planner");
-    return { ok: true, data: mappedItem(result.rows[0]) };
+    return { ok: true, data: { ...mappedItem(row), reminder } };
   } catch (error) {
     return actionError(error, "Your item could not be saved.");
   }
@@ -180,6 +202,7 @@ export async function updatePlanningItemAction(input: {
   type: PlanningItemType;
   planningDate: string | null;
   weekStartDate: string;
+  remindAt?: string | null;
 }): Promise<ActionResult> {
   try {
     const parsed = z.object({
@@ -188,6 +211,7 @@ export async function updatePlanningItemAction(input: {
       type: z.enum(["note", "task"]),
       planningDate: dateOnly.nullable(),
       weekStartDate: dateOnly,
+      remindAt: z.string().datetime().nullable().optional(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
@@ -206,6 +230,21 @@ export async function updatePlanningItemAction(input: {
       ],
     );
     if (!result.rowCount) throw new Error("That item is not available to this household.");
+    if (parsed.remindAt !== undefined) {
+      await upsertPlanningReminder({
+        userId: context.userId,
+        householdId: context.householdId,
+        itemId: parsed.id,
+        title: parsed.text,
+        remindAt: parsed.remindAt ? new Date(parsed.remindAt) : null,
+      });
+    }
+    await queueHouseholdChange({
+      actorUserId: context.userId,
+      householdId: context.householdId,
+      title: `${context.displayName} updated ${parsed.type === "task" ? "a task" : "a plan"}`,
+      body: parsed.text,
+    });
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {
@@ -222,6 +261,12 @@ export async function togglePlanningItemAction(id: string, completed: boolean): 
       [parsedId, context.householdId, Boolean(completed)],
     );
     if (!result.rowCount) throw new Error("That task is not available to this household.");
+    await queueHouseholdChange({
+      actorUserId: context.userId,
+      householdId: context.householdId,
+      title: `${context.displayName} ${completed ? "completed" : "reopened"} a task`,
+      body: "Open Week of Us to see the shared week.",
+    });
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {
@@ -233,12 +278,20 @@ export async function deletePlanningItemAction(id: string): Promise<ActionResult
   try {
     const parsedId = uuid.parse(id);
     const context = await requireHouseholdContext();
-    await query(
-      "delete from planning_items where id = $1 and household_id = $2",
+    const deleted = await query<{ text: string; type: PlanningItemType }>(
+      "delete from planning_items where id = $1 and household_id = $2 returning text, type",
       [parsedId, context.householdId],
     );
     // Deletion is intentionally idempotent so a native client can safely replay
     // a request when it did not receive the original response.
+    if (deleted.rows[0]) {
+      await queueHouseholdChange({
+        actorUserId: context.userId,
+        householdId: context.householdId,
+        title: `${context.displayName} removed ${deleted.rows[0].type === "task" ? "a task" : "a plan"}`,
+        body: deleted.rows[0].text,
+      });
+    }
     revalidatePath("/planner");
     return { ok: true };
   } catch (error) {
@@ -386,5 +439,44 @@ export async function searchPlanningItemsAction(search: string): Promise<ActionR
     return { ok: true, data: result.rows.map(mappedItem) };
   } catch (error) {
     return actionError<PlanningItem[]>(error, "Search is temporarily unavailable.");
+  }
+}
+
+export async function searchPlannerAction(search: string): Promise<ActionResult<PlannerSearchResult[]>> {
+  try {
+    const parsed = z.string().trim().min(2).max(100).parse(search);
+    const context = await requireHouseholdContext();
+    const escaped = parsed.replace(/[\\%_]/g, "\\$&");
+    const [planning, events] = await Promise.all([
+      query<PlanningRow & { reminder_id: string | null; remind_at: Date | null }>(
+        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+                pi.text, pi.is_completed, pi.sort_order, pi.created_by, pi.updated_at,
+                nr.id as reminder_id, nr.remind_at
+           from planning_items pi
+           left join notification_reminders nr
+             on nr.planning_item_id = pi.id and nr.user_id = $3 and nr.delivered_at is null
+          where pi.household_id = $1 and pi.text ilike $2 escape '\\'
+          order by pi.updated_at desc limit 30`,
+        [context.householdId, `%${escaped}%`, context.userId],
+      ),
+      searchHouseholdCalendarEvents(context, parsed),
+    ]);
+    return {
+      ok: true,
+      data: [
+        ...events.map((event) => ({ kind: "calendar_event" as const, event })),
+        ...planning.rows.map((row) => ({
+          kind: "planning_item" as const,
+          item: {
+            ...mappedItem(row),
+            reminder: row.reminder_id && row.remind_at
+              ? { id: row.reminder_id, resourceKind: "planning_item" as const, remindAt: row.remind_at.toISOString() }
+              : null,
+          },
+        })),
+      ],
+    };
+  } catch (error) {
+    return actionError<PlannerSearchResult[]>(error, "Search is temporarily unavailable.");
   }
 }

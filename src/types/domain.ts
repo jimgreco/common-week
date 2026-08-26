@@ -29,6 +29,23 @@ export interface PlanningItem {
   createdByName?: string;
   updatedAt: string;
   saveState?: SaveState;
+  reminder?: NotificationReminder | null;
+}
+
+export interface NotificationReminder {
+  id: string;
+  resourceKind: "planning_item" | "calendar_event";
+  remindAt: string;
+}
+
+export interface NotificationPreferences {
+  emailEnabled: boolean;
+  pushEnabled: boolean;
+  morningDigestEnabled: boolean;
+  morningDigestTime: string;
+  sundayPlanningEnabled: boolean;
+  sundayPlanningTime: string;
+  householdChangeAlerts: boolean;
 }
 
 export interface HouseholdLocation {
@@ -89,6 +106,19 @@ export interface CalendarEvent {
   attribution: string;
   sectionGroup: CalendarSectionGroup;
   isConflict?: boolean;
+  attendees?: CalendarAttendee[];
+  canRespond?: boolean;
+  reminder?: NotificationReminder | null;
+}
+
+export type CalendarResponseStatus = "needsAction" | "declined" | "tentative" | "accepted";
+
+export interface CalendarAttendee {
+  email: string;
+  displayName?: string;
+  responseStatus: CalendarResponseStatus;
+  self?: boolean;
+  organizer?: boolean;
 }
 
 export type CalendarSectionGroup = "critical" | "supplemental";
@@ -119,7 +149,13 @@ export interface CalendarEventDraft {
   endDate: string;
   startTime: string;
   endTime: string;
+  recurringEventId?: string;
+  recurringScope?: "occurrence" | "series";
 }
+
+export type PlannerSearchResult =
+  | { kind: "planning_item"; item: PlanningItem }
+  | { kind: "calendar_event"; event: CalendarEvent };
 
 export interface HiddenCalendarEvent {
   id: string;

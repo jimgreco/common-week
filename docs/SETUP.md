@@ -81,9 +81,13 @@ Configure the Google Auth Platform Data Access screen with exactly the same thre
 
 The server verifies Apple signatures, issuer, audience, expiry, verified email, and nonce; validates the one-use authorization code; encrypts the returned refresh token; and revokes that authorization during self-service account deletion.
 
-## 4. Configure invitation email
+## 4. Configure email and push notifications
 
-Verify a sending domain in Resend and set `RESEND_API_KEY` and `INVITATION_EMAIL_FROM`. Invitation delivery uses a unique idempotency key, and every resend rotates the 256-bit private link and resets its 14-day expiry.
+Verify a sending domain in Resend and set `RESEND_API_KEY`, `INVITATION_EMAIL_FROM`, and `NOTIFICATION_EMAIL_FROM`. Invitation delivery uses a unique idempotency key, and every resend rotates the 256-bit private link and resets its 14-day expiry. Notification email also uses idempotency keys so a delivery cycle cannot intentionally send the same message twice.
+
+Enable Push Notifications for the App ID `com.jimgreco.commonweek`, create an Apple Push Notifications authentication key, and configure `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY_BASE64`, and `APNS_BUNDLE_ID`. The APNs key is distinct from the Sign in with Apple key. The TestFlight workflow enables the bundle capability and verifies that the signed archive contains `aps-environment=production`.
+
+The notification scheduler runs inside the production Node process once per minute. PostgreSQL deduplicates reminders and digests, and records delivery attempts. Morning and Sunday times are interpreted in the household timezone. Users opt into agenda, planning, and change alerts in Settings; an explicit item or event reminder is delivered using their enabled email and/or push channels.
 
 ## 5. Create and join a household
 
@@ -95,7 +99,7 @@ Verify a sending domain in Resend and set `RESEND_API_KEY` and `INVITATION_EMAIL
 6. Each member chooses Hide, Private, or Share for every calendar, then optionally sets aliases and badges for visible calendars.
 7. Each calendar owner who wants household event editing enables it separately in Settings and confirms that their Shared writable calendars are editable by the other household member.
 
-On iPhone, these controls are native: open the account menu, choose **Settings**, then use the **Google Calendar** section to connect or reconnect, enable editing, refresh calendars, and configure Hide, Private, Share, aliases, badges, and planner sections.
+On iPhone, these controls are native: open the account menu, choose **Settings**, then use **Google Calendar** to manage calendars and **Notifications** to configure agenda, planning, household-change, email, and push preferences.
 
 ## 6. Verify PostgreSQL isolation
 
@@ -117,7 +121,9 @@ The browser never connects to PostgreSQL. Household identity comes from the serv
 - Use a third account in a different household and attempt item IDs and location IDs from the first household; confirm no reads or writes succeed.
 - Select primary, additional, and shared calendars; check timed, all-day, recurring-expanded, and multi-day events.
 - Set one calendar to Hide and confirm it is absent for its owner, set one to Private and confirm only its owner sees it, then set one to Share and confirm another household member sees its name and events through the live planner update.
-- From both household accounts, create, edit, and delete an event on each Shared writable calendar. Confirm a recurring edit or deletion affects only the selected occurrence; Private, hidden, viewer-access, and Google read-only calendars stay read-only; and Hide affects Week of Us without deleting from Google.
+- From both household accounts, create, edit, and delete an event on each Shared writable calendar. Confirm occurrence and whole-series operations target the intended Google event; Private, hidden, viewer-access, and Google read-only calendars stay read-only; and Hide affects Week of Us without deleting from Google.
+- Search for a Calendar event outside the visible week, open it, and respond to an invitation from the connected account that received it. Confirm another household member cannot RSVP through the calendar owner's credentials.
+- Enable email and push delivery, set an item and event reminder, and exercise morning, Sunday, and household-change alerts. Confirm each message is delivered once in the household timezone.
 - Exercise month, year, and DST boundaries.
 - Change Friday's location through Sunday and confirm all three weather summaries refresh.
 - Interrupt the iPhone network, confirm the protected cached week remains visible, create/update/complete/delete planner items and change a location, then restore connectivity and confirm the queued edit count returns to zero without duplicates.

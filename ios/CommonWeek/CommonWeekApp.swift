@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct CommonWeekApp: App {
+    @UIApplicationDelegateAdaptor(CommonWeekAppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var auth = AuthStore()
     @StateObject private var planner: PlannerViewModel
@@ -49,7 +50,10 @@ struct RootView: View {
                     .onAppear { planner.deactivate() }
             case .signedIn(let user):
                 PlannerView(viewModel: planner, auth: auth, user: user)
-                    .task(id: user.userId) { await planner.activate(user: user) }
+                    .task(id: user.userId) {
+                        await planner.activate(user: user)
+                        await NotificationCoordinator.shared.syncStoredToken()
+                    }
             }
         }
     }
