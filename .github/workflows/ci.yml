@@ -31,6 +31,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+          -e POSTGRES_INITDB_ARGS="-c log_min_messages=warning -c client_min_messages=warning"
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/common_week_test
       PGSSL: "false"
