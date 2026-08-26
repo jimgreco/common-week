@@ -38,7 +38,10 @@ final class APIClient {
     let baseURL: URL
 
     init(session: URLSession = .shared, baseURL: URL? = nil) {
-        self.session = session
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        self.session = URLSession(configuration: config)
         let configured = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
         self.baseURL = baseURL ?? URL(string: configured ?? "https://weekofus.com")!
     }
