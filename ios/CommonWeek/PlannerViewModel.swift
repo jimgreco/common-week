@@ -146,6 +146,10 @@ final class PlannerViewModel: ObservableObject {
             }
         } catch {
             show(error.localizedDescription)
+            removeItem(id: onlineDraft.id!)
+            if let previous { insert(previous) }
+            persistCurrentPlanner()
+            return false
         }
         removeItem(id: onlineDraft.id!)
         if let previous { insert(previous) }
@@ -253,7 +257,14 @@ final class PlannerViewModel: ObservableObject {
             await refreshAfterMutation(week: data?.weekStart)
             show(editing ? "Calendar event updated" : "Calendar event added")
             return true
-        } catch { show(APIClient.isConnectivityFailure(error) ? "Connect to the internet to change calendar events." : error.localizedDescription); return false }
+        } catch where APIClient.isConnectivityFailure(error) {
+            // For calendar events, we don't queue them offline since they're tied to Google Calendar
+            show("Connect to the internet to change calendar events.")
+            return false
+        } catch {
+            show(APIClient.isConnectivityFailure(error) ? "Connect to the internet to change calendar events." : error.localizedDescription)
+            return false
+        }
     }
 
     func deleteEvent(_ event: CalendarEvent) async -> Bool {
