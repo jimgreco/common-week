@@ -55,149 +55,134 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Select Xcode
+      - name: Setup environment for iOS tests
         run: |
           set -euo pipefail
-          echo "=== Xcode Selection ==="
+          echo "=== Setting up iOS test environment ==="
           
-          # Ensure we have a proper Xcode version selected
-          if [[ -n "${XCODE_VERSION:-}" ]]; then
-            echo "Using specified Xcode version: $XCODE_VERSION"
-            # Look for the specific version
-            path="/Applications/Xcode_${XCODE_VERSION}.app"
-            if [ -d "$path" ]; then
-              sudo xcode-select -s "$path/Contents/Developer"
-              echo "Selected: $path"
-              xcodebuild -version
-            else
-              echo "Specified Xcode version not found: $path"
-              # Fallback to system default
-              echo "Falling back to system default Xcode"
-              sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-              xcodebuild -version
-            fi
+          # Ensure xcode-select points to a valid location
+          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
+            sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+            echo "Using Xcode in standard location"
+          elif [ -d "/Applications/Xcode_26.app/Contents/Developer" ]; then
+            sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+            echo "Using Xcode 26"
           else
-            # Try to find a working Xcode version or default to the system one
-            echo "Checking for available Xcode versions..."
-            found_xcode=false
-            
-            # Check in reverse order (most recent first)
-            for path in /Applications/Xcode.app /Applications/Xcode-26.app /Applications/Xcode_26.0.app /Applications/Xcode_26.1.app /Applications/Xcode_26.2.app /Applications/Xcode_26.3.app /Applications/Xcode_26.4.app; do
-              if [ -d "$path" ]; then
-                sudo xcode-select -s "$path/Contents/Developer"
-                echo "Selected: $path"
-                xcodebuild -version
-                found_xcode=true
-                break
-              fi
-            done
-            
-            if [ "$found_xcode" = false ]; then
-              echo "No specific Xcode version found, using system default (fallback)"
-              sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-              xcodebuild -version || echo "Failed to get Xcode version"
-            fi
+            echo "No Xcode found in standard locations. This might be a CI environment with no preinstalled Xcode."
+            # Try to get current developer tools version for debugging
+            xcode-select --print-path || echo "xcode-select not working properly"
           fi
           
-          echo "Xcode selection complete"
+          # Check if we have proper simulator setup
+          echo "Checking for simulator availability..."
+          if command -v xcrun >/dev/null 2>&1; then
+            echo "xcrun is available"
+            xcrun simctl list devices || echo "Could not list simulators"
+          else
+            echo "xcrun is missing or not available"
+            exit 1
+          fi
+          
+          # If we can't find simulators and have no Xcode, this may be a CI issue with the environment
 
       - name: Run iOS tests
         run: |
           set -euo pipefail
-          echo "=== iOS Tests ==="
+          echo "=== Running iOS Tests ==="
+          
+          # Create required directories
           mkdir -p output/ci output/xcode
           
-          # Ensure we have a proper simulator available
-          echo "Checking for available simulators..."
-          
-          # Debug: List all devices first
-          echo "All available devices:"
-          xcrun simctl list devices
-          
-          SIMULATORS=$(xcrun simctl list devices available | grep -E 'iPhone.*Shutdown|iPhone.*Booted' | head -1)
+          # Try to find or create a simulator
+          echo "Checking for existing simulators..."
+          SIMULATORS=$(xcrun simctl list devices available | grep -E 'iPhone.*Shutdown|iPhone.*Booted')
           
           if [ -z "$SIMULATORS" ]; then
-            echo "No available iPhone simulator found. Creating a new one..."
+            echo "No available iPhone simulator found."
+            echo "Attempting to create a basic simulator..."
             
-            # First try to create a basic simulator with simpler command
-            echo "Creating default iPhone 15 simulator..."
-            xcrun simctl create "iOS Simulator" com.apple.CoreSimulator.SimDeviceType.iPhone-15 com.apple.CoreSimulator.SimRuntime.iOS-17-0 2>&1 || echo "Failed to create simulator with simple method"
+            # Try creating with specific iOS version that's likely available
+            echo "Creating iPhone 15 simulator using runtime 17.0 (if available)..."
             
-            # Try a different approach - list specifically by runtime
-            SIMULATOR_RUNTIME="com.apple.CoreSimulator.SimRuntime.iOS-17-0"
-            if [ -n "$SIMULATOR_RUNTIME" ]; then
-              echo "Trying to find or create simulator for runtime $SIMULATOR_RUNTIME"
-              # List available runtimes 
-              xcrun simctl list runtimes | grep -i ios
+            # List all available runtimes as reference
+            echo "Available runtimes:"
+            xcrun simctl list runtimes
+            
+            # Simple approach - create an iPhone 15 with most compatible iOS version
+            try_count=0
+            while [ $try_count -lt 3 ]; do
+              echo "Attempt $((try_count + 1)) to create simulator..."
               
-              # Try creating with more specific format if previous fails
-              created_simulator=false
-              echo "Creating simulator with alternative method..."
-            
-              # Check if a default simulator already exists first before creating new ones
-              existing_sim=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone.*com\.apple\.CoreSimulator\.SimDeviceType\.iPhone-15/ && /(Shutdown|Booted)/ { print $2; exit }')
-              if [ -n "$existing_sim" ]; then
-                echo "Using existing simulator: $existing_sim"
-                simulator_id="$existing_sim"
-                created_simulator=true
+              # Create a simple simulator 
+              simulator_id=$(xcrun simctl create "Test-Simulator" com.apple.CoreSimulator.SimDeviceType.iPhone-15 com.apple.CoreSimulator.SimRuntime.iOS-17-0 2>&1 | head -1)
+              
+              if [ -n "$simulator_id" ] && [[ "$simulator_id" =~ ^[a-zA-Z0-9\-]+$ ]]; then
+                echo "Successfully created simulator with ID: $simulator_id"
+                break
               else
-                # Try the simpler version for creation
-                SIMULATOR_NAME="iPhone 15"
-                echo "Checking for device types..."
-                xcrun simctl list devicetypes | grep -i iphone
-                
-                # Attempt a simple create
-                sim_id=$(xcrun simctl create "$SIMULATOR_NAME" com.apple.CoreSimulator.SimDeviceType.iPhone-15 com.apple.CoreSimulator.SimRuntime.iOS-17-0 2>&1 | grep -E '^[a-zA-Z0-9\-]+$' | head -1)
-                
-                if [ -n "$sim_id" ]; then
-                  simulator_id="$sim_id"
-                  created_simulator=true
-                  echo "Created simulator: $simulator_id"
-                fi
+                echo "Failed to create simulator, retrying..."
+                try_count=$((try_count + 1))
+                sleep 2
               fi
-              
-              if [ "$created_simulator" = false ]; then
-                echo "Failed to create or find simulator, exiting"
-                exit 1
-              fi
-              
-            else
-              echo "No valid runtime found for simulator creation"
-              exit 1
-            fi
+            done
             
-            # Boot the simulator if we created one
-            if [ -n "$simulator_id" ]; then
+            if [ -z "$simulator_id" ] || ! [[ "$simulator_id" =~ ^[a-zA-Z0-9\-]+$ ]]; then
+              echo "Failed to create simulator after multiple attempts"
+              echo "Will attempt to run tests without specific simulator setup"
+              # Continue with no simulator (though this will likely fail)
+              simulator_id=""
+            else
+              # Boot the simulator we created
               echo "Booting simulator: $simulator_id"
-              xcrun simctl boot "$simulator_id" || true
-              echo "Simulator is now booted with ID: $simulator_id"
+              xcrun simctl boot "$simulator_id" >/dev/null 2>&1 && echo "Simulator booted successfully"
             fi
             
           else
-            echo "Found existing simulator(s)"
-            # Use first available simulator
+            echo "Found existing simulators:"
+            echo "$SIMULATORS"
+            
+            # Use first available iPhone simulator in shutdown or booted state
             simulator_id="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ && /(Shutdown|Booted)/ { print $2; exit }')"
             if [ -z "$simulator_id" ]; then
               echo "Found simulators but none in shutdown or booted state"
-              exit 1
+              # Try to find any iPhone simulator
+              simulator_id="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ { print $2; exit }')"
             fi
           fi
           
-          echo "Using simulator ID: $simulator_id"
+          # Set default simulator ID if still empty (should only happen in error case)
+          if [ -z "$simulator_id" ]; then
+            echo "Warning: No simulator ID found, attempting to run tests anyway..."
+            echo "The CI might not be able to properly test on iOS due to missing simulator"
+            # This will likely fail but at least won't crash the whole workflow
+            simulator_id=""
+          else
+            echo "Using simulator ID: $simulator_id"
+          fi
           
-          # Final test to verify the simulator works
-          echo "Verifying simulator setup..."
-          xcrun simctl list devices | grep -i "$simulator_id" || echo "Warning: Could not verify simulator state"
+          # Run the tests - let's run in a way that doesn't crash immediately if no simulator
+          if [ -n "$simulator_id" ]; then
+            echo "Running iOS tests with destination simulator: $simulator_id"
+            
+            xcodebuild test \
+              -project ios/CommonWeek.xcodeproj \
+              -scheme CommonWeek \
+              -destination "platform=iOS Simulator,id=$simulator_id" \
+              -resultBundlePath output/xcode/CommonWeekTests.xcresult \
+              CODE_SIGNING_ALLOWED=NO \
+              2>&1 | tee output/ci/ios-tests.log
+          else
+            # Run with no destination (this is still better than completely failing)
+            echo "Running iOS tests without specific simulator (test may proceed but might have issues)"
+            xcodebuild test \
+              -project ios/CommonWeek.xcodeproj \
+              -scheme CommonWeek \
+              -resultBundlePath output/xcode/CommonWeekTests.xcresult \
+              CODE_SIGNING_ALLOWED=NO \
+              2>&1 | tee output/ci/ios-tests.log
+          fi
           
-          xcodebuild test \
-            -project ios/CommonWeek.xcodeproj \
-            -scheme CommonWeek \
-            -destination "platform=iOS Simulator,id=$simulator_id" \
-            -resultBundlePath output/xcode/CommonWeekTests.xcresult \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee output/ci/ios-tests.log
-          
-          echo "iOS tests completed"
+          echo "iOS tests completed or attempted"
 
       - name: Upload iOS diagnostics
         if: always()
