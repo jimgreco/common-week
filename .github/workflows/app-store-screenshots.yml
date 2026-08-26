@@ -12,7 +12,7 @@ on:
       app_store_version:
         description: Editable App Store version
         required: true
-        default: "1.0"
+        default: "1.1"
         type: string
       screenshot_devices:
         description: Comma-separated simulator names

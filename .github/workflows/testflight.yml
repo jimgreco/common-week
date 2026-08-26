@@ -284,7 +284,7 @@ jobs:
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Bundle: \`${IOS_BUNDLE_ID}\`"
-            echo "- Version: \`1.0 (${IOS_BUILD_NUMBER})\`"
+            echo "- Version: \`1.1 (${IOS_BUILD_NUMBER})\`"
             echo "- API: \`${IOS_API_BASE_URL}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
