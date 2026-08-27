@@ -9,7 +9,7 @@ import { postgresErrorCode, query, withTransaction } from "@/lib/server/database
 import { getPlannerData } from "@/lib/server/planner-data";
 import { searchHouseholdCalendarEvents } from "@/lib/server/calendar-data";
 import { queueHouseholdChange, upsertPlanningReminder } from "@/lib/server/notifications";
-import type { ActionResult, GeocodingResult, HouseholdLocation, PlannerSearchResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
+import type { ActionResult, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
 
 const uuid = z.string().uuid();
 const itemText = z.string().trim().min(1).max(1000);
@@ -33,7 +33,10 @@ interface PlanningRow {
   is_completed: boolean;
   sort_order: number;
   created_by: string;
+  created_by_name: string;
   updated_at: Date;
+  reminder_id: string | null;
+  remind_at: Date | null;
 }
 
 function actionError<T = undefined>(error: unknown, fallback: string): ActionResult<T> {
@@ -51,8 +54,12 @@ function mappedItem(row: PlanningRow): PlanningItem {
     isCompleted: row.is_completed,
     sortOrder: row.sort_order,
     createdBy: row.created_by,
+    createdByName: row.created_by_name,
     updatedAt: row.updated_at.toISOString(),
     saveState: "saved",
+    reminder: row.reminder_id && row.remind_at
+      ? { id: row.reminder_id, resourceKind: "planning_item", remindAt: row.remind_at.toISOString() }
+      : null,
   };
 }
 
@@ -150,7 +157,8 @@ export async function createPlanningItemAction(input: {
          values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4::date, $5::date, $6::planning_item_type, $7)
          on conflict (id) do nothing
          returning id, planning_date::text, week_start_date::text, type,
-                   text, is_completed, sort_order, created_by, updated_at`,
+                   text, is_completed, sort_order, created_by,
+                   u.display_name as created_by_name, updated_at`,
         [
           parsed.id ?? null,
           context.householdId,
@@ -161,14 +169,36 @@ export async function createPlanningItemAction(input: {
           parsed.text,
         ],
       );
-      if (inserted.rows[0]) return { result: inserted, inserted: true };
-      return { result: await database.query<PlanningRow>(
+      if (inserted.rows[0]) {
+        const insertedRow = inserted.rows[0];
+        const reminderResult = await database.query<{ reminder_id: string | null; remind_at: Date | null }>(
+          `select nr.id as reminder_id, nr.remind_at
+             from notification_reminders nr
+             where nr.planning_item_id = $1 and nr.user_id = $2 and nr.delivered_at is null`,
+          [insertedRow.id, context.userId],
+        );
+        return { result: { rows: [{ ...insertedRow, reminder_id: reminderResult.rows[0]?.reminder_id || null, remind_at: reminderResult.rows[0]?.remind_at || null }] }, inserted: true };
+      }
+      const existing = await database.query<PlanningRow>(
         `select id, planning_date::text, week_start_date::text, type,
-                text, is_completed, sort_order, created_by, updated_at
-           from planning_items
-          where id = $1 and household_id = $2 and created_by = $3`,
+                text, is_completed, sort_order, created_by,
+                u.display_name as created_by_name, updated_at
+           from planning_items pi
+           join users u on u.id = pi.created_by
+          where pi.id = $1 and pi.household_id = $2 and pi.created_by = $3`,
         [parsed.id, context.householdId, context.userId],
-      ), inserted: false };
+      );
+      if (existing.rows[0]) {
+        const existingRow = existing.rows[0];
+        const reminderResult = await database.query<{ reminder_id: string | null; remind_at: Date | null }>(
+          `select nr.id as reminder_id, nr.remind_at
+             from notification_reminders nr
+             where nr.planning_item_id = $1 and nr.user_id = $2 and nr.delivered_at is null`,
+          [parsed.id!, context.userId],
+        );
+        return { result: { rows: [{ ...existingRow, reminder_id: reminderResult.rows[0]?.reminder_id || null, remind_at: reminderResult.rows[0]?.remind_at || null }] }, inserted: false };
+      }
+      return { result: { rows: [] }, inserted: false };
     });
     const row = saved.result.rows[0];
     if (!row) throw new Error("That offline change is not available to this household.");
@@ -203,7 +233,7 @@ export async function updatePlanningItemAction(input: {
   planningDate: string | null;
   weekStartDate: string;
   remindAt?: string | null;
-}): Promise<ActionResult> {
+}): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
       id: uuid,
@@ -215,38 +245,51 @@ export async function updatePlanningItemAction(input: {
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
-    const result = await query(
-      `update planning_items set
-         text = $3, type = $4::planning_item_type, planning_date = $5::date,
-         week_start_date = $6::date
-       where id = $1 and household_id = $2`,
-      [
-        parsed.id,
-        context.householdId,
-        parsed.text,
-        parsed.type,
-        parsed.planningDate,
-        parsed.weekStartDate,
-      ],
-    );
-    if (!result.rowCount) throw new Error("That item is not available to this household.");
-    if (parsed.remindAt !== undefined) {
-      await upsertPlanningReminder({
-        userId: context.userId,
+    let reminder: NotificationReminder | null = null;
+    const result = await withTransaction(async (database) => {
+      const updated = await database.query<PlanningRow>(
+        `update planning_items set
+           text = $3, type = $4::planning_item_type, planning_date = $5::date,
+           week_start_date = $6::date
+         where id = $1 and household_id = $2
+         returning id, planning_date::text, week_start_date::text, type,
+                   text, is_completed, sort_order, created_by,
+                   u.display_name as created_by_name, updated_at,
+                   nr.id as reminder_id, nr.remind_at
+         left join notification_reminders nr
+           on nr.planning_item_id = $1 and nr.user_id = $7 and nr.delivered_at is null
+         join users u on u.id = pi.created_by`,
+        [
+          parsed.id,
+          context.householdId,
+          parsed.text,
+          parsed.type,
+          parsed.planningDate,
+          parsed.weekStartDate,
+          context.userId,
+        ],
+      );
+      if (!updated.rows[0]) throw new Error("That item is not available to this household.");
+      if (parsed.remindAt !== undefined) {
+        reminder = await upsertPlanningReminder({
+          userId: context.userId,
+          householdId: context.householdId,
+          itemId: parsed.id,
+          title: parsed.text,
+          remindAt: parsed.remindAt ? new Date(parsed.remindAt) : null,
+        });
+      }
+      await queueHouseholdChange({
+        actorUserId: context.userId,
         householdId: context.householdId,
-        itemId: parsed.id,
-        title: parsed.text,
-        remindAt: parsed.remindAt ? new Date(parsed.remindAt) : null,
+        title: `${context.displayName} updated ${parsed.type === "task" ? "a task" : "a plan"}`,
+        body: parsed.text,
       });
-    }
-    await queueHouseholdChange({
-      actorUserId: context.userId,
-      householdId: context.householdId,
-      title: `${context.displayName} updated ${parsed.type === "task" ? "a task" : "a plan"}`,
-      body: parsed.text,
+      return updated.rows[0];
     });
     revalidatePath("/planner");
-    return { ok: true };
+    const row = result;
+    return { ok: true, data: { ...mappedItem(row!), reminder } };
   } catch (error) {
     return actionError(error, "Your changes could not be saved.");
   }
@@ -430,11 +473,16 @@ export async function searchPlanningItemsAction(search: string): Promise<ActionR
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const result = await query<PlanningRow>(
       `select id, planning_date::text, week_start_date::text, type,
-              text, is_completed, sort_order, created_by, updated_at
-         from planning_items
-        where household_id = $1 and text ilike $2 escape '\\'
-        order by updated_at desc limit 30`,
-      [context.householdId, `%${escaped}%`],
+              text, is_completed, sort_order, created_by,
+              u.display_name as created_by_name, updated_at,
+              nr.id as reminder_id, nr.remind_at
+         from planning_items pi
+         join users u on u.id = pi.created_by
+         left join notification_reminders nr
+           on nr.planning_item_id = pi.id and nr.user_id = $3 and nr.delivered_at is null
+        where pi.household_id = $1 and pi.text ilike $2 escape '\\'
+        order by pi.updated_at desc limit 30`,
+      [context.householdId, `%${escaped}%`, context.userId],
     );
     return { ok: true, data: result.rows.map(mappedItem) };
   } catch (error) {
