@@ -14,8 +14,10 @@ import { deleteCurrentSession } from "@/lib/server/session";
 import type { ActionResult, CalendarPreference } from "@/types/domain";
 
 function errorResult(error: unknown, fallback: string): ActionResult {
-  if (error instanceof z.ZodError || postgresErrorCode(error)) return { ok: false, error: fallback };
-  return { ok: false, error: error instanceof Error ? error.message : fallback };
+  const message = error instanceof Error ? error.message : postgresErrorCode(error) ?? fallback;
+  console.error("Settings action error:", { error, fallback, message });
+  if (error instanceof z.ZodError) return { ok: false, error: fallback };
+  return { ok: false, error: message };
 }
 
 function validTimeZone(value: string): boolean {

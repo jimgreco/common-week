@@ -40,8 +40,10 @@ interface PlanningRow {
 }
 
 function actionError<T = undefined>(error: unknown, fallback: string): ActionResult<T> {
-  if (error instanceof z.ZodError || postgresErrorCode(error)) return { ok: false, error: fallback };
-  return { ok: false, error: error instanceof Error ? error.message : fallback };
+  const message = error instanceof Error ? error.message : postgresErrorCode(error) ?? fallback;
+  console.error("Planner action error:", { error, fallback, message });
+  if (error instanceof z.ZodError) return { ok: false, error: fallback };
+  return { ok: false, error: message };
 }
 
 function mappedItem(row: PlanningRow): PlanningItem {

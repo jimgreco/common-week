@@ -27,11 +27,17 @@ export function databaseClientConfig(applicationName = "common-week"): ClientCon
 }
 
 function createPool() {
-  return new Pool({
+  const pool = new Pool({
     ...databaseClientConfig(),
     max: Number(process.env.PG_POOL_MAX || 10),
     idleTimeoutMillis: 30_000,
   });
+  
+  pool.on("error", (error) => {
+    console.error("Unexpected database pool error:", error);
+  });
+  
+  return pool;
 }
 
 export function getPool() {
@@ -43,7 +49,10 @@ export function query<Row extends QueryResultRow = QueryResultRow>(
   text: string,
   values: unknown[] = [],
 ): Promise<QueryResult<Row>> {
-  return getPool().query<Row>(text, values);
+  return getPool().query<Row>(text, values).catch((error) => {
+    console.error("Database query failed:", { text, values, error });
+    throw error;
+  });
 }
 
 export async function withTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {

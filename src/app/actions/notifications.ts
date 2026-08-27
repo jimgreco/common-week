@@ -41,7 +41,8 @@ export async function updateNotificationPreferencesAction(
     await saveNotificationPreferences(context.userId, preferences);
     return { ok: true, data: await getNotificationPreferences(context.userId) };
   } catch (error) {
-    return { ok: false, error: error instanceof z.ZodError ? "Check the notification settings and try again." : "Notification settings could not be saved." };
+    console.error("Notification preferences error:", { error });
+    return { ok: false, error: error instanceof z.ZodError ? "Check the notification settings and try again." : error instanceof Error ? error.message : "Notification settings could not be saved." };
   }
 }
 
@@ -90,6 +91,7 @@ export async function setCalendarReminderAction(input: {
     return { ok: true, data: reminder };
   } catch (error) {
     if (error instanceof z.ZodError) return { ok: false, error: "Choose a valid future reminder time." };
+    console.error("Calendar reminder error:", { error });
     return { ok: false, error: error instanceof Error ? error.message : "The reminder could not be saved." };
   }
 }
