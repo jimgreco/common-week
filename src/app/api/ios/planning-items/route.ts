@@ -14,7 +14,10 @@ const itemSchema = z.object({
   id: z.string().uuid().optional(),
   text: z.string().trim().min(1).max(1000),
   type: z.enum(["note", "task"]),
-  planningDate: z.string().nullable(),
+  // Swift omits nil Optional values when synthesizing Encodable. Weekly items
+  // therefore have no planningDate key, which is equivalent to an explicit
+  // JSON null and must be normalized before calling the shared action.
+  planningDate: z.string().nullable().optional().transform((value) => value ?? null),
   weekStartDate: z.string(),
   remindAt: z.string().datetime().nullable().optional(),
 });
@@ -28,7 +31,7 @@ export async function POST(request: NextRequest) {
   try {
     const input = itemSchema.parse(await request.json());
     const result = await createPlanningItemAction(input);
-    console.error("iOS createPlanningItemAction error:", result.error);
+    if (!result.ok) console.error("iOS createPlanningItemAction error:", result.error);
     return actionResponse(result);
   } catch (error) {
     console.error("iOS POST planning item error:", error);
@@ -43,12 +46,12 @@ export async function PATCH(request: NextRequest) {
     if (body.action === "toggle") {
       const input = z.object({ id: z.string().uuid(), completed: z.boolean() }).parse(body);
       const result = await togglePlanningItemAction(input.id, input.completed);
-      console.error("iOS togglePlanningItemAction error:", result.error);
+      if (!result.ok) console.error("iOS togglePlanningItemAction error:", result.error);
       return actionResponse(result);
     }
     const input = itemSchema.required({ id: true }).parse(body);
     const result = await updatePlanningItemAction(input);
-    console.error("iOS updatePlanningItemAction error:", result.error);
+    if (!result.ok) console.error("iOS updatePlanningItemAction error:", result.error);
     return actionResponse(result);
   } catch (error) {
     console.error("iOS PATCH planning item error:", error);
@@ -61,7 +64,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { id } = z.object({ id: z.string().uuid() }).parse(await request.json());
     const result = await deletePlanningItemAction(id);
-    console.error("iOS deletePlanningItemAction error:", result.error);
+    if (!result.ok) console.error("iOS deletePlanningItemAction error:", result.error);
     return actionResponse(result);
   } catch (error) {
     console.error("iOS DELETE planning item error:", error);

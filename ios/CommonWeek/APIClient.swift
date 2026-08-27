@@ -26,10 +26,21 @@ final class APIClient {
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     private let session: URLSession
+#if DEBUG
+    private var debugSessionToken: String?
+#endif
 
     var token: String? {
-        get { KeychainStore.read("sessionToken") }
+        get {
+#if DEBUG
+            if let debugSessionToken { return debugSessionToken }
+#endif
+            return KeychainStore.read("sessionToken")
+        }
         set {
+#if DEBUG
+            debugSessionToken = nil
+#endif
             if let newValue { KeychainStore.write(newValue, key: "sessionToken") }
             else { KeychainStore.delete("sessionToken") }
         }
@@ -38,12 +49,17 @@ final class APIClient {
     let baseURL: URL
 
     init(session: URLSession = .shared, baseURL: URL? = nil) {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        self.session = URLSession(configuration: config)
+        self.session = session
         let configured = Bundle.main.object(forInfoDictionaryKey: "API_BASE_URL") as? String
+#if DEBUG
+        let debugURL = ProcessInfo.processInfo.environment["COMMON_WEEK_API_BASE_URL"].flatMap(URL.init(string:))
+        self.baseURL = baseURL ?? debugURL ?? URL(string: configured ?? "https://weekofus.com")!
+        if let debugToken = ProcessInfo.processInfo.environment["COMMON_WEEK_SESSION_TOKEN"], !debugToken.isEmpty {
+            debugSessionToken = debugToken
+        }
+#else
         self.baseURL = baseURL ?? URL(string: configured ?? "https://weekofus.com")!
+#endif
     }
 
     func exchange(code: String, state: String) async throws -> NativeSession {
@@ -247,6 +263,7 @@ final class APIClient {
         components.queryItems = query.isEmpty ? nil : query
         var request = URLRequest(url: components.url!)
         request.httpMethod = method
+        request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         if authenticated {
