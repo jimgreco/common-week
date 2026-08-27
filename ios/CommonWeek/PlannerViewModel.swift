@@ -137,7 +137,10 @@ final class PlannerViewModel: ObservableObject {
         do {
             if draft.id == nil { _ = try await api.createItem(onlineDraft) }
             else { _ = try await api.updateItem(onlineDraft) }
-            await refreshAfterMutation(week: draft.weekStartDate)
+            applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saved")
+            persistCurrentPlanner()
+            show(onlineDraft.type == .task ? "Task saved" : "Plan saved")
+            scheduleRefreshAfterMutation(week: draft.weekStartDate)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
             let mutation = OfflineMutation(kind: draft.id == nil ? .createItem : .updateItem, draft: onlineDraft)
@@ -394,6 +397,12 @@ final class PlannerViewModel: ObservableObject {
 
     private func refreshAfterMutation(week: String?) async {
         await load(week: week ?? data?.weekStart, quietly: true)
+    }
+
+    private func scheduleRefreshAfterMutation(week: String?) {
+        Task { [weak self] in
+            await self?.refreshAfterMutation(week: week)
+        }
     }
 
     private func flushPendingChanges() async -> Bool {
