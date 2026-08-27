@@ -150,15 +150,13 @@ export async function createPlanningItemAction(input: {
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
     const saved = await withTransaction(async (database) => {
-      const inserted = await database.query<PlanningRow>(
+      const inserted = await database.query<{ id: string }>(
         `insert into planning_items (
            id, household_id, created_by, planning_date, week_start_date, type, text
          )
          values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4::date, $5::date, $6::planning_item_type, $7)
          on conflict (id) do nothing
-         returning id, planning_date::text, week_start_date::text, type,
-                   text, is_completed, sort_order, created_by,
-                   u.display_name as created_by_name, updated_at`,
+         returning id`,
         [
           parsed.id ?? null,
           context.householdId,
@@ -169,36 +167,20 @@ export async function createPlanningItemAction(input: {
           parsed.text,
         ],
       );
-      if (inserted.rows[0]) {
-        const insertedRow = inserted.rows[0];
-        const reminderResult = await database.query<{ reminder_id: string | null; remind_at: Date | null }>(
-          `select nr.id as reminder_id, nr.remind_at
-             from notification_reminders nr
-             where nr.planning_item_id = $1 and nr.user_id = $2 and nr.delivered_at is null`,
-          [insertedRow.id, context.userId],
-        );
-        return { result: { rows: [{ ...insertedRow, reminder_id: reminderResult.rows[0]?.reminder_id || null, remind_at: reminderResult.rows[0]?.remind_at || null }] }, inserted: true };
-      }
-      const existing = await database.query<PlanningRow>(
-        `select id, planning_date::text, week_start_date::text, type,
-                text, is_completed, sort_order, created_by,
-                u.display_name as created_by_name, updated_at
+      const itemId = inserted.rows[0]?.id ?? parsed.id;
+      const result = itemId ? await database.query<PlanningRow>(
+        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+                pi.text, pi.is_completed, pi.sort_order, pi.created_by,
+                u.display_name as created_by_name, pi.updated_at,
+                nr.id as reminder_id, nr.remind_at
            from planning_items pi
            join users u on u.id = pi.created_by
+           left join notification_reminders nr
+             on nr.planning_item_id = pi.id and nr.user_id = $3 and nr.delivered_at is null
           where pi.id = $1 and pi.household_id = $2 and pi.created_by = $3`,
-        [parsed.id, context.householdId, context.userId],
-      );
-      if (existing.rows[0]) {
-        const existingRow = existing.rows[0];
-        const reminderResult = await database.query<{ reminder_id: string | null; remind_at: Date | null }>(
-          `select nr.id as reminder_id, nr.remind_at
-             from notification_reminders nr
-             where nr.planning_item_id = $1 and nr.user_id = $2 and nr.delivered_at is null`,
-          [parsed.id!, context.userId],
-        );
-        return { result: { rows: [{ ...existingRow, reminder_id: reminderResult.rows[0]?.reminder_id || null, remind_at: reminderResult.rows[0]?.remind_at || null }] }, inserted: false };
-      }
-      return { result: { rows: [] }, inserted: false };
+        [itemId, context.householdId, context.userId],
+      ) : { rows: [] };
+      return { result, inserted: Boolean(inserted.rows[0]) };
     });
     const row = saved.result.rows[0];
     if (!row) throw new Error("That offline change is not available to this household.");
@@ -246,19 +228,12 @@ export async function updatePlanningItemAction(input: {
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
     let reminder: NotificationReminder | null = null;
-    const result = await withTransaction(async (database) => {
-      const updated = await database.query<PlanningRow>(
+    const updated = await query<{ id: string }>(
         `update planning_items set
            text = $3, type = $4::planning_item_type, planning_date = $5::date,
            week_start_date = $6::date
          where id = $1 and household_id = $2
-         returning id, planning_date::text, week_start_date::text, type,
-                   text, is_completed, sort_order, created_by,
-                   u.display_name as created_by_name, updated_at,
-                   nr.id as reminder_id, nr.remind_at
-         left join notification_reminders nr
-           on nr.planning_item_id = $1 and nr.user_id = $7 and nr.delivered_at is null
-         join users u on u.id = pi.created_by`,
+         returning id`,
         [
           parsed.id,
           context.householdId,
@@ -266,29 +241,38 @@ export async function updatePlanningItemAction(input: {
           parsed.type,
           parsed.planningDate,
           parsed.weekStartDate,
-          context.userId,
         ],
-      );
-      if (!updated.rows[0]) throw new Error("That item is not available to this household.");
-      if (parsed.remindAt !== undefined) {
-        reminder = await upsertPlanningReminder({
-          userId: context.userId,
-          householdId: context.householdId,
-          itemId: parsed.id,
-          title: parsed.text,
-          remindAt: parsed.remindAt ? new Date(parsed.remindAt) : null,
-        });
-      }
-      await queueHouseholdChange({
-        actorUserId: context.userId,
+    );
+    if (!updated.rows[0]) throw new Error("That item is not available to this household.");
+    if (parsed.remindAt !== undefined) {
+      reminder = await upsertPlanningReminder({
+        userId: context.userId,
         householdId: context.householdId,
-        title: `${context.displayName} updated ${parsed.type === "task" ? "a task" : "a plan"}`,
-        body: parsed.text,
+        itemId: parsed.id,
+        title: parsed.text,
+        remindAt: parsed.remindAt ? new Date(parsed.remindAt) : null,
       });
-      return updated.rows[0];
+    }
+    await queueHouseholdChange({
+      actorUserId: context.userId,
+      householdId: context.householdId,
+      title: `${context.displayName} updated ${parsed.type === "task" ? "a task" : "a plan"}`,
+      body: parsed.text,
     });
+    const saved = await query<PlanningRow>(
+        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+                pi.text, pi.is_completed, pi.sort_order, pi.created_by,
+                u.display_name as created_by_name, pi.updated_at,
+                nr.id as reminder_id, nr.remind_at
+           from planning_items pi
+           join users u on u.id = pi.created_by
+           left join notification_reminders nr
+             on nr.planning_item_id = pi.id and nr.user_id = $3 and nr.delivered_at is null
+          where pi.id = $1 and pi.household_id = $2`,
+        [parsed.id, context.householdId, context.userId],
+    );
     revalidatePath("/planner");
-    const row = result;
+    const row = saved.rows[0];
     return { ok: true, data: { ...mappedItem(row!), reminder } };
   } catch (error) {
     return actionError(error, "Your changes could not be saved.");
