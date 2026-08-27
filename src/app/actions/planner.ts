@@ -43,11 +43,12 @@ function actionError<T = undefined>(error: unknown, fallback: string): ActionRes
   let message: string;
   if (error instanceof Error) {
     message = error.message;
+    console.error("Planner action error - Error instance:", { message, stack: error.stack });
   } else {
     const code = postgresErrorCode(error);
     message = code ? `${fallback} (error: ${code})` : fallback;
+    console.error("Planner action error - unknown error:", { error, code, message });
   }
-  console.error("Planner action error:", { error, fallback, message });
   if (error instanceof z.ZodError) return { ok: false, error: fallback };
   return { ok: false, error: message };
 }

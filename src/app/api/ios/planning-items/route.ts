@@ -27,8 +27,11 @@ export async function POST(request: NextRequest) {
   if (!(await isAuthorized(request))) return unauthorizedResponse();
   try {
     const input = itemSchema.parse(await request.json());
-    return actionResponse(await createPlanningItemAction(input));
-  } catch {
+    const result = await createPlanningItemAction(input);
+    console.error("iOS createPlanningItemAction error:", result.error);
+    return actionResponse(result);
+  } catch (error) {
+    console.error("iOS POST planning item error:", error);
     return actionResponse({ ok: false, error: "Check the planning item and try again." });
   }
 }
@@ -39,11 +42,16 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     if (body.action === "toggle") {
       const input = z.object({ id: z.string().uuid(), completed: z.boolean() }).parse(body);
-      return actionResponse(await togglePlanningItemAction(input.id, input.completed));
+      const result = await togglePlanningItemAction(input.id, input.completed);
+      console.error("iOS togglePlanningItemAction error:", result.error);
+      return actionResponse(result);
     }
     const input = itemSchema.required({ id: true }).parse(body);
-    return actionResponse(await updatePlanningItemAction(input));
-  } catch {
+    const result = await updatePlanningItemAction(input);
+    console.error("iOS updatePlanningItemAction error:", result.error);
+    return actionResponse(result);
+  } catch (error) {
+    console.error("iOS PATCH planning item error:", error);
     return actionResponse({ ok: false, error: "Check the planning item and try again." });
   }
 }
@@ -52,8 +60,11 @@ export async function DELETE(request: NextRequest) {
   if (!(await isAuthorized(request))) return unauthorizedResponse();
   try {
     const { id } = z.object({ id: z.string().uuid() }).parse(await request.json());
-    return actionResponse(await deletePlanningItemAction(id));
-  } catch {
+    const result = await deletePlanningItemAction(id);
+    console.error("iOS deletePlanningItemAction error:", result.error);
+    return actionResponse(result);
+  } catch (error) {
+    console.error("iOS DELETE planning item error:", error);
     return actionResponse({ ok: false, error: "That item could not be deleted." });
   }
 }
