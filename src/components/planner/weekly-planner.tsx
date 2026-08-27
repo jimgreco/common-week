@@ -20,6 +20,7 @@ import {
 } from "@/app/actions/planner";
 import { BrandMark } from "@/components/brand-mark";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
+import { useTheme } from "@/components/theme-provider";
 import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
 import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
@@ -44,6 +45,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
   const [mobileMenu, setMobileMenu] = useState(false);
   const [lastInitialData, setLastInitialData] = useState(initialData);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { theme, toggleTheme } = useTheme();
 
   if (lastInitialData !== initialData) {
     setLastInitialData(initialData);
@@ -358,6 +360,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
         <div className="topbar-household"><Users size={14} /><span>{initialData.household.name}</span></div>
         <nav className={`topbar-actions ${mobileMenu ? "is-open" : ""}`} aria-label="Account navigation">
           <button className="topbar-link" type="button" onClick={() => { setSearchOpen(true); setMobileMenu(false); }}><Search size={15} /> Search</button>
+          <button className="topbar-link" type="button" onClick={toggleTheme} title="Toggle dark mode"><span className="avatar" title={theme === "dark" ? "Dark mode" : "Light mode"}>{theme === "dark" ? "🌙" : "☀️"}</span></button>
           <Link className="topbar-link" href="/settings"><Settings size={15} /> Settings</Link>
           {!initialData.isDemo && <form action={signOut}><button className="topbar-link" type="submit">Sign out</button></form>}
           <span className="avatar" title={currentUserName}>{initials(currentUserName)}</span>

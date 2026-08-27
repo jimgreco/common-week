@@ -26,6 +26,7 @@ import { searchLocationsAction } from "@/app/actions/planner";
 import { calendarAbbreviation, normalizeCalendarAbbreviation } from "@/lib/calendar-utils";
 import { formatMobileDate } from "@/lib/date";
 import type { CalendarPreference, GeocodingResult, HiddenCalendarEvent, HouseholdLocation, HouseholdMember, HouseholdSummary, NotificationPreferences } from "@/types/domain";
+import { useTheme } from "@/components/theme-provider";
 
 interface Invitation { id: string; email: string; status: string; expiresAt: string; sentAt?: string | null; deliveryError?: string | null; }
 
@@ -40,6 +41,8 @@ const defaultNotificationPreferences: NotificationPreferences = {
 };
 
 export function SettingsPanel({
+  theme,
+  toggleTheme,
   household,
   members,
   invitations,
@@ -52,6 +55,8 @@ export function SettingsPanel({
   currentUserId,
   isDemo,
 }: {
+  theme: string;
+  toggleTheme: () => void;
   household: HouseholdSummary;
   members: HouseholdMember[];
   invitations: Invitation[];
@@ -175,6 +180,7 @@ export function SettingsPanel({
         <section className="settings-section" id="preferences">
           <header><p className="eyebrow">Preferences</p><h2>How your week is shown</h2></header>
           <form className="preference-grid" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); if (isDemo) { showMessage("Demo preferences updated"); return; } startTransition(async () => { const result = await updateHouseholdAction({ name: household.name, timezone: String(form.get("timezone")), temperatureUnit: form.get("temperature") === "celsius" ? "celsius" : "fahrenheit" }); showMessage(result.ok ? "Preferences saved" : result.error ?? "Save failed"); }); }}>
+            <label>Theme<select value={theme} onChange={(event) => { if (event.target.value === "dark") toggleTheme(); else toggleTheme(); }}><option value="light">Light</option><option value="dark">Dark</option></select></label>
             <label>Temperature<select name="temperature" defaultValue={household.temperatureUnit}><option value="fahrenheit">Fahrenheit · °F</option><option value="celsius">Celsius · °C</option></select></label>
             <label>Household timezone<select name="timezone" defaultValue={household.timezone}><option value="America/New_York">Eastern Time</option><option value="America/Chicago">Central Time</option><option value="America/Denver">Mountain Time</option><option value="America/Los_Angeles">Pacific Time</option><option value="Europe/London">London</option><option value="Europe/Paris">Central European Time</option></select></label>
             <label>Week starts<select disabled><option>Monday</option></select></label>
