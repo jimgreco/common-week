@@ -40,7 +40,13 @@ interface PlanningRow {
 }
 
 function actionError<T = undefined>(error: unknown, fallback: string): ActionResult<T> {
-  const message = error instanceof Error ? error.message : postgresErrorCode(error) ?? fallback;
+  let message: string;
+  if (error instanceof Error) {
+    message = error.message;
+  } else {
+    const code = postgresErrorCode(error);
+    message = code ? `${fallback} (error: ${code})` : fallback;
+  }
   console.error("Planner action error:", { error, fallback, message });
   if (error instanceof z.ZodError) return { ok: false, error: fallback };
   return { ok: false, error: message };

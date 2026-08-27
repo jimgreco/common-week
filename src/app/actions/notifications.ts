@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { googleCalendarService } from "@/lib/integrations/google-calendar";
 import { requireHouseholdContext } from "@/lib/server/auth";
-import { query } from "@/lib/server/database";
+import { postgresErrorCode, query } from "@/lib/server/database";
 import { getGoogleAccessToken } from "@/lib/server/google-tokens";
 import {
   getNotificationPreferences,
@@ -41,8 +41,15 @@ export async function updateNotificationPreferencesAction(
     await saveNotificationPreferences(context.userId, preferences);
     return { ok: true, data: await getNotificationPreferences(context.userId) };
   } catch (error) {
-    console.error("Notification preferences error:", { error });
-    return { ok: false, error: error instanceof z.ZodError ? "Check the notification settings and try again." : error instanceof Error ? error.message : "Notification settings could not be saved." };
+    let errorMessage: string;
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else {
+      const code = postgresErrorCode(error);
+      errorMessage = code ? `Notification settings could not be saved. (error: ${code})` : "Notification settings could not be saved.";
+    }
+    console.error("Notification preferences error:", { error, errorMessage });
+    return { ok: false, error: error instanceof z.ZodError ? "Check the notification settings and try again." : errorMessage };
   }
 }
 
@@ -90,8 +97,15 @@ export async function setCalendarReminderAction(input: {
     });
     return { ok: true, data: reminder };
   } catch (error) {
+    let errorMessage: string;
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else {
+      const code = postgresErrorCode(error);
+      errorMessage = code ? `The reminder could not be saved. (error: ${code})` : "The reminder could not be saved.";
+    }
+    console.error("Calendar reminder error:", { error, errorMessage });
     if (error instanceof z.ZodError) return { ok: false, error: "Choose a valid future reminder time." };
-    console.error("Calendar reminder error:", { error });
-    return { ok: false, error: error instanceof Error ? error.message : "The reminder could not be saved." };
+    return { ok: false, error: errorMessage };
   }
 }
