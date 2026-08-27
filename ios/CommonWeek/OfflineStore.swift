@@ -75,6 +75,19 @@ actor OfflineStore {
         try? read(PlannerSnapshot.self, from: snapshotURL(userId: userId, weekStart: weekStart)).planner
     }
 
+    func latestCachedPlanner(userId: String, before weekStart: String?) -> WeeklyPlannerData? {
+        let prefix = "planner-\(safe(userId))-"
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else { return nil }
+        return urls
+            .filter { $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json" }
+            .compactMap { try? read(PlannerSnapshot.self, from: $0).planner }
+            .filter { weekStart == nil || $0.weekStart < weekStart! }
+            .max { $0.weekStart < $1.weekStart }
+    }
+
     func savePlanner(_ planner: WeeklyPlannerData, userId: String, savedAt: Date = Date()) throws {
         let url = snapshotURL(userId: userId, weekStart: planner.weekStart)
         if let current = try? read(PlannerSnapshot.self, from: url), current.savedAt > savedAt { return }

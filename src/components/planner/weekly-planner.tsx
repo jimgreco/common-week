@@ -45,6 +45,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
   const [mobileMenu, setMobileMenu] = useState(false);
   const [lastInitialData, setLastInitialData] = useState(initialData);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const followsCurrentWeek = useRef(initialData.weekStart === currentWeekStart(initialData.household.timezone));
   const { theme, toggleTheme } = useTheme();
 
   if (lastInitialData !== initialData) {
@@ -89,23 +90,42 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
 
   useEffect(() => {
     if (initialData.isDemo) return;
+    const refreshCurrentPlanner = () => {
+      const current = currentWeekStart(initialData.household.timezone);
+      if (followsCurrentWeek.current && current !== initialData.weekStart) {
+        router.replace(`/planner?week=${current}`);
+      } else {
+        router.refresh();
+      }
+    };
     const refresh = () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      refreshTimer.current = setTimeout(() => router.refresh(), 250);
+      refreshTimer.current = setTimeout(refreshCurrentPlanner, 250);
     };
     const events = new EventSource("/api/realtime");
     events.addEventListener("change", refresh);
     events.onopen = () => setNotice((current) => current?.startsWith("Live updates") ? null : current);
     events.onerror = () => setNotice("Live updates are reconnecting. Your changes can still be saved.");
     const fallback = window.setInterval(() => {
-      if (document.visibilityState === "visible") router.refresh();
+      if (document.visibilityState === "visible") refreshCurrentPlanner();
     }, 30_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshCurrentPlanner();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       window.clearInterval(fallback);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       events.close();
     };
-  }, [initialData.household.id, initialData.isDemo, router]);
+  }, [initialData.household.id, initialData.household.timezone, initialData.isDemo, initialData.weekStart, router]);
+
+  useEffect(() => {
+    if (initialData.weekStart === currentWeekStart(initialData.household.timezone)) {
+      followsCurrentWeek.current = true;
+    }
+  }, [initialData.household.timezone, initialData.weekStart]);
 
   const allItems = useMemo(() => [...days.flatMap((day) => day.items), ...weeklyItems], [days, weeklyItems]);
   const thisWeek = currentWeekStart(initialData.household.timezone);
@@ -379,11 +399,11 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
             <h1>{formatWeekRange(initialData.weekStart)}</h1>
           </div>
           <nav className="week-navigation" aria-label="Week navigation">
-            <Link href={`/planner?week=${previousWeek}`} aria-label="Previous week"><ArrowLeft size={16} /><span>Previous</span></Link>
-            <Link className={initialData.weekStart === thisWeek ? "is-current" : ""} href={`/planner?week=${thisWeek}`}>This week</Link>
-            <Link href={`/planner?week=${nextWeek}`} aria-label="Next week"><span>Next</span><ArrowRight size={16} /></Link>
+            <Link href={`/planner?week=${previousWeek}`} onClick={() => { followsCurrentWeek.current = false; }} aria-label="Previous week"><ArrowLeft size={16} /><span>Previous</span></Link>
+            <Link className={initialData.weekStart === thisWeek ? "is-current" : ""} href={`/planner?week=${thisWeek}`} onClick={() => { followsCurrentWeek.current = true; }}>This week</Link>
+            <Link href={`/planner?week=${nextWeek}`} onClick={() => { followsCurrentWeek.current = false; }} aria-label="Next week"><span>Next</span><ArrowRight size={16} /></Link>
           </nav>
-          <Link className="plan-next-link" href={`/planner?week=${nextWeek}`}><CalendarRange size={15} /> Plan next week <ArrowRight size={14} /></Link>
+          <Link className="plan-next-link" href={`/planner?week=${nextWeek}`} onClick={() => { followsCurrentWeek.current = false; }}><CalendarRange size={15} /> Plan next week <ArrowRight size={14} /></Link>
         </header>
 
         {calendarState.status === "error" && <div className="source-alert" role="status"><CalendarRange size={14} />{calendarState.message}</div>}

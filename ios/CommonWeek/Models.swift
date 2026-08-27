@@ -77,6 +77,10 @@ struct PlanningItem: Codable, Identifiable, Hashable {
     let createdBy: String
     let createdByName: String?
     let updatedAt: String
+    var originalPlanningDate: String? = nil
+    var originalWeekStartDate: String? = nil
+    var carryoverCount: Int? = nil
+    var lastCarriedAt: String? = nil
     let saveState: String?
     let reminder: NotificationReminder?
 }
@@ -449,11 +453,31 @@ enum WeekDate {
         return calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
     }
 
+    static func weekStart(for value: String) -> String {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = utc
+        return string(calendar.dateInterval(of: .weekOfYear, for: parse(value))?.start ?? parse(value))
+    }
+
+    static func today(timeZoneIdentifier: String, now: Date = Date()) -> String {
+        string(now, timeZoneIdentifier: timeZoneIdentifier)
+    }
+
+    static func currentWeekStart(timeZoneIdentifier: String, now: Date = Date()) -> String {
+        weekStart(for: today(timeZoneIdentifier: timeZoneIdentifier, now: now))
+    }
+
     static func addDays(_ days: Int, to value: String) -> String {
         var calendar = Calendar(identifier: .iso8601)
         calendar.timeZone = utc
         let date = calendar.date(byAdding: .day, value: days, to: parse(value)) ?? parse(value)
         return string(date)
+    }
+
+    static func daysBetween(_ start: String, _ end: String) -> Int {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = utc
+        return calendar.dateComponents([.day], from: parse(start), to: parse(end)).day ?? 0
     }
 
     static func weekTitle(_ value: String) -> String {

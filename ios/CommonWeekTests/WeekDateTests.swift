@@ -140,4 +140,122 @@ final class WeekDateTests: XCTestCase {
         let remaining = await reloadedStore.pendingMutations(userId: "user-a")
         XCTAssertTrue(remaining.isEmpty)
     }
+
+    func testDailyCarryoverMovesOnlyOpenTasksAndPreservesIdentityAndReminder() {
+        var planner = PreviewData.planner(weekStart: "2026-08-24")
+        let reminder = NotificationReminder(id: "reminder-1", resourceKind: "planning_item", remindAt: "2026-08-24T13:00:00Z")
+        for index in planner.days.indices { planner.days[index].items = [] }
+        planner.days[0].items = [
+            planningItem(id: "open", date: "2026-08-24", week: planner.weekStart, type: .task, reminder: reminder),
+            planningItem(id: "done", date: "2026-08-24", week: planner.weekStart, type: .task, completed: true),
+            planningItem(id: "note", date: "2026-08-24", week: planner.weekStart, type: .note),
+        ]
+
+        let carried = planner.carryingOpenTasks(
+            to: "2026-08-27",
+            at: Date(timeIntervalSince1970: 1_777_800_000)
+        )
+
+        XCTAssertEqual(carried.days[3].items.map(\.id), ["open"])
+        XCTAssertEqual(carried.days[3].items.first?.planningDate, "2026-08-27")
+        XCTAssertEqual(carried.days[3].items.first?.originalPlanningDate, "2026-08-24")
+        XCTAssertEqual(carried.days[3].items.first?.originalWeekStartDate, "2026-08-24")
+        XCTAssertEqual(carried.days[3].items.first?.carryoverCount, 3)
+        XCTAssertEqual(carried.days[3].items.first?.reminder, reminder)
+        XCTAssertEqual(carried.days[0].items.map(\.id), ["done", "note"])
+    }
+
+    func testCarryoverCrossesWeeksAndContinuesAcrossAMultiWeekGap() {
+        var planner = PreviewData.planner(weekStart: "2026-08-10")
+        for index in planner.days.indices { planner.days[index].items = [] }
+        planner.days[1].items = [
+            planningItem(id: "daily", date: "2026-08-11", week: planner.weekStart, type: .task),
+            planningItem(id: "completed", date: "2026-08-11", week: planner.weekStart, type: .task, completed: true),
+            planningItem(id: "plan", date: "2026-08-11", week: planner.weekStart, type: .note),
+        ]
+        planner.weeklyItems = [
+            planningItem(id: "weekly", date: nil, week: planner.weekStart, type: .task),
+            planningItem(id: "weekly-done", date: nil, week: planner.weekStart, type: .task, completed: true),
+            planningItem(id: "weekly-note", date: nil, week: planner.weekStart, type: .note),
+        ]
+
+        let carried = planner.carryingOpenTasks(to: "2026-08-27")
+
+        XCTAssertEqual(carried.weekStart, "2026-08-24")
+        XCTAssertEqual(carried.days.count, 7)
+        XCTAssertEqual(carried.days[3].items.map(\.id), ["daily"])
+        XCTAssertEqual(carried.days[3].items.first?.carryoverCount, 16)
+        XCTAssertEqual(carried.weeklyItems.map(\.id), ["weekly"])
+        XCTAssertEqual(carried.weeklyItems.first?.weekStartDate, "2026-08-24")
+        XCTAssertEqual(carried.weeklyItems.first?.carryoverCount, 2)
+        XCTAssertTrue(carried.days.flatMap(\.items).allSatisfy { !$0.isCompleted && $0.type == .task })
+    }
+
+    func testLocalCarryoverIsIdempotentAndThenAdvancesAgain() {
+        var planner = PreviewData.planner(weekStart: "2026-08-24")
+        for index in planner.days.indices { planner.days[index].items = [] }
+        planner.days[0].items = [
+            planningItem(id: "daily", date: "2026-08-24", week: planner.weekStart, type: .task)
+        ]
+
+        let thursday = planner.carryingOpenTasks(to: "2026-08-27")
+        let repeated = thursday.carryingOpenTasks(to: "2026-08-27")
+        let friday = repeated.carryingOpenTasks(to: "2026-08-28")
+
+        XCTAssertEqual(repeated.days[3].items.first?.carryoverCount, 3)
+        XCTAssertEqual(friday.days[4].items.first?.id, "daily")
+        XCTAssertEqual(friday.days[4].items.first?.carryoverCount, 4)
+        XCTAssertEqual(friday.days.flatMap(\.items).filter { $0.id == "daily" }.count, 1)
+    }
+
+    func testPlanningItemDecodesForOlderCachedSnapshotsWithoutCarryoverFields() throws {
+        let payload = Data(#"{"id":"task","planningDate":"2026-08-24","weekStartDate":"2026-08-24","type":"task","text":"Pack","isCompleted":false,"sortOrder":0,"createdBy":"user","createdByName":"Jim","updatedAt":"2026-08-24T12:00:00Z","saveState":"saved","reminder":null}"#.utf8)
+
+        let item = try JSONDecoder().decode(PlanningItem.self, from: payload)
+
+        XCTAssertNil(item.originalPlanningDate)
+        XCTAssertNil(item.originalWeekStartDate)
+        XCTAssertNil(item.carryoverCount)
+        XCTAssertNil(item.lastCarriedAt)
+    }
+
+    func testOfflineStoreFindsTheMostRecentPriorSnapshotForCrossWeekCarryover() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "week-of-us-carryover-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = OfflineStore(directory: directory)
+        try await store.savePlanner(PreviewData.planner(weekStart: "2026-08-10"), userId: "user-a")
+        try await store.savePlanner(PreviewData.planner(weekStart: "2026-08-17"), userId: "user-a")
+        try await store.savePlanner(PreviewData.planner(weekStart: "2026-08-24"), userId: "user-b")
+
+        let latest = await store.latestCachedPlanner(userId: "user-a", before: "2026-08-24")
+        let noneBeforeFirst = await store.latestCachedPlanner(userId: "user-a", before: "2026-08-10")
+
+        XCTAssertEqual(latest?.weekStart, "2026-08-17")
+        XCTAssertNil(noneBeforeFirst)
+    }
+
+    private func planningItem(
+        id: String,
+        date: String?,
+        week: String,
+        type: PlanningItemType,
+        completed: Bool = false,
+        reminder: NotificationReminder? = nil
+    ) -> PlanningItem {
+        PlanningItem(
+            id: id,
+            planningDate: date,
+            weekStartDate: week,
+            type: type,
+            text: id,
+            isCompleted: completed,
+            sortOrder: 0,
+            createdBy: "user-a",
+            createdByName: "Jim",
+            updatedAt: "2026-08-24T12:00:00Z",
+            saveState: "saved",
+            reminder: reminder
+        )
+    }
 }

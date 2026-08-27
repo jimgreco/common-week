@@ -6,6 +6,7 @@ import { canHouseholdMemberWriteGoogleCalendar } from "@/lib/google-calendar-per
 import { query } from "@/lib/server/database";
 import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import { getHouseholdCalendarEvents } from "@/lib/server/calendar-data";
+import { carryOverOpenTasks } from "@/lib/server/planning-carryover";
 import { getWeatherForAssignments } from "@/lib/server/weather-data";
 import type {
   HouseholdLocation,
@@ -48,6 +49,10 @@ interface PlanningRow {
   created_by: string;
   created_by_name: string;
   updated_at: Date;
+  original_planning_date: string | null;
+  original_week_start_date: string;
+  carryover_count: number;
+  last_carried_at: Date | null;
   reminder_id: string | null;
   remind_at: Date | null;
 }
@@ -76,6 +81,10 @@ function mapPlanningItem(row: PlanningRow): PlanningItem {
     createdBy: row.created_by,
     createdByName: row.created_by_name,
     updatedAt: row.updated_at.toISOString(),
+    originalPlanningDate: row.original_planning_date,
+    originalWeekStartDate: row.original_week_start_date,
+    carryoverCount: row.carryover_count,
+    lastCarriedAt: row.last_carried_at?.toISOString() ?? null,
     saveState: "saved",
     reminder: row.reminder_id && row.remind_at
       ? { id: row.reminder_id, resourceKind: "planning_item", remindAt: row.remind_at.toISOString() }
@@ -89,15 +98,24 @@ export async function getPlannerData(
   options: { includeExternal?: boolean } = {},
 ): Promise<WeeklyPlannerData> {
   const dates = weekDates(weekStart);
-  const [householdResult, locationsResult, settingsResult, planningResult, membersResult, hiddenEventsResult, accessibleCalendarsResult] =
+  const householdResult = await query<HouseholdRow>(
+    `select h.id, h.name, h.timezone, h.temperature_unit, h.default_location_id
+       from households h
+       join household_members hm on hm.household_id = h.id
+      where h.id = $1 and hm.user_id = $2`,
+    [context.householdId, context.userId],
+  );
+  const household = householdResult.rows[0];
+  if (!household) throw new Error("The household planner could not be loaded.");
+
+  await carryOverOpenTasks({
+    householdId: context.householdId,
+    timeZone: household.timezone,
+    requestedWeekStart: weekStart,
+  });
+
+  const [locationsResult, settingsResult, planningResult, membersResult, hiddenEventsResult, accessibleCalendarsResult] =
     await Promise.all([
-      query<HouseholdRow>(
-        `select h.id, h.name, h.timezone, h.temperature_unit, h.default_location_id
-           from households h
-           join household_members hm on hm.household_id = h.id
-          where h.id = $1 and hm.user_id = $2`,
-        [context.householdId, context.userId],
-      ),
       query<LocationRow>(
         `select id, name, latitude, longitude, timezone, is_saved
            from locations where household_id = $1 order by name`,
@@ -112,6 +130,8 @@ export async function getPlannerData(
         `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
+                pi.original_planning_date::text, pi.original_week_start_date::text,
+                pi.carryover_count, pi.last_carried_at,
                 nr.id as reminder_id, nr.remind_at
            from planning_items pi
            join users u on u.id = pi.created_by
@@ -160,9 +180,6 @@ export async function getPlannerData(
         [context.householdId, context.userId],
       ),
     ]);
-
-  const household = householdResult.rows[0];
-  if (!household) throw new Error("The household planner could not be loaded.");
 
   const allLocations = locationsResult.rows.map((row) => mapLocation(row, household.default_location_id));
   const locations = allLocations.filter((location) => location.isSaved);

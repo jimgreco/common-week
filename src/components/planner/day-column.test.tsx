@@ -106,6 +106,36 @@ describe("DayColumn", () => {
     expect(input).toHaveValue("Dinner outside if sunny");
   });
 
+  it("shows where a carried daily task originated", () => {
+    const data = getDemoPlannerData();
+    const task = data.days[0].items.find((item) => item.type === "task")!;
+    task.originalPlanningDate = "2026-08-25";
+    task.originalWeekStartDate = "2026-08-24";
+    task.carryoverCount = 2;
+
+    render(
+      <DayColumn
+        day={data.days[0]}
+        timeZone={data.household.timezone}
+        temperatureUnit={data.household.temperatureUnit}
+        calendarState={data.calendarState}
+        weatherState={data.weatherState}
+        onAdd={vi.fn()}
+        onToggle={vi.fn()}
+        onEdit={vi.fn()}
+        onRetry={vi.fn()}
+        onLocation={vi.fn()}
+        onWeather={vi.fn()}
+        onEvent={vi.fn()}
+        onAddEvent={vi.fn()}
+        canAddEvent
+      />,
+    );
+
+    expect(screen.getByText("Carried from Tue, Aug 25")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Complete: Groceries/ })).toBeInTheDocument();
+  });
+
   it("opens the single-event editor from the calendar section", () => {
     const data = getDemoPlannerData();
     const onAddEvent = vi.fn();

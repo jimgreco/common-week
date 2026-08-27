@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { datesForLocationScope, isDateOnly, weekStartForDate } from "@/lib/date";
+import { currentWeekStart, datesForLocationScope, isDateOnly, weekStartForDate } from "@/lib/date";
 import { geocodingService } from "@/lib/integrations/geocoding";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
 import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
 import { getPlannerData } from "@/lib/server/planner-data";
 import { searchHouseholdCalendarEvents } from "@/lib/server/calendar-data";
 import { queueHouseholdChange, upsertPlanningReminder } from "@/lib/server/notifications";
+import { carryOverOpenTasks } from "@/lib/server/planning-carryover";
 import type { ActionResult, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
 
 const uuid = z.string().uuid();
@@ -35,6 +36,10 @@ interface PlanningRow {
   created_by: string;
   created_by_name: string;
   updated_at: Date;
+  original_planning_date: string | null;
+  original_week_start_date: string;
+  carryover_count: number;
+  last_carried_at: Date | null;
   reminder_id: string | null;
   remind_at: Date | null;
 }
@@ -65,6 +70,10 @@ function mappedItem(row: PlanningRow): PlanningItem {
     createdBy: row.created_by,
     createdByName: row.created_by_name,
     updatedAt: row.updated_at.toISOString(),
+    originalPlanningDate: row.original_planning_date,
+    originalWeekStartDate: row.original_week_start_date,
+    carryoverCount: row.carryover_count,
+    lastCarriedAt: row.last_carried_at?.toISOString() ?? null,
     saveState: "saved",
     reminder: row.reminder_id && row.remind_at
       ? { id: row.reminder_id, resourceKind: "planning_item", remindAt: row.remind_at.toISOString() }
@@ -181,6 +190,8 @@ export async function createPlanningItemAction(input: {
         `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
+                pi.original_planning_date::text, pi.original_week_start_date::text,
+                pi.carryover_count, pi.last_carried_at,
                 nr.id as reminder_id, nr.remind_at
            from planning_items pi
            join users u on u.id = pi.created_by
@@ -272,6 +283,8 @@ export async function updatePlanningItemAction(input: {
         `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
+                pi.original_planning_date::text, pi.original_week_start_date::text,
+                pi.carryover_count, pi.last_carried_at,
                 nr.id as reminder_id, nr.remind_at
            from planning_items pi
            join users u on u.id = pi.created_by
@@ -292,11 +305,29 @@ export async function togglePlanningItemAction(id: string, completed: boolean): 
   try {
     const parsedId = uuid.parse(id);
     const context = await requireHouseholdContext();
+    const now = new Date();
+    const household = await query<{ timezone: string }>(
+      `select h.timezone
+         from planning_items pi
+         join households h on h.id = pi.household_id
+        where pi.id = $1 and pi.household_id = $2`,
+      [parsedId, context.householdId],
+    );
+    const timeZone = household.rows[0]?.timezone;
+    if (!timeZone) throw new Error("The household timezone is unavailable.");
+    const carryCurrentTasks = () => carryOverOpenTasks({
+      householdId: context.householdId,
+      timeZone,
+      requestedWeekStart: currentWeekStart(timeZone, now),
+      now,
+    });
+    if (completed) await carryCurrentTasks();
     const result = await query(
       "update planning_items set is_completed = $3 where id = $1 and household_id = $2",
       [parsedId, context.householdId, Boolean(completed)],
     );
     if (!result.rowCount) throw new Error("That task is not available to this household.");
+    if (!completed) await carryCurrentTasks();
     await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,
@@ -465,9 +496,11 @@ export async function searchPlanningItemsAction(search: string): Promise<ActionR
     const context = await requireHouseholdContext();
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const result = await query<PlanningRow>(
-      `select id, planning_date::text, week_start_date::text, type,
+      `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
               text, is_completed, sort_order, created_by,
               u.display_name as created_by_name, updated_at,
+              pi.original_planning_date::text, pi.original_week_start_date::text,
+              pi.carryover_count, pi.last_carried_at,
               nr.id as reminder_id, nr.remind_at
          from planning_items pi
          join users u on u.id = pi.created_by
@@ -492,6 +525,8 @@ export async function searchPlannerAction(search: string): Promise<ActionResult<
       query<PlanningRow & { reminder_id: string | null; remind_at: Date | null }>(
         `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by, pi.updated_at,
+                pi.original_planning_date::text, pi.original_week_start_date::text,
+                pi.carryover_count, pi.last_carried_at,
                 nr.id as reminder_id, nr.remind_at
            from planning_items pi
            left join notification_reminders nr

@@ -258,7 +258,7 @@ struct PlannerView: View {
                         .foregroundStyle(CWTheme.ink)
                 }
                 Spacer()
-                Button { Task { await viewModel.load(week: WeekDate.string(WeekDate.monday())) } } label: {
+                Button { Task { await viewModel.moveToCurrentWeek() } } label: {
                     Text("Today").font(.caption.bold()).padding(.horizontal, 12).frame(height: 38).background(.regularMaterial, in: Capsule())
                 }
             }

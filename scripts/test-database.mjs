@@ -204,7 +204,127 @@ try {
   }
   assert.equal(rejectedInvalidDate, true, "date-only week constraints reject an item outside its week");
 
-  process.stdout.write("Database migration, household isolation, session, and date constraints passed.\n");
+  await client.query("update planning_items set is_completed = true where id = $1", [itemA]);
+  const carryoverRows = await client.query(
+    `insert into planning_items (
+       household_id, created_by, week_start_date, planning_date, type, text, is_completed
+     ) values
+       ($1, $2, '2026-08-24', '2026-08-24', 'task', 'Open daily task', false),
+       ($1, $2, '2026-08-10', null, 'task', 'Open weekly task', false),
+       ($1, $2, '2026-08-17', '2026-08-23', 'task', 'Sunday task', false),
+       ($1, $2, '2026-08-17', '2026-08-18', 'task', 'Completed daily task', true),
+       ($1, $2, '2026-08-17', '2026-08-18', 'note', 'Old plan', false),
+       ($1, $2, '2026-08-24', '2026-08-28', 'task', 'Future task', false),
+       ($3, $4, '2026-08-17', '2026-08-18', 'task', 'Foreign open task', false)
+     returning id, text`,
+    [householdA, userA, householdB, userB],
+  );
+  const carryoverId = (text) => carryoverRows.rows.find((row) => row.text === text).id;
+  const carryoverReminder = (await client.query(
+    `insert into notification_reminders (
+       user_id, household_id, resource_kind, planning_item_id, resource_title, remind_at
+     ) values ($1, $2, 'planning_item', $3, 'Open daily task', '2026-08-24T13:00:00Z')
+     returning id`,
+    [userA, householdA, carryoverId("Open daily task")],
+  )).rows[0].id;
+  const carriedAt = "2026-08-27T12:00:00.000Z";
+  const firstCarryover = await client.query(
+    "select carry_over_open_tasks($1, '2026-08-27', '2026-08-24', $2) as count",
+    [householdA, carriedAt],
+  );
+  assert.equal(firstCarryover.rows[0].count, 3, "daily and weekly open tasks carry in one atomic operation");
+
+  const carriedDaily = (await client.query(
+    `select id, planning_date::text, week_start_date::text,
+            original_planning_date::text, original_week_start_date::text,
+            carryover_count, last_carried_at
+       from planning_items where id = $1`,
+    [carryoverId("Open daily task")],
+  )).rows[0];
+  assert.equal(carriedDaily.id, carryoverId("Open daily task"), "daily carryover preserves task identity");
+  assert.equal(carriedDaily.planning_date, "2026-08-27", "daily carryover advances to today");
+  assert.equal(carriedDaily.week_start_date, "2026-08-24", "daily carryover belongs to today's week");
+  assert.equal(carriedDaily.original_planning_date, "2026-08-24", "daily carryover preserves its original date");
+  assert.equal(carriedDaily.original_week_start_date, "2026-08-24", "daily carryover preserves its original week");
+  assert.equal(carriedDaily.carryover_count, 3, "daily carryover counts every skipped day");
+  assert.equal(carriedDaily.last_carried_at.toISOString(), carriedAt, "daily carryover records when it ran");
+  const preservedReminder = (await client.query(
+    "select id, planning_item_id, remind_at, delivered_at from notification_reminders where id = $1",
+    [carryoverReminder],
+  )).rows[0];
+  assert.equal(preservedReminder.planning_item_id, carriedDaily.id, "carryover keeps reminders attached to the same task");
+  assert.equal(preservedReminder.remind_at.toISOString(), "2026-08-24T13:00:00.000Z", "carryover does not silently reschedule reminders");
+  assert.equal(preservedReminder.delivered_at, null, "carryover does not mark reminders delivered");
+
+  const carriedWeekly = (await client.query(
+    `select planning_date::text, week_start_date::text,
+            original_planning_date::text, original_week_start_date::text, carryover_count
+       from planning_items where id = $1`,
+    [carryoverId("Open weekly task")],
+  )).rows[0];
+  assert.equal(carriedWeekly.planning_date, null, "weekly tasks remain weekly");
+  assert.equal(carriedWeekly.week_start_date, "2026-08-24", "weekly carryover advances to the current week");
+  assert.equal(carriedWeekly.original_planning_date, null, "weekly origin does not acquire a daily date");
+  assert.equal(carriedWeekly.original_week_start_date, "2026-08-10", "weekly carryover preserves its original week");
+  assert.equal(carriedWeekly.carryover_count, 2, "weekly carryover counts every skipped week");
+
+  const sundayTask = (await client.query(
+    "select planning_date::text, week_start_date::text, carryover_count from planning_items where id = $1",
+    [carryoverId("Sunday task")],
+  )).rows[0];
+  assert.equal(sundayTask.planning_date, "2026-08-27", "a Sunday task crosses into the next week");
+  assert.equal(sundayTask.week_start_date, "2026-08-24", "Sunday-to-Monday carryover updates its week");
+  assert.equal(sundayTask.carryover_count, 4, "cross-week daily carryover counts calendar days");
+
+  const unchangedRows = await client.query(
+    `select text, planning_date::text, week_start_date::text
+       from planning_items where id = any($1::uuid[]) order by text`,
+    [[
+      carryoverId("Completed daily task"),
+      carryoverId("Old plan"),
+      carryoverId("Future task"),
+      carryoverId("Foreign open task"),
+    ]],
+  );
+  assert.deepEqual(unchangedRows.rows, [
+    { text: "Completed daily task", planning_date: "2026-08-18", week_start_date: "2026-08-17" },
+    { text: "Foreign open task", planning_date: "2026-08-18", week_start_date: "2026-08-17" },
+    { text: "Future task", planning_date: "2026-08-28", week_start_date: "2026-08-24" },
+    { text: "Old plan", planning_date: "2026-08-18", week_start_date: "2026-08-17" },
+  ], "completed tasks, plans, future tasks, and other households do not carry");
+
+  const repeatedCarryover = await client.query(
+    "select carry_over_open_tasks($1, '2026-08-27', '2026-08-24', $2) as count",
+    [householdA, "2026-08-27T12:01:00.000Z"],
+  );
+  assert.equal(repeatedCarryover.rows[0].count, 0, "repeating carryover is idempotent");
+
+  await client.query("update planning_items set is_completed = false where id = $1", [carryoverId("Completed daily task")]);
+  const reopenedCarryover = await client.query(
+    "select carry_over_open_tasks($1, '2026-08-27', '2026-08-24', $2) as count",
+    [householdA, "2026-08-27T12:02:00.000Z"],
+  );
+  assert.equal(reopenedCarryover.rows[0].count, 1, "reopening an old completed task makes it eligible again");
+  const reopenedTask = (await client.query(
+    "select planning_date::text, carryover_count from planning_items where id = $1",
+    [carryoverId("Completed daily task")],
+  )).rows[0];
+  assert.deepEqual(reopenedTask, { planning_date: "2026-08-27", carryover_count: 9 }, "reopened tasks continue carrying by date");
+
+  await client.query("savepoint invalid_carryover_target");
+  let rejectedInvalidCarryoverTarget = false;
+  try {
+    await client.query(
+      "select carry_over_open_tasks($1, '2026-08-27', '2026-08-25', now())",
+      [householdA],
+    );
+  } catch (error) {
+    rejectedInvalidCarryoverTarget = error?.code === "P0001";
+    await client.query("rollback to savepoint invalid_carryover_target");
+  }
+  assert.equal(rejectedInvalidCarryoverTarget, true, "carryover rejects a non-Monday target week");
+
+  process.stdout.write("Database migration, household isolation, date constraints, and task carryover passed.\n");
 } finally {
   await client.query("rollback");
   await client.end();

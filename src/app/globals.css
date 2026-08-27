@@ -272,6 +272,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .planning-row.has-save-error { background: #fbefec; }
 .planning-row-body { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
 .planning-row-text { overflow-wrap: anywhere; font-size: 11px; line-height: 1.38; }
+.carryover-label { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .02em; }
 .task-checkbox { flex: 0 0 auto; width: 14px; height: 14px; display: grid; place-items: center; margin-top: 0; padding: 0; border: 1px solid #aaa79d; border-radius: 3px; background: var(--white); cursor: pointer; }
 .task-checkbox.checked { border-color: var(--accent); background: var(--accent); color: #fff; }
 .note-bullet { flex: 0 0 auto; width: 5px; height: 5px; margin: 5px 4px 0 3px; border-radius: 50%; background: #7e7c74; }

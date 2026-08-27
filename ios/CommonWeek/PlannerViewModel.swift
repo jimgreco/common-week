@@ -18,6 +18,7 @@ final class PlannerViewModel: ObservableObject {
     private var liveTask: Task<Void, Never>?
     private var liveRefreshTask: Task<Void, Never>?
     private var syncInProgress = false
+    private var followsCurrentWeek = true
     private let isDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"] == "1"
 
     var syncStatusText: String? {
@@ -41,15 +42,44 @@ final class PlannerViewModel: ObservableObject {
             stopLiveUpdates()
             data = nil
             errorMessage = nil
+            followsCurrentWeek = true
         }
         activeUser = user
-        let selectedWeek = data?.weekStart ?? WeekDate.string(WeekDate.monday())
-        if data == nil, let cached = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selectedWeek) {
-            data = cached
+        let latest: WeeklyPlannerData?
+        if let data {
+            latest = data
+        } else {
+            latest = await offlineStore.latestCachedPlanner(userId: user.userId, before: nil)
+        }
+        let timeZone = latest?.household.timezone ?? TimeZone.current.identifier
+        let selectedWeek = followsCurrentWeek
+            ? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
+            : data?.weekStart ?? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
+        if data == nil {
+            if let cached = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selectedWeek) {
+                let current = WeekDate.currentWeekStart(timeZoneIdentifier: cached.household.timezone)
+                data = selectedWeek == current
+                    ? cached.carryingOpenTasks(to: WeekDate.today(timeZoneIdentifier: cached.household.timezone))
+                    : cached
+            } else if followsCurrentWeek, let latest {
+                data = latest.carryingOpenTasks(
+                    to: WeekDate.today(timeZoneIdentifier: latest.household.timezone)
+                )
+            }
+        }
+        if data != nil {
             isOffline = true
         }
         pendingChangeCount = await offlineStore.pendingMutations(userId: user.userId).count
         await load(week: selectedWeek, quietly: data != nil)
+        if followsCurrentWeek,
+           let planner = data,
+           planner.weekStart != WeekDate.currentWeekStart(timeZoneIdentifier: planner.household.timezone) {
+            await load(
+                week: WeekDate.currentWeekStart(timeZoneIdentifier: planner.household.timezone),
+                quietly: true
+            )
+        }
         startLiveUpdates()
     }
 
@@ -60,6 +90,7 @@ final class PlannerViewModel: ObservableObject {
         errorMessage = nil
         isOffline = false
         pendingChangeCount = 0
+        followsCurrentWeek = true
     }
 
     func load(week: String? = nil, quietly: Bool = false) async {
@@ -68,7 +99,20 @@ final class PlannerViewModel: ObservableObject {
         if syncInProgress { return }
         let selected = week ?? data?.weekStart ?? WeekDate.string(WeekDate.monday())
         if data?.weekStart != selected {
-            data = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selected)
+            if let cached = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selected) {
+                let current = WeekDate.currentWeekStart(timeZoneIdentifier: cached.household.timezone)
+                data = selected == current
+                    ? cached.carryingOpenTasks(to: WeekDate.today(timeZoneIdentifier: cached.household.timezone))
+                    : cached
+            } else if followsCurrentWeek,
+                      let latest = await offlineStore.latestCachedPlanner(userId: user.userId, before: selected),
+                      selected == WeekDate.currentWeekStart(timeZoneIdentifier: latest.household.timezone) {
+                data = latest.carryingOpenTasks(
+                    to: WeekDate.today(timeZoneIdentifier: latest.household.timezone)
+                )
+            } else {
+                data = nil
+            }
         }
         if !quietly && data == nil { isLoading = true }
         errorMessage = nil
@@ -98,7 +142,16 @@ final class PlannerViewModel: ObservableObject {
 
     func moveWeek(by days: Int) async {
         guard let current = data?.weekStart else { return }
-        await load(week: WeekDate.addDays(days, to: current))
+        let target = WeekDate.addDays(days, to: current)
+        let timeZone = data?.household.timezone ?? TimeZone.current.identifier
+        followsCurrentWeek = target == WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
+        await load(week: target)
+    }
+
+    func moveToCurrentWeek() async {
+        followsCurrentWeek = true
+        let timeZone = data?.household.timezone ?? TimeZone.current.identifier
+        await load(week: WeekDate.currentWeekStart(timeZoneIdentifier: timeZone))
     }
 
     func toggle(_ item: PlanningItem) async {
@@ -359,7 +412,13 @@ final class PlannerViewModel: ObservableObject {
     func applicationDidBecomeActive() {
         guard activeUser != nil else { return }
         startLiveUpdates()
-        Task { await load(week: data?.weekStart, quietly: true) }
+        Task {
+            let timeZone = data?.household.timezone ?? TimeZone.current.identifier
+            let week = followsCurrentWeek
+                ? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
+                : data?.weekStart
+            await load(week: week, quietly: true)
+        }
     }
 
     func applicationDidEnterBackground() {
@@ -374,7 +433,10 @@ final class PlannerViewModel: ObservableObject {
         }
         guard let user = activeUser, await flushPendingChanges() else { return false }
         do {
-            let week = data?.weekStart ?? WeekDate.string(WeekDate.monday())
+            let timeZone = data?.household.timezone ?? TimeZone.current.identifier
+            let week = followsCurrentWeek
+                ? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
+                : data?.weekStart ?? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
             let planner = try await api.planner(week: week).planner
             data = planner
             try await offlineStore.savePlanner(planner, userId: user.userId)
@@ -496,6 +558,10 @@ final class PlannerViewModel: ObservableObject {
             createdBy: previous?.createdBy ?? activeUser?.userId ?? "local",
             createdByName: previous?.createdByName ?? activeUser?.displayName,
             updatedAt: ISO8601DateFormatter().string(from: Date()),
+            originalPlanningDate: previous?.originalPlanningDate,
+            originalWeekStartDate: previous?.originalWeekStartDate,
+            carryoverCount: previous?.carryoverCount,
+            lastCarriedAt: previous?.lastCarriedAt,
             saveState: saveState,
             reminder: draft.remindAt.map { NotificationReminder(id: previous?.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: $0) }
         )

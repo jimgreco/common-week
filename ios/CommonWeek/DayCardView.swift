@@ -208,6 +208,11 @@ struct PlanningItemRow: View {
                         .strikethrough(item.isCompleted)
                         .opacity(item.isCompleted ? 0.55 : 1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if let carryoverLabel = item.carryoverLabel {
+                        Text(carryoverLabel)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
                 }.frame(minHeight: 38, alignment: .top)
             }.buttonStyle(.plain)
         }

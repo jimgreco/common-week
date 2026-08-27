@@ -28,6 +28,10 @@ export interface PlanningItem {
   createdBy: string;
   createdByName?: string;
   updatedAt: string;
+  originalPlanningDate?: string | null;
+  originalWeekStartDate?: string;
+  carryoverCount?: number;
+  lastCarriedAt?: string | null;
   saveState?: SaveState;
   reminder?: NotificationReminder | null;
 }

@@ -1,6 +1,7 @@
 import { AlertCircle, AlertTriangle, Check, CloudOff, MapPin, Plus, Umbrella } from "lucide-react";
 import { formatDayName, formatDayNumber, formatEventTime, formatMobileDate, isToday } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
+import { carryoverLabel } from "@/lib/task-carryover";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
 import type { CalendarEvent, DayPlan, PlanningItem, PlannerSourceState } from "@/types/domain";
 
@@ -111,6 +112,7 @@ export function PlanningItemRow({
   onEdit: DayColumnProps["onEdit"];
   onRetry: DayColumnProps["onRetry"];
 }) {
+  const carriedFrom = carryoverLabel(item);
   return (
     <div className={`planning-row ${item.isCompleted ? "is-complete" : ""} ${item.saveState === "failed" ? "has-save-error" : ""}`} role={item.saveState === "failed" ? "alert" : undefined}>
       {item.type === "task" ? (
@@ -127,6 +129,7 @@ export function PlanningItemRow({
       )}
       <button className="planning-row-body" type="button" onClick={() => onEdit(item)}>
         <span className="planning-row-text">{item.text}</span>
+        {carriedFrom && <span className="carryover-label">{carriedFrom}</span>}
       </button>
       {item.saveState === "saving" && <span className="save-indicator">Saving</span>}
       {item.saveState === "failed" && (
