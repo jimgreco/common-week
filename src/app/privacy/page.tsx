@@ -55,7 +55,10 @@ export default function PrivacyPage() {
           title: "Sharing and service providers",
           paragraphs: [
             "Calendar names and events are shared with members of your Week of Us household only when you choose Share for that calendar. When you also enable Calendar editing and Google grants write access, household owners and members can add, edit, and delete events on that Shared calendar through Week of Us. Private calendars remain visible only to their owner, hidden calendars do not appear in the app, and viewer household roles cannot edit events. We do not sell personal data. We disclose data only to infrastructure providers acting on our behalf, when you direct us to, to protect the service and its users, or when legally required.",
-            "Week of Us sends invitation recipient addresses to Resend to deliver invitations. If you enable email notifications or set a reminder, the recipient address and relevant notification text—such as an event or task title—are sent to Resend for delivery. If you enable iPhone push, the device token and relevant notification text are sent to Apple Push Notification service. Saved coordinates and location search text are sent to Open-Meteo for weather and geocoding. Google Calendar data is not sent to Open-Meteo.",
+            "Week of Us sends invitation recipient addresses to Resend to deliver invitations. If you enable email notifications or set a reminder, the recipient address and relevant notification text—such as an event or task title—are sent to Resend for delivery. If you enable iPhone push, the device token and relevant notification text are sent to Apple Push Notification service. Saved coordinates and household-location search text are sent to Open-Meteo for weather and geocoding. Text you type into a calendar event’s Location field is sent to Google Maps Platform to provide place and address suggestions. Google Calendar event contents are not otherwise sent to Open-Meteo or Google Maps Platform.",
+          ],
+          links: [
+            { href: "https://policies.google.com/privacy", label: "Google Privacy Policy" },
           ],
         },
         {

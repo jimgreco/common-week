@@ -144,6 +144,21 @@ struct GeocodingResult: Codable, Identifiable, Hashable, Equatable {
     }
 }
 
+struct EventLocationSuggestion: Codable, Identifiable, Hashable, Equatable {
+    let placeId: String
+    let primaryText: String
+    let secondaryText: String
+    let fullText: String
+
+    var id: String { placeId }
+}
+
+struct ResolvedEventLocation: Codable, Equatable {
+    let placeId: String
+    let location: String
+    let formattedAddress: String
+}
+
 struct DayPlan: Codable, Identifiable, Hashable {
     var id: String { date }
     let date: String

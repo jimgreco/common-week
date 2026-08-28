@@ -83,6 +83,7 @@ jobs:
         env:
           COMMON_WEEK_GOOGLE_CLIENT_ID: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_ID }}
           COMMON_WEEK_GOOGLE_CLIENT_SECRET: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_SECRET }}
+          COMMON_WEEK_GOOGLE_PLACES_API_KEY: ${{ secrets.COMMON_WEEK_GOOGLE_PLACES_API_KEY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           COMMON_WEEK_APPLE_KEY_ID: ${{ secrets.COMMON_WEEK_APPLE_KEY_ID }}
           COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64: ${{ secrets.COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 }}
@@ -99,7 +100,7 @@ jobs:
           PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://weekofus.com' }}
         run: |
           set -euo pipefail
-          for name in COMMON_WEEK_GOOGLE_CLIENT_ID COMMON_WEEK_GOOGLE_CLIENT_SECRET APPLE_TEAM_ID COMMON_WEEK_APPLE_KEY_ID COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 COMMON_WEEK_APPLE_SERVICE_ID COMMON_WEEK_RESEND_API_KEY COMMON_WEEK_INVITATION_EMAIL_FROM COMMON_WEEK_NOTIFICATION_EMAIL_FROM COMMON_WEEK_APNS_TEAM_ID COMMON_WEEK_APNS_KEY_ID COMMON_WEEK_APNS_PRIVATE_KEY_BASE64 EC2_HOST EC2_SSH_KEY EC2_USER; do
+          for name in COMMON_WEEK_GOOGLE_CLIENT_ID COMMON_WEEK_GOOGLE_CLIENT_SECRET COMMON_WEEK_GOOGLE_PLACES_API_KEY APPLE_TEAM_ID COMMON_WEEK_APPLE_KEY_ID COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 COMMON_WEEK_APPLE_SERVICE_ID COMMON_WEEK_RESEND_API_KEY COMMON_WEEK_INVITATION_EMAIL_FROM COMMON_WEEK_NOTIFICATION_EMAIL_FROM COMMON_WEEK_APNS_TEAM_ID COMMON_WEEK_APNS_KEY_ID COMMON_WEEK_APNS_PRIVATE_KEY_BASE64 EC2_HOST EC2_SSH_KEY EC2_USER; do
             test -n "${!name}" || { echo "Missing required secret: $name"; exit 1; }
           done
           test "$PRODUCTION_BASE_URL" = "https://weekofus.com" || {
@@ -124,6 +125,7 @@ jobs:
         env:
           COMMON_WEEK_GOOGLE_CLIENT_ID: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_ID }}
           COMMON_WEEK_GOOGLE_CLIENT_SECRET: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_SECRET }}
+          COMMON_WEEK_GOOGLE_PLACES_API_KEY: ${{ secrets.COMMON_WEEK_GOOGLE_PLACES_API_KEY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           COMMON_WEEK_APPLE_KEY_ID: ${{ secrets.COMMON_WEEK_APPLE_KEY_ID }}
           COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64: ${{ secrets.COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 }}
@@ -173,8 +175,8 @@ jobs:
 
           secrets_file="$RUNNER_TEMP/common-week-production-secrets.env"
           umask 077
-          printf 'COMMON_WEEK_GOOGLE_CLIENT_ID=%s\nCOMMON_WEEK_GOOGLE_CLIENT_SECRET=%s\nCOMMON_WEEK_APPLE_TEAM_ID=%s\nCOMMON_WEEK_APPLE_KEY_ID=%s\nCOMMON_WEEK_APPLE_PRIVATE_KEY_BASE64=%s\nCOMMON_WEEK_APPLE_SERVICE_ID=%s\nCOMMON_WEEK_RESEND_API_KEY=%s\nCOMMON_WEEK_INVITATION_EMAIL_FROM=%s\nCOMMON_WEEK_NOTIFICATION_EMAIL_FROM=%s\nCOMMON_WEEK_APNS_TEAM_ID=%s\nCOMMON_WEEK_APNS_KEY_ID=%s\nCOMMON_WEEK_APNS_PRIVATE_KEY_BASE64=%s\n' \
-            "$COMMON_WEEK_GOOGLE_CLIENT_ID" "$COMMON_WEEK_GOOGLE_CLIENT_SECRET" "$APPLE_TEAM_ID" \
+          printf 'COMMON_WEEK_GOOGLE_CLIENT_ID=%s\nCOMMON_WEEK_GOOGLE_CLIENT_SECRET=%s\nCOMMON_WEEK_GOOGLE_PLACES_API_KEY=%s\nCOMMON_WEEK_APPLE_TEAM_ID=%s\nCOMMON_WEEK_APPLE_KEY_ID=%s\nCOMMON_WEEK_APPLE_PRIVATE_KEY_BASE64=%s\nCOMMON_WEEK_APPLE_SERVICE_ID=%s\nCOMMON_WEEK_RESEND_API_KEY=%s\nCOMMON_WEEK_INVITATION_EMAIL_FROM=%s\nCOMMON_WEEK_NOTIFICATION_EMAIL_FROM=%s\nCOMMON_WEEK_APNS_TEAM_ID=%s\nCOMMON_WEEK_APNS_KEY_ID=%s\nCOMMON_WEEK_APNS_PRIVATE_KEY_BASE64=%s\n' \
+            "$COMMON_WEEK_GOOGLE_CLIENT_ID" "$COMMON_WEEK_GOOGLE_CLIENT_SECRET" "$COMMON_WEEK_GOOGLE_PLACES_API_KEY" "$APPLE_TEAM_ID" \
             "$COMMON_WEEK_APPLE_KEY_ID" "$COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64" "$COMMON_WEEK_APPLE_SERVICE_ID" \
             "$COMMON_WEEK_RESEND_API_KEY" "$COMMON_WEEK_INVITATION_EMAIL_FROM" "$COMMON_WEEK_NOTIFICATION_EMAIL_FROM" \
             "$COMMON_WEEK_APNS_TEAM_ID" "$COMMON_WEEK_APNS_KEY_ID" "$COMMON_WEEK_APNS_PRIVATE_KEY_BASE64" > "$secrets_file"
@@ -217,6 +219,7 @@ jobs:
           test -s "$secrets_file" || { echo "Google credential payload was not transferred."; exit 1; }
           google_client_id="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_CLIENT_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
           google_client_secret="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_CLIENT_SECRET" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
+          google_places_api_key="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_PLACES_API_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
           apple_team_id="$(awk -F= '$1 == "COMMON_WEEK_APPLE_TEAM_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
           apple_key_id="$(awk -F= '$1 == "COMMON_WEEK_APPLE_KEY_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
           apple_private_key_base64="$(awk -F= '$1 == "COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
@@ -229,6 +232,7 @@ jobs:
           apns_private_key_base64="$(awk -F= '$1 == "COMMON_WEEK_APNS_PRIVATE_KEY_BASE64" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
           test -n "$google_client_id" || { echo "COMMON_WEEK_GOOGLE_CLIENT_ID is empty."; exit 1; }
           test -n "$google_client_secret" || { echo "COMMON_WEEK_GOOGLE_CLIENT_SECRET is empty."; exit 1; }
+          test -n "$google_places_api_key" || { echo "COMMON_WEEK_GOOGLE_PLACES_API_KEY is empty."; exit 1; }
           test -n "$apple_team_id" || { echo "COMMON_WEEK_APPLE_TEAM_ID is empty."; exit 1; }
           test -n "$apple_key_id" || { echo "COMMON_WEEK_APPLE_KEY_ID is empty."; exit 1; }
           test -n "$apple_private_key_base64" || { echo "COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 is empty."; exit 1; }
@@ -254,6 +258,7 @@ jobs:
 
           update_env COMMON_WEEK_GOOGLE_CLIENT_ID "$google_client_id"
           update_env COMMON_WEEK_GOOGLE_CLIENT_SECRET "$google_client_secret"
+          update_env COMMON_WEEK_GOOGLE_PLACES_API_KEY "$google_places_api_key"
           update_env COMMON_WEEK_APPLE_TEAM_ID "$apple_team_id"
           update_env COMMON_WEEK_APPLE_KEY_ID "$apple_key_id"
           update_env COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 "$apple_private_key_base64"

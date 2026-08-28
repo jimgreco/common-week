@@ -698,6 +698,13 @@ struct CalendarEventEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var location: String
+    @State private var locationSuggestions: [EventLocationSuggestion] = []
+    @State private var selectedLocationSuggestion: EventLocationSuggestion?
+    @State private var locationSessionToken = UUID().uuidString
+    @State private var locationSearchEnabled = false
+    @State private var isSearchingLocation = false
+    @State private var isResolvingLocation = false
+    @State private var locationSearchError: String?
     @State private var notes: String
     @State private var calendarId: String
     @State private var allDay: Bool
@@ -721,7 +728,8 @@ struct CalendarEventEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ScrollViewReader { proxy in
+                Form {
                 Section("Event") {
                     TextField("Title", text: $title)
                     Picker("Calendar", selection: $calendarId) { ForEach(data.editableCalendars) { Text($0.name).tag($0.id) } }
@@ -733,7 +741,70 @@ struct CalendarEventEditorView: View {
                     DatePicker("Ends", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
                 }
                 Section("Details") {
-                    TextField("Location", text: $location)
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .foregroundStyle(.secondary)
+                        TextField("Search address or place", text: $location)
+                            .textInputAutocapitalization(.words)
+                            .submitLabel(.done)
+                            .accessibilityIdentifier("event-location-search")
+                        if isSearchingLocation || isResolvingLocation {
+                            ProgressView().controlSize(.small)
+                        } else if !location.isEmpty {
+                            Button {
+                                location = ""
+                                locationSuggestions = []
+                                selectedLocationSuggestion = nil
+                                locationSearchError = nil
+                                locationSessionToken = UUID().uuidString
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear event location")
+                        }
+                    }
+
+                    ForEach(locationSuggestions) { suggestion in
+                        Button {
+                            chooseEventLocation(suggestion)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundStyle(CWTheme.accent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(suggestion.primaryText)
+                                        .foregroundStyle(CWTheme.ink)
+                                    if !suggestion.secondaryText.isEmpty {
+                                        Text(suggestion.secondaryText)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("event-location-suggestion-\(suggestion.placeId)")
+                    }
+                    if !locationSuggestions.isEmpty {
+                        HStack {
+                            Spacer()
+                            Text("Google Maps")
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("Google Maps")
+                                .accessibilityIdentifier("event-location-attribution")
+                        }
+                        .id("event-location-results")
+                    }
+                    if let locationSearchError {
+                        Text(locationSearchError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
                     TextField("Notes", text: $notes, axis: .vertical).lineLimit(3...7)
                 }
                 if event?.recurringEventId != nil {
@@ -751,13 +822,27 @@ struct CalendarEventEditorView: View {
                     Section { Button(event.recurringEventId == nil ? "Delete from Google Calendar" : "Delete this occurrence", role: .destructive) { confirmingDelete = true } }
                 }
             }
-            .navigationTitle(event == nil ? "Add event" : "Edit event")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
-                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || calendarId.isEmpty || end < start || isSaving)
+                .task(id: location) { await searchEventLocations() }
+                .onChange(of: locationSuggestions) { _, suggestions in
+                    guard !suggestions.isEmpty else { return }
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("event-location-results", anchor: .bottom)
+                    }
+                }
+                .onChange(of: location) { _, newValue in
+                    if let selectedLocationSuggestion, newValue == selectedLocationSuggestion.fullText { return }
+                    self.selectedLocationSuggestion = nil
+                    locationSearchEnabled = true
+                    locationSearchError = nil
+                }
+                .navigationTitle(event == nil ? "Add event" : "Edit event")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
+                            .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || calendarId.isEmpty || end < start || isSaving)
+                    }
                 }
             }
         }
@@ -776,6 +861,64 @@ struct CalendarEventEditorView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This cannot be undone from Week of Us.")
+        }
+    }
+
+    private func chooseEventLocation(_ suggestion: EventLocationSuggestion) {
+        selectedLocationSuggestion = suggestion
+        location = suggestion.fullText
+        locationSuggestions = []
+        locationSearchError = nil
+        isSearchingLocation = false
+        let token = locationSessionToken
+        isResolvingLocation = true
+        Task {
+            do {
+                let resolved = try await viewModel.resolveEventLocation(suggestion, sessionToken: token)
+                selectedLocationSuggestion = suggestion
+                location = resolved.location
+            } catch {
+                locationSearchError = "The selected location could not be confirmed. You can still save it as entered."
+            }
+            locationSessionToken = UUID().uuidString
+            isResolvingLocation = false
+        }
+    }
+
+    @MainActor
+    private func searchEventLocations() async {
+        guard locationSearchEnabled else { return }
+        let query = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard selectedLocationSuggestion?.fullText != query else { return }
+        guard query.count >= 2 else {
+            locationSuggestions = []
+            locationSearchError = nil
+            isSearchingLocation = false
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            isSearchingLocation = true
+            locationSearchError = nil
+            let bias = data.locations.first(where: { $0.isDefault == true }) ?? data.locations.first
+            let suggestions = try await viewModel.findEventLocations(
+                matching: query,
+                sessionToken: locationSessionToken,
+                bias: bias
+            )
+            guard !Task.isCancelled,
+                  location.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+            locationSuggestions = suggestions
+            isSearchingLocation = false
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            locationSuggestions = []
+            locationSearchError = "Location suggestions are temporarily unavailable. You can enter a location manually."
+            isSearchingLocation = false
         }
     }
 

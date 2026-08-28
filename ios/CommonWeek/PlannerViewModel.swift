@@ -289,6 +289,27 @@ final class PlannerViewModel: ObservableObject {
         return try await api.searchLocations(trimmed)
     }
 
+    func findEventLocations(matching query: String, sessionToken: String, bias: HouseholdLocation?) async throws -> [EventLocationSuggestion] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return [] }
+        if isDemo {
+            let normalizedQuery = trimmed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return PreviewData.eventLocationSuggestions.filter {
+                $0.fullText
+                    .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                    .contains(normalizedQuery)
+            }
+        }
+        return try await api.searchEventLocations(trimmed, sessionToken: sessionToken, bias: bias)
+    }
+
+    func resolveEventLocation(_ suggestion: EventLocationSuggestion, sessionToken: String) async throws -> ResolvedEventLocation {
+        if isDemo {
+            return ResolvedEventLocation(placeId: suggestion.placeId, location: suggestion.fullText, formattedAddress: suggestion.secondaryText)
+        }
+        return try await api.resolveEventLocation(suggestion, sessionToken: sessionToken)
+    }
+
     // Google Calendar mutations stay online-only: queuing stale ETags could
     // overwrite a provider-side change made while this device was offline.
     func hideEvent(_ event: CalendarEvent) async -> Bool {

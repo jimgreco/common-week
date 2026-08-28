@@ -68,6 +68,40 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.buttons[noteText].waitForExistence(timeout: 10))
     }
 
+    func testEventLocationAutocomplete() throws {
+        launchDemo()
+
+        let addEvent = app.buttons["Add event"].firstMatch
+        XCTAssertTrue(scrollToExistence(addEvent))
+        addEvent.tap()
+        XCTAssertTrue(app.navigationBars["Add event"].waitForExistence(timeout: 5))
+
+        let locationField = app.textFields["event-location-search"]
+        XCTAssertTrue(scrollToExistence(locationField))
+        locationField.tap()
+        locationField.typeText("Wolffer")
+
+        let suggestion = app.buttons["event-location-suggestion-demo-wolffer"]
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 5))
+        let suggestionIsHittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isHittable == true"),
+            object: suggestion
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [suggestionIsHittable], timeout: 3), .completed)
+        XCTAssertTrue(app.staticTexts["event-location-attribution"].exists)
+
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "Event location autocomplete"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        suggestion.tap()
+        XCTAssertEqual(
+            locationField.value as? String,
+            "Wölffer Estate Vineyard, Sagg Road, Sagaponack, NY, USA"
+        )
+    }
+
     private func launchDemo() {
         setupSnapshot(app)
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

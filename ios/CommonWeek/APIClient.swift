@@ -131,6 +131,30 @@ final class APIClient {
         try await send(path: "/api/ios/locations", query: [URLQueryItem(name: "q", value: query)])
     }
 
+    func searchEventLocations(_ query: String, sessionToken: String, bias: HouseholdLocation?) async throws -> [EventLocationSuggestion] {
+        var items = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "sessionToken", value: sessionToken),
+        ]
+        if let bias {
+            items.append(URLQueryItem(name: "latitude", value: String(bias.latitude)))
+            items.append(URLQueryItem(name: "longitude", value: String(bias.longitude)))
+        }
+        return try await send(path: "/api/event-locations", query: items)
+    }
+
+    func resolveEventLocation(_ suggestion: EventLocationSuggestion, sessionToken: String) async throws -> ResolvedEventLocation {
+        try await send(
+            path: "/api/event-locations",
+            method: "POST",
+            body: EventLocationResolutionRequest(
+                placeId: suggestion.placeId,
+                sessionToken: sessionToken,
+                suggestedText: suggestion.fullText
+            )
+        )
+    }
+
     func hideEvent(_ event: CalendarEvent) async throws -> EmptyResponse {
         let body = HideEventRequest(action: "hide", eventId: event.id, title: event.title, calendarName: event.calendarAlias, eventStart: event.start)
         return try await send(path: "/api/ios/calendar-events", method: "PATCH", body: body)
@@ -332,6 +356,12 @@ private struct DeleteEventRequest: Encodable {
     let etag: String
     let recurringEventId: String?
     let recurringScope: String
+}
+
+private struct EventLocationResolutionRequest: Encodable {
+    let placeId: String
+    let sessionToken: String
+    let suggestedText: String
 }
 
 private struct EventResponseRequest: Encodable {

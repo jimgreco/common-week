@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { AlertTriangle, Bell, CalendarDays, Check, Clock, CloudRain, ExternalLink, EyeOff, LoaderCircle, MapPin, Pencil, Search, Sunrise, Sunset, Trash2, Users, Wind, X } from "lucide-react";
 import { searchLocationsAction } from "@/app/actions/planner";
+import { EventLocationAutocomplete } from "@/components/planner/event-location-autocomplete";
 import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
@@ -221,6 +222,8 @@ export function CalendarEventEditorDialog({
   event,
   calendars,
   timeZone,
+  locationBias,
+  isDemo = false,
   onClose,
   onSave,
   onDelete,
@@ -229,6 +232,8 @@ export function CalendarEventEditorDialog({
   event?: CalendarEvent;
   calendars: EditableCalendar[];
   timeZone: string;
+  locationBias?: { latitude: number; longitude: number };
+  isDemo?: boolean;
   onClose: () => void;
   onSave: (draft: CalendarEventDraft) => Promise<string | null>;
   onDelete: (event: CalendarEvent, scope: "occurrence" | "series") => Promise<string | null>;
@@ -264,7 +269,7 @@ export function CalendarEventEditorDialog({
             <label>Ends<input type="date" value={draft.endDate} disabled={draft.recurringScope === "series"} min={draft.startDate} required onChange={(change) => setDraft({ ...draft, endDate: change.target.value })} /></label>
             {!draft.allDay && <label>Time<input type="time" value={draft.endTime} required onChange={(change) => setDraft({ ...draft, endTime: change.target.value })} /></label>}
           </div>
-          <label>Location<input value={draft.location} maxLength={1000} placeholder="Optional" onChange={(change) => setDraft({ ...draft, location: change.target.value })} /></label>
+          <EventLocationAutocomplete value={draft.location} onChange={(location) => setDraft((current) => ({ ...current, location }))} bias={locationBias} isDemo={isDemo} />
           <label>Notes<textarea value={draft.description} maxLength={8192} placeholder="Optional" onChange={(change) => setDraft({ ...draft, description: change.target.value })} /></label>
           <p className="event-timezone-note">Times use the household timezone: {timeZone}</p>
           {event?.recurringEventId && <p className="event-edit-note">Series edits keep the original recurrence dates and apply title, notes, location, all-day state, and time changes to every occurrence.</p>}

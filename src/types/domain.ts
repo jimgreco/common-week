@@ -228,6 +228,19 @@ export interface GeocodingResult {
   timezone: string;
 }
 
+export interface EventLocationSuggestion {
+  placeId: string;
+  primaryText: string;
+  secondaryText: string;
+  fullText: string;
+}
+
+export interface ResolvedEventLocation {
+  placeId: string;
+  location: string;
+  formattedAddress: string;
+}
+
 export interface ActionResult<T = undefined> {
   ok: boolean;
   data?: T;

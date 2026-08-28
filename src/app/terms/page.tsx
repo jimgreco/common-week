@@ -37,7 +37,11 @@ export default function TermsPage() {
         {
           title: "Your content and connected services",
           paragraphs: [
-            "You retain ownership of content you add. You grant Week of Us the limited permission needed to store, process, and display that content to you and your household. Apple Reminders selected in the iPhone app remain in your device’s Reminders store and are not shared through the Week of Us household or website. Changes you make to an Apple-shared reminder may be visible to and affect everyone participating in that Apple list. Your use of Apple, Google, and other third-party services remains subject to their own terms and policies.",
+            "You retain ownership of content you add. You grant Week of Us the limited permission needed to store, process, and display that content to you and your household. Apple Reminders selected in the iPhone app remain in your device’s Reminders store and are not shared through the Week of Us household or website. Changes you make to an Apple-shared reminder may be visible to and affect everyone participating in that Apple list. Calendar event location suggestions use Google Maps Platform and are subject to the Google Maps/Google Earth Additional Terms of Service and Google Privacy Policy. Your use of Apple, Google, and other third-party services remains subject to their own terms and policies.",
+          ],
+          links: [
+            { href: "https://maps.google.com/help/terms_maps/", label: "Google Maps/Google Earth Additional Terms of Service" },
+            { href: "https://policies.google.com/privacy", label: "Google Privacy Policy" },
           ],
         },
         {

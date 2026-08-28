@@ -101,6 +101,15 @@ final class WeekDateTests: XCTestCase {
         XCTAssertEqual(location["name"] as? String, "Paris, Île-de-France")
     }
 
+    func testEventLocationSuggestionDecodesGooglePlacePresentation() throws {
+        let payload = Data(#"{"placeId":"place-1","primaryText":"Yankee Stadium","secondaryText":"East 161st Street, Bronx, NY, USA","fullText":"Yankee Stadium, East 161st Street, Bronx, NY, USA"}"#.utf8)
+        let suggestion = try JSONDecoder().decode(EventLocationSuggestion.self, from: payload)
+
+        XCTAssertEqual(suggestion.id, "place-1")
+        XCTAssertEqual(suggestion.primaryText, "Yankee Stadium")
+        XCTAssertEqual(suggestion.fullText, "Yankee Stadium, East 161st Street, Bronx, NY, USA")
+    }
+
     func testOfflineStoreKeepsSnapshotsIsolatedByAccount() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "week-of-us-tests-\(UUID().uuidString)", directoryHint: .isDirectory)

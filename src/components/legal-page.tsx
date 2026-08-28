@@ -5,6 +5,7 @@ interface LegalSection {
   title: string;
   paragraphs?: string[];
   items?: string[];
+  links?: Array<{ href: string; label: string }>;
 }
 
 export function LegalPage({
@@ -38,6 +39,7 @@ export function LegalPage({
             <h2>{section.title}</h2>
             {section.paragraphs?.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             {section.items && <ul>{section.items.map((item) => <li key={item}>{item}</li>)}</ul>}
+            {section.links && <ul>{section.links.map((link) => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul>}
           </section>
         ))}
         <footer>

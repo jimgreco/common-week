@@ -33,7 +33,7 @@ The production workflow creates the `common_week_app` role and `common_week` dat
 ## 2. Configure Google Cloud
 
 1. Create or select a Google Cloud project.
-2. Enable **Google Calendar API**.
+2. Enable **Google Calendar API** and **Places API (New)**. Places requires a billing account even though Calendar OAuth does not.
 3. Configure the OAuth consent screen with:
    - `openid`
    - `email`
@@ -65,8 +65,11 @@ openssl rand -base64 32
 ```dotenv
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
+GOOGLE_PLACES_API_KEY=...
 GOOGLE_TOKEN_ENCRYPTION_KEY=the-generated-base64-value
 ```
+
+Create a separate server API key for `GOOGLE_PLACES_API_KEY`. Restrict it to **Places API (New)** and to the production server's outbound IP address. Do not prefix it with `NEXT_PUBLIC_` or embed it in the web or iPhone client. Set a Maps Platform quota and billing alert before production use. The key powers event-location autocomplete only; household weather-location search remains on Open-Meteo.
 
 The OAuth flow uses state validation and PKCE. Each member's access/refresh tokens are separate and encrypted before PostgreSQL storage. Normal sign-in requests the least-privilege `calendar.calendarlist.readonly` and `calendar.events.readonly` scopes so the app can discover calendars and display their events without write access. Discovered calendars start hidden. In Settings, each owner chooses Hide (not shown in Week of Us), Private (shown only to that owner), or Share (shown to the household). The calendar owner must separately choose **Enable calendar editing** before Week of Us requests `calendar.events`; then household owners and members can add, edit, and delete events on that owner's Shared writable calendars. Private and hidden calendars, read-only Google calendars, and viewer household roles remain non-editable. The broader `calendar.events` scope, rather than `calendar.events.owned`, is required because the product supports calendars the connected user can write to but does not own, including shared household calendars.
 

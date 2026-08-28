@@ -13,6 +13,12 @@ enum PreviewData {
         GeocodingResult(id: "demo-sag-harbor", name: "Sag Harbor", admin1: "New York", country: "United States", latitude: 41.0007, longitude: -72.2957, timezone: "America/New_York"),
     ]
 
+    static let eventLocationSuggestions = [
+        EventLocationSuggestion(placeId: "demo-wolffer", primaryText: "Wölffer Estate Vineyard", secondaryText: "Sagg Road, Sagaponack, NY, USA", fullText: "Wölffer Estate Vineyard, Sagg Road, Sagaponack, NY, USA"),
+        EventLocationSuggestion(placeId: "demo-airport", primaryText: "East Hampton Airport", secondaryText: "Daniels Hole Road, Wainscott, NY, USA", fullText: "East Hampton Airport, Daniels Hole Road, Wainscott, NY, USA"),
+        EventLocationSuggestion(placeId: "demo-yankee-stadium", primaryText: "Yankee Stadium", secondaryText: "East 161st Street, Bronx, NY, USA", fullText: "Yankee Stadium, East 161st Street, Bronx, NY, USA"),
+    ]
+
     static func planner(weekStart: String) -> WeeklyPlannerData {
         let east = HouseholdLocation(id: "20000000-0000-4000-8000-000000000001", name: "East Hampton", latitude: 40.96, longitude: -72.18, timezone: "America/New_York", isSaved: true, isDefault: true)
         let city = HouseholdLocation(id: "20000000-0000-4000-8000-000000000002", name: "Manhattan", latitude: 40.71, longitude: -74.0, timezone: "America/New_York", isSaved: true, isDefault: false)
