@@ -22,6 +22,8 @@
   <false/>
   <key>API_BASE_URL</key>
   <string>https://weekofus.com</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>Week of Us shows reminders from lists you select and lets you create, edit, complete, and delete them.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

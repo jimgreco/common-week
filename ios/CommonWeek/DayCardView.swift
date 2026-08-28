@@ -4,11 +4,13 @@ struct DayCardView: View {
     let day: DayPlan
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
+    @ObservedObject var appleReminders: AppleRemindersStore
     @Binding var sheet: PlannerSheet?
 
     private var isToday: Bool { WeekDate.isToday(day.date, timeZoneIdentifier: data.household.timezone) }
     private var plans: [PlanningItem] { day.items.filter { $0.type == .note } }
     private var tasks: [PlanningItem] { day.items.filter { $0.type == .task } }
+    private var reminderTasks: [AppleReminderTask] { appleReminders.tasks(for: day.date) }
     private var criticalEvents: [CalendarEvent] { day.events.filter { $0.sectionGroup != "supplemental" } }
     private var supplementalEvents: [CalendarEvent] { day.events.filter { $0.sectionGroup == "supplemental" } }
 
@@ -29,6 +31,9 @@ struct DayCardView: View {
                 section(title: "Tasks") {
                     ForEach(tasks) { item in
                         PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: day.date, type: .task) }
+                    }
+                    ForEach(reminderTasks) { task in
+                        AppleReminderRow(task: task, store: appleReminders) { sheet = .appleReminder(task) }
                     }
                     addButton("Add a task", icon: "plus") { sheet = .item(nil, date: day.date, type: .task) }
                 }
@@ -144,6 +149,51 @@ struct DayCardView: View {
 
     private func temperature(_ fahrenheit: Double) -> Int {
         data.household.temperatureUnit == .fahrenheit ? Int(fahrenheit.rounded()) : Int(((fahrenheit - 32) * 5 / 9).rounded())
+    }
+}
+
+struct AppleReminderRow: View {
+    let task: AppleReminderTask
+    @ObservedObject var store: AppleRemindersStore
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Button { Task { await store.toggle(task) } } label: {
+                Image(systemName: task.isCompleted ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(task.isCompleted ? CWTheme.accent : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(!task.canModify)
+            .accessibilityLabel(task.isCompleted ? "Mark incomplete" : "Complete")
+
+            Button(action: action) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(task.title)
+                        .font(.subheadline)
+                        .foregroundStyle(CWTheme.ink)
+                        .strikethrough(task.isCompleted)
+                        .opacity(task.isCompleted ? 0.55 : 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 5) {
+                        Label(task.listTitle, systemImage: "checklist")
+                        if let dueTime = task.dueTimeLabel { Text("· \(dueTime)") }
+                        if task.isRecurring { Image(systemName: "repeat") }
+                        if !task.canModify { Image(systemName: "lock.fill") }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    if let carryoverLabel = task.carryoverLabel {
+                        Text(carryoverLabel)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(minHeight: 38, alignment: .top)
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 

@@ -31,6 +31,12 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         ENABLE_USER_SCRIPT_SANDBOXING: YES
+      configs:
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
+          CODE_SIGN_IDENTITY: Apple Distribution
     scheme:
       testTargets:
         - CommonWeekTests

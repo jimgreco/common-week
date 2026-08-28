@@ -3,7 +3,7 @@ import { LegalPage } from "@/components/legal-page";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "How Week of Us accesses, uses, stores, and protects Google Calendar and account data.",
+  description: "How Week of Us accesses, uses, stores, and protects connected-service and account data.",
 };
 
 export default function PrivacyPage() {
@@ -11,8 +11,8 @@ export default function PrivacyPage() {
     <LegalPage
       eyebrow="Privacy"
       title="Privacy Policy"
-      updated="August 26, 2026"
-      introduction="Week of Us is a shared family planner. This policy explains what information the service handles, including information received through Google APIs, and the choices available to you."
+      updated="August 28, 2026"
+      introduction="Week of Us is a shared family planner. This policy explains what information the service and iPhone app handle, including information received through Google APIs and Apple Reminders, and the choices available to you."
       sections={[
         {
           title: "Information we collect",
@@ -28,6 +28,13 @@ export default function PrivacyPage() {
           paragraphs: [
             "Week of Us uses Google account data to authenticate you and associate your choices with your account. It uses Google Calendar data only to provide the user-facing calendar features you request: listing and searching your calendars, showing events according to the visibility you choose, responding to invitations received by your connected account, and, after a separate opt-in, creating, updating, or deleting occurrences or recurring series on calendars where Google grants your connected account write access. If you choose Share, household owners and members may make permitted event changes through Week of Us.",
             "Calendar access is hidden by default. You can keep a calendar out of Week of Us, show it privately only to yourself, or explicitly share it with your household. Calendar editing is also off by default and is requested through incremental authorization only when you choose to enable it. Private and hidden calendars are never editable by another household member.",
+          ],
+        },
+        {
+          title: "Apple Reminders on iPhone",
+          paragraphs: [
+            "The iPhone app can access Apple Reminders only after you grant full Reminders permission. You choose which lists appear and may choose a writable selected list as the default destination for new daily tasks. Week of Us reads due dates and completion state so those reminders can appear in the daily planner, and it applies the create, edit, complete, reopen, or delete actions you explicitly request through Apple’s EventKit framework.",
+            "Apple Reminder titles, due dates, list contents, and completion state stay in the device’s Reminders store and are not uploaded to Week of Us servers, shared through your Week of Us household, or shown on the website. Your selected-list and default-destination preferences are stored locally for the signed-in Week of Us account. Changes to an Apple-shared list are synchronized by Apple and may be visible to other participants in that list.",
           ],
         },
         {
@@ -54,7 +61,7 @@ export default function PrivacyPage() {
         {
           title: "Your choices and deletion",
           paragraphs: [
-            "You can hide individual calendars, keep them private to your account, stop sharing a calendar to remove household editing access, avoid enabling Calendar editing, and disable email or push notifications. You can also revoke Week of Us access at any time from your Google Account’s third-party connections page.",
+            "You can hide individual calendars, keep them private to your account, stop sharing a calendar to remove household editing access, avoid enabling Calendar editing, and disable email or push notifications. You can revoke Google access from your Google Account’s third-party connections page and revoke Apple Reminders access in iPhone Settings.",
             "You can permanently delete your Week of Us account and associated personal data directly from Settings on the web or iPhone. Connected Apple and Google authorizations are revoked when credentials are available. A household owner must transfer ownership first if other members remain; a sole-member household is deleted with the account.",
           ],
         },

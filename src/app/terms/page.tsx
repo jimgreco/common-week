@@ -11,7 +11,7 @@ export default function TermsPage() {
     <LegalPage
       eyebrow="Terms"
       title="Terms of Service"
-      updated="August 26, 2026"
+      updated="August 28, 2026"
       introduction="These terms govern your use of Week of Us. By using the service, you agree to these terms. If you do not agree, do not use the service."
       sections={[
         {
@@ -37,7 +37,7 @@ export default function TermsPage() {
         {
           title: "Your content and connected services",
           paragraphs: [
-            "You retain ownership of content you add. You grant Week of Us the limited permission needed to store, process, and display that content to you and your household. Your use of Google and other third-party services remains subject to their own terms and policies.",
+            "You retain ownership of content you add. You grant Week of Us the limited permission needed to store, process, and display that content to you and your household. Apple Reminders selected in the iPhone app remain in your device’s Reminders store and are not shared through the Week of Us household or website. Changes you make to an Apple-shared reminder may be visible to and affect everyone participating in that Apple list. Your use of Apple, Google, and other third-party services remains subject to their own terms and policies.",
           ],
         },
         {

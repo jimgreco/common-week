@@ -219,6 +219,50 @@ final class WeekDateTests: XCTestCase {
         XCTAssertNil(item.lastCarriedAt)
     }
 
+    func testAppleReminderPlacementMatchesDailyCarryoverWithoutChangingDueDate() {
+        let placement = AppleReminderPlacement.resolve(
+            dueDate: "2026-08-24",
+            isCompleted: false,
+            visibleWeekStart: "2026-08-24",
+            currentWeekStart: "2026-08-24",
+            today: "2026-08-27"
+        )
+
+        XCTAssertEqual(placement?.displayDate, "2026-08-27")
+        XCTAssertEqual(placement?.carryoverCount, 3)
+    }
+
+    func testAppleReminderPlacementDoesNotCarryCompletedOrHistoricalReminders() {
+        XCTAssertNil(AppleReminderPlacement.resolve(
+            dueDate: "2026-08-17",
+            isCompleted: true,
+            visibleWeekStart: "2026-08-24",
+            currentWeekStart: "2026-08-24",
+            today: "2026-08-27"
+        ))
+        XCTAssertNil(AppleReminderPlacement.resolve(
+            dueDate: "2026-08-17",
+            isCompleted: false,
+            visibleWeekStart: "2026-08-10",
+            currentWeekStart: "2026-08-24",
+            today: "2026-08-27"
+        ))
+    }
+
+    func testAppleReminderCompletedAfterItsDueDateRemainsOnItsCarriedDay() {
+        let placement = AppleReminderPlacement.resolve(
+            dueDate: "2026-08-17",
+            isCompleted: true,
+            completionDate: "2026-08-27",
+            visibleWeekStart: "2026-08-24",
+            currentWeekStart: "2026-08-24",
+            today: "2026-08-27"
+        )
+
+        XCTAssertEqual(placement?.displayDate, "2026-08-27")
+        XCTAssertEqual(placement?.carryoverCount, 10)
+    }
+
     func testOfflineStoreFindsTheMostRecentPriorSnapshotForCrossWeekCarryover() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "week-of-us-carryover-tests-\(UUID().uuidString)", directoryHint: .isDirectory)

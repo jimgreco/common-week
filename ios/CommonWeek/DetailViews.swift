@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct WeatherDetailView: View {
     let day: DayPlan
@@ -134,6 +135,7 @@ struct SettingsView: View {
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var auth: AuthStore
+    @ObservedObject var appleReminders: AppleRemindersStore
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var timezone: String
@@ -158,8 +160,8 @@ struct SettingsView: View {
         .init(id: "Europe/London", name: "London"), .init(id: "Europe/Paris", name: "Central European Time"),
     ]
 
-    init(data: WeeklyPlannerData, viewModel: PlannerViewModel, auth: AuthStore) {
-        self.data = data; self.viewModel = viewModel; self.auth = auth
+    init(data: WeeklyPlannerData, viewModel: PlannerViewModel, auth: AuthStore, appleReminders: AppleRemindersStore) {
+        self.data = data; self.viewModel = viewModel; self.auth = auth; self.appleReminders = appleReminders
         _name = State(initialValue: data.household.name)
         _timezone = State(initialValue: data.household.timezone)
         _temperature = State(initialValue: data.household.temperatureUnit)
@@ -206,6 +208,9 @@ struct SettingsView: View {
                     Picker("Timezone", selection: $timezone) { ForEach(timezones) { Text($0.name).tag($0.id) } }
                     Button(isSaving ? "Saving…" : "Save preferences") { Task { await save() } }.disabled(isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+                Section("Apple Reminders") {
+                    appleRemindersManagement
+                }
                 Section("Google Calendar") {
                     calendarManagement
                 }
@@ -251,6 +256,78 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("This removes your Week of Us account and planner data. If you own a household with other members, transfer ownership first.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var appleRemindersManagement: some View {
+        if data.isDemo {
+            Label("Apple Reminders are available in the signed-in iPhone app.", systemImage: "checklist")
+                .foregroundStyle(.secondary)
+        } else {
+            switch appleReminders.access {
+            case .notDetermined:
+                Text("Show reminders with due dates from lists you choose, and complete or edit them without leaving Week of Us.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button { Task { await appleReminders.requestAccess() } } label: {
+                    Label("Connect Apple Reminders", systemImage: "checklist")
+                }
+            case .denied, .restricted:
+                Label("Reminders access is blocked.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Allow full Reminders access in iPhone Settings to show and update selected lists.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("Open iPhone Settings") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            case .fullAccess:
+                Text("Only lists selected below appear in the iPhone app. They are not uploaded to Week of Us or shown on the web.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if appleReminders.lists.isEmpty {
+                    if appleReminders.isLoading {
+                        HStack { ProgressView(); Text("Loading reminder lists…").foregroundStyle(.secondary) }
+                    } else {
+                        Text("No Apple Reminders lists are available.").foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(appleReminders.lists) { list in
+                        Toggle(isOn: Binding(
+                            get: { appleReminders.selectedListIds.contains(list.id) },
+                            set: { selected in Task { await appleReminders.setList(list.id, selected: selected) } }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(list.title)
+                                Text("\(list.sourceTitle)\(list.canModify ? "" : " · Read-only")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                Picker("New daily tasks", selection: Binding(
+                    get: { appleReminders.defaultDestination },
+                    set: { appleReminders.setDefaultDestination($0) }
+                )) {
+                    Text("Week of Us").tag(TaskCreationDestination.weekOfUs)
+                    ForEach(appleReminders.writableSelectedLists) { list in
+                        Text("Reminders · \(list.title)").tag(TaskCreationDestination.appleReminders(list.id))
+                    }
+                }
+                Text("Weekly quick-add always creates a Week of Us task. This default applies only when adding a task to a specific day.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button { Task { await appleReminders.refresh(weekStart: data.weekStart, timeZoneIdentifier: data.household.timezone) } } label: {
+                    Label("Refresh reminder lists", systemImage: "arrow.clockwise")
+                }
+                .disabled(appleReminders.isLoading)
+            }
+            if let notice = appleReminders.notice {
+                Text(notice).font(.caption).foregroundStyle(.secondary)
             }
         }
     }

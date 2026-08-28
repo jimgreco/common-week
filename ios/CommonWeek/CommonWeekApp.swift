@@ -22,6 +22,7 @@ struct CommonWeekApp: App {
                     switch phase {
                     case .active:
                         planner.applicationDidBecomeActive()
+                        AppleRemindersStore.shared.applicationDidBecomeActive()
                     case .background:
                         planner.applicationDidEnterBackground()
                         BackgroundRefreshCoordinator.shared.schedule()
@@ -47,7 +48,10 @@ struct RootView: View {
                     .controlSize(.large)
             case .signedOut, .signingIn:
                 SignInView(auth: auth)
-                    .onAppear { planner.deactivate() }
+                    .onAppear {
+                        planner.deactivate()
+                        AppleRemindersStore.shared.deactivate()
+                    }
             case .signedIn(let user):
                 PlannerView(viewModel: planner, auth: auth, user: user)
                     .task(id: user.userId) {

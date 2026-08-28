@@ -2,6 +2,7 @@ import SwiftUI
 
 enum PlannerSheet: Identifiable {
     case item(PlanningItem?, date: String?, type: PlanningItemType)
+    case appleReminder(AppleReminderTask)
     case event(CalendarEvent)
     case newEvent(String)
     case weather(DayPlan)
@@ -12,6 +13,7 @@ enum PlannerSheet: Identifiable {
     var id: String {
         switch self {
         case .item(let item, let date, let type): "item-\(item?.id ?? date ?? "weekly")-\(type.rawValue)"
+        case .appleReminder(let reminder): "apple-reminder-\(reminder.id)"
         case .event(let event): "event-\(event.id)"
         case .newEvent(let date): "new-event-\(date)"
         case .weather(let day): "weather-\(day.date)"
@@ -63,13 +65,14 @@ struct PlannerView: View {
     @State private var dayMoveDirection = 1
     @State private var selectedDestination: PlannerDestination = .calendar
     @GestureState private var dayDragOffset: CGFloat = 0
+    @StateObject private var appleReminders = AppleRemindersStore.shared
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 AppBackground()
                 content
-                if let toast = viewModel.toast {
+                if let toast = viewModel.toast ?? appleReminders.notice {
                     Label(toast, systemImage: "checkmark.circle.fill")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(CWTheme.accentStrong)
@@ -141,7 +144,21 @@ struct PlannerView: View {
             }
             .id(selectedDestination)
             .transition(.opacity)
-            .refreshable { await viewModel.load(week: data.weekStart, quietly: true) }
+            .refreshable {
+                async let plannerRefresh: Void = viewModel.load(week: data.weekStart, quietly: true)
+                async let remindersRefresh: Void = appleReminders.refresh(
+                    weekStart: data.weekStart,
+                    timeZoneIdentifier: data.household.timezone
+                )
+                _ = await (plannerRefresh, remindersRefresh)
+            }
+            .task(id: "\(user.userId):\(data.weekStart):\(data.household.timezone)") {
+                await appleReminders.activate(
+                    userId: user.userId,
+                    weekStart: data.weekStart,
+                    timeZoneIdentifier: data.household.timezone
+                )
+            }
             .onAppear { synchronizeSelectedDay(with: data) }
             .onChange(of: data.weekStart) { _, _ in synchronizeSelectedDay(with: data) }
             .animation(.easeInOut(duration: 0.2), value: selectedDestination)
@@ -186,7 +203,7 @@ struct PlannerView: View {
 
             ZStack(alignment: .top) {
                 let day = selectedDay(in: data)
-                DayCardView(day: day, data: data, viewModel: viewModel, sheet: $sheet)
+                DayCardView(day: day, data: data, viewModel: viewModel, appleReminders: appleReminders, sheet: $sheet)
                     .id(day.date)
                     .offset(x: dayDragOffset)
                     .transition(dayTransition)
@@ -291,13 +308,15 @@ struct PlannerView: View {
         if let data = viewModel.data {
             switch destination {
             case .item(let item, let date, let type):
-                ItemEditorView(item: item, planningDate: date, defaultType: type, data: data, viewModel: viewModel)
+                ItemEditorView(item: item, planningDate: date, defaultType: type, data: data, viewModel: viewModel, appleReminders: appleReminders)
+            case .appleReminder(let reminder):
+                AppleReminderEditorView(task: reminder, data: data, store: appleReminders)
             case .event(let event): EventDetailView(event: event, data: data, viewModel: viewModel)
             case .newEvent(let date): CalendarEventEditorView(event: nil, date: date, data: data, viewModel: viewModel)
             case .weather(let day): WeatherDetailView(day: day, unit: data.household.temperatureUnit)
             case .location(let day): LocationPickerView(day: day, locations: data.locations, viewModel: viewModel)
             case .search: PlannerSearchView(viewModel: viewModel)
-            case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth)
+            case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth, appleReminders: appleReminders)
             }
         } else {
             EmptyView()

@@ -5,23 +5,37 @@ struct ItemEditorView: View {
     let planningDate: String?
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
+    @ObservedObject var appleReminders: AppleRemindersStore
     @Environment(\.dismiss) private var dismiss
     @State private var text: String
     @State private var type: PlanningItemType
     @State private var reminderEnabled: Bool
     @State private var reminderDate: Date
+    @State private var destination: TaskCreationDestination
+    @State private var appleDueDate: Date
+    @State private var appleDueTimeEnabled = false
+    @State private var saveError: String?
     @State private var isSaving = false
 
-    init(item: PlanningItem?, planningDate: String?, defaultType: PlanningItemType, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
+    init(item: PlanningItem?, planningDate: String?, defaultType: PlanningItemType, data: WeeklyPlannerData, viewModel: PlannerViewModel, appleReminders: AppleRemindersStore) {
         self.item = item
         self.planningDate = planningDate
         self.data = data
         self.viewModel = viewModel
+        self.appleReminders = appleReminders
         _text = State(initialValue: item?.text ?? "")
         _type = State(initialValue: item?.type ?? defaultType)
         let existingReminder = item?.reminder.flatMap { WeekDate.iso8601.date(from: $0.remindAt) }
         _reminderEnabled = State(initialValue: existingReminder != nil)
         _reminderDate = State(initialValue: existingReminder ?? Date().addingTimeInterval(3600))
+        let canUseAppleDefault = item == nil && planningDate != nil && defaultType == .task
+            && appleReminders.writableSelectedLists.contains {
+                appleReminders.defaultDestination == .appleReminders($0.id)
+            }
+        _destination = State(initialValue: canUseAppleDefault ? appleReminders.defaultDestination : .weekOfUs)
+        _appleDueDate = State(initialValue: planningDate.map {
+            WeekDate.calendarDate($0, hour: 9, timeZoneIdentifier: data.household.timezone)
+        } ?? Date())
     }
 
     var body: some View {
@@ -30,14 +44,41 @@ struct ItemEditorView: View {
                 Section("What") {
                     TextField(type == .note ? "What are you planning?" : "What needs doing?", text: $text, axis: .vertical)
                         .lineLimit(3...7)
-                    Picker("Type", selection: $type) { Text("Plan or note").tag(PlanningItemType.note); Text("Task").tag(PlanningItemType.task) }
+                    if destination == .weekOfUs {
+                        Picker("Type", selection: $type) { Text("Plan or note").tag(PlanningItemType.note); Text("Task").tag(PlanningItemType.task) }
+                    }
+                }
+                if canChooseDestination {
+                    Section("Save to") {
+                        Picker("Destination", selection: $destination) {
+                            Text("Week of Us").tag(TaskCreationDestination.weekOfUs)
+                            ForEach(appleReminders.writableSelectedLists) { list in
+                                Text("Reminders · \(list.title)").tag(TaskCreationDestination.appleReminders(list.id))
+                            }
+                        }
+                        Text(destination == .weekOfUs
+                             ? "This task is shared with your Week of Us household and appears on the web."
+                             : "This task is saved in Apple Reminders and appears only in the iPhone app.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Section("Schedule") {
                     LabeledContent("When", value: planningDate.map(WeekDate.longDay) ?? "This week")
-                    Toggle("Remind me", isOn: $reminderEnabled)
-                    if reminderEnabled {
-                        DatePicker("Reminder", selection: $reminderDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    if destination == .weekOfUs {
+                        Toggle("Remind me", isOn: $reminderEnabled)
+                        if reminderEnabled {
+                            DatePicker("Reminder", selection: $reminderDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                        }
+                    } else {
+                        Toggle("Include due time", isOn: $appleDueTimeEnabled)
+                        if appleDueTimeEnabled {
+                            DatePicker("Due time", selection: $appleDueDate, displayedComponents: [.hourAndMinute])
+                        }
                     }
+                }
+                if let saveError {
+                    Section { Text(saveError).font(.footnote).foregroundStyle(.red) }
                 }
                 if let item {
                     Section { Button("Delete item", role: .destructive) { Task { if await viewModel.deleteItem(item) { dismiss() } } } }
@@ -49,15 +90,168 @@ struct ItemEditorView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSaving ? "Saving…" : "Save") {
-                        Task {
-                            isSaving = true
-                            let draft = PlanningItemDraft(id: item?.id, text: text.trimmingCharacters(in: .whitespacesAndNewlines), type: type, planningDate: item?.planningDate ?? planningDate, weekStartDate: data.weekStart, remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil)
-                            if await viewModel.saveItem(draft) { dismiss() }
-                            isSaving = false
-                        }
+                        Task { await save() }
                     }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
                 }
             }
+        }
+        .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+        .onChange(of: type) { _, nextType in
+            if nextType != .task { destination = .weekOfUs }
+        }
+    }
+
+    private var canChooseDestination: Bool {
+        item == nil && planningDate != nil && type == .task && !appleReminders.writableSelectedLists.isEmpty
+    }
+
+    private func save() async {
+        isSaving = true
+        saveError = nil
+        defer { isSaving = false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if case .appleReminders(let listId) = destination,
+           item == nil,
+           type == .task,
+           planningDate != nil {
+            do {
+                try await appleReminders.createReminder(
+                    title: trimmed,
+                    listId: listId,
+                    dueDate: appleDueDate,
+                    includesTime: appleDueTimeEnabled,
+                    timeZoneIdentifier: data.household.timezone
+                )
+                dismiss()
+            } catch {
+                saveError = error.localizedDescription
+            }
+            return
+        }
+        let draft = PlanningItemDraft(
+            id: item?.id,
+            text: trimmed,
+            type: type,
+            planningDate: item?.planningDate ?? planningDate,
+            weekStartDate: data.weekStart,
+            remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil
+        )
+        if await viewModel.saveItem(draft) { dismiss() }
+    }
+}
+
+struct AppleReminderEditorView: View {
+    let task: AppleReminderTask
+    let data: WeeklyPlannerData
+    @ObservedObject var store: AppleRemindersStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var dueDate: Date
+    @State private var includesTime: Bool
+    @State private var isSaving = false
+    @State private var confirmingDelete = false
+    @State private var errorMessage: String?
+
+    init(task: AppleReminderTask, data: WeeklyPlannerData, store: AppleRemindersStore) {
+        self.task = task
+        self.data = data
+        self.store = store
+        _title = State(initialValue: task.title)
+        _dueDate = State(initialValue: task.dueAt ?? WeekDate.calendarDate(
+            task.dueDate,
+            hour: 9,
+            timeZoneIdentifier: data.household.timezone
+        ))
+        _includesTime = State(initialValue: !task.isAllDay)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Apple Reminder") {
+                    TextField("What needs doing?", text: $title, axis: .vertical)
+                        .lineLimit(3...7)
+                        .disabled(!canEdit)
+                    LabeledContent("List", value: task.listTitle)
+                    if task.isRecurring {
+                        Label("Recurring reminders can be completed here, but their details and series are managed in Apple Reminders.", systemImage: "repeat")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else if !task.canModify {
+                        Label("This Reminders list is read-only.", systemImage: "lock.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section("Due") {
+                    DatePicker("Date", selection: $dueDate, displayedComponents: [.date])
+                        .disabled(!canEdit)
+                    Toggle("Include due time", isOn: $includesTime)
+                        .disabled(!canEdit)
+                    if includesTime {
+                        DatePicker("Time", selection: $dueDate, displayedComponents: [.hourAndMinute])
+                            .disabled(!canEdit)
+                    }
+                }
+                if canEdit {
+                    Section {
+                        Button("Delete from Apple Reminders", role: .destructive) { confirmingDelete = true }
+                    }
+                }
+                if let errorMessage {
+                    Section { Text(errorMessage).font(.footnote).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Apple Reminder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(canEdit ? "Cancel" : "Done") { dismiss() } }
+                if canEdit {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
+                            .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                    }
+                }
+            }
+            .confirmationDialog("Delete this reminder from Apple Reminders?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button("Delete reminder", role: .destructive) { Task { await delete() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This deletes it for everyone who shares the Apple Reminders list.")
+            }
+        }
+        .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+    }
+
+    private var canEdit: Bool { task.canModify && !task.isRecurring }
+
+    private func save() async {
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            try await store.update(
+                task,
+                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                dueDate: dueDate,
+                includesTime: includesTime,
+                timeZoneIdentifier: data.household.timezone
+            )
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func delete() async {
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
+        do {
+            try await store.delete(task)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

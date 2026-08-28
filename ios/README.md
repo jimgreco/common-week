@@ -21,6 +21,8 @@ Sign-in starts the existing Google OAuth flow in `ASWebAuthenticationSession`. T
 
 After sign-in, iPhone Settings can connect or reconnect Google Calendar, request the separate editing permission, refresh calendar discovery, manage each calendar's Hide, Private, Share, alias, badge, and planner-section settings, and configure notification delivery without leaving the app. Calendar search, RSVP, reminders, and recurring occurrence-or-series controls are native as well. Google tokens and database credentials remain server-side.
 
+Apple Reminders is an optional, device-local task source. After granting full Reminders access, each signed-in user selects the lists to show and can choose Week of Us or a writable selected list as the default destination for new daily tasks. Only reminders with due dates appear. Open overdue reminders use the same carry-forward placement and label as native daily tasks without changing their Apple due date. Weekly quick-add always creates a Week of Us task. Apple reminders can be completed or reopened; non-recurring reminders on writable lists can also be edited or deleted. Recurring reminders are completion-only, and no Apple Reminders data is uploaded to the server or displayed on the web.
+
 For push delivery, enable Push Notifications for `com.jimgreco.commonweek` and use a provisioning profile containing `aps-environment`. The app requests notification permission only when the user enables push, registers the APNs token with the server, and keeps the token associated with the signed-in account.
 
 ## Offline and live synchronization
