@@ -272,6 +272,37 @@ final class WeekDateTests: XCTestCase {
         XCTAssertEqual(placement?.carryoverCount, 10)
     }
 
+    func testWritableRecurringAppleReminderCanEditAndDeleteSeries() {
+        let task = AppleReminderTask(
+            id: "reminder-1",
+            title: "Water plants",
+            notes: "Use the watering can",
+            url: "https://example.com/plants",
+            priority: .medium,
+            listId: "list-1",
+            listTitle: "Home",
+            dueDate: "2026-08-28",
+            displayDate: "2026-08-28",
+            dueAt: nil,
+            dueTimeLabel: nil,
+            isAllDay: true,
+            isCompleted: false,
+            canModify: true,
+            isRecurring: true,
+            carryoverCount: 0
+        )
+
+        XCTAssertTrue(task.canEditDetails)
+        XCTAssertTrue(task.canDelete)
+    }
+
+    func testAppleReminderPriorityNormalizesEventKitValues() {
+        XCTAssertEqual(AppleReminderPriority(eventKitValue: 0), .none)
+        XCTAssertEqual(AppleReminderPriority(eventKitValue: 2), .high)
+        XCTAssertEqual(AppleReminderPriority(eventKitValue: 5), .medium)
+        XCTAssertEqual(AppleReminderPriority(eventKitValue: 8), .low)
+    }
+
     func testOfflineStoreFindsTheMostRecentPriorSnapshotForCrossWeekCarryover() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "week-of-us-carryover-tests-\(UUID().uuidString)", directoryHint: .isDirectory)

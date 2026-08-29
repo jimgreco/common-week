@@ -146,6 +146,10 @@ struct AppleReminderEditorView: View {
     @ObservedObject var store: AppleRemindersStore
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
+    @State private var notes: String
+    @State private var urlText: String
+    @State private var priority: AppleReminderPriority
+    @State private var listId: String
     @State private var dueDate: Date
     @State private var includesTime: Bool
     @State private var isSaving = false
@@ -157,6 +161,10 @@ struct AppleReminderEditorView: View {
         self.data = data
         self.store = store
         _title = State(initialValue: task.title)
+        _notes = State(initialValue: task.notes ?? "")
+        _urlText = State(initialValue: task.url ?? "")
+        _priority = State(initialValue: task.priority)
+        _listId = State(initialValue: task.listId)
         _dueDate = State(initialValue: task.dueAt ?? WeekDate.calendarDate(
             task.dueDate,
             hour: 9,
@@ -172,9 +180,16 @@ struct AppleReminderEditorView: View {
                     TextField("What needs doing?", text: $title, axis: .vertical)
                         .lineLimit(3...7)
                         .disabled(!canEdit)
-                    LabeledContent("List", value: task.listTitle)
+                    Picker("List", selection: $listId) {
+                        ForEach(listChoices) { list in
+                            Text(list.title).tag(list.id)
+                        }
+                    }
+                    .disabled(!canEdit)
                     if task.isRecurring {
-                        Label("Recurring reminders can be completed here, but their details and series are managed in Apple Reminders.", systemImage: "repeat")
+                        Label(canEdit
+                              ? "Changes update the recurring reminder while keeping its repeat schedule."
+                              : "This recurring reminder is on a read-only list.", systemImage: canEdit ? "repeat" : "lock.fill")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else if !task.canModify {
@@ -193,7 +208,22 @@ struct AppleReminderEditorView: View {
                             .disabled(!canEdit)
                     }
                 }
-                if canEdit {
+                Section("Details") {
+                    TextField("Notes", text: $notes, axis: .vertical)
+                        .lineLimit(3...7)
+                        .disabled(!canEdit)
+                    Picker("Priority", selection: $priority) {
+                        ForEach(AppleReminderPriority.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .disabled(!canEdit)
+                    TextField("URL", text: $urlText)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .disabled(!canEdit)
+                }
+                if task.canDelete {
                     Section {
                         Button("Delete from Apple Reminders", role: .destructive) { confirmingDelete = true }
                     }
@@ -213,26 +243,50 @@ struct AppleReminderEditorView: View {
                     }
                 }
             }
-            .confirmationDialog("Delete this reminder from Apple Reminders?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                Button("Delete reminder", role: .destructive) { Task { await delete() } }
+            .confirmationDialog(task.isRecurring ? "Delete this recurring reminder?" : "Delete this reminder from Apple Reminders?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button(task.isRecurring ? "Delete recurring series" : "Delete reminder", role: .destructive) { Task { await delete() } }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This deletes it for everyone who shares the Apple Reminders list.")
+                Text(task.isRecurring
+                     ? "This deletes the entire recurring series from Apple Reminders, not just the reminder shown here. This cannot be undone."
+                     : "This deletes it for everyone who shares the Apple Reminders list. This cannot be undone.")
             }
         }
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
     }
 
-    private var canEdit: Bool { task.canModify && !task.isRecurring }
+    private var canEdit: Bool { task.canEditDetails }
+
+    private var listChoices: [AppleReminderList] {
+        let writable = store.writableSelectedLists
+        guard !writable.contains(where: { $0.id == task.listId }) else { return writable }
+        let current = store.lists.first(where: { $0.id == task.listId })
+            ?? AppleReminderList(id: task.listId, title: task.listTitle, sourceTitle: "", canModify: task.canModify)
+        return [current] + writable
+    }
 
     private func save() async {
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
         do {
+            let trimmedURL = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let reminderURL: URL?
+            if trimmedURL.isEmpty {
+                reminderURL = nil
+            } else if let candidate = URL(string: trimmedURL), candidate.scheme != nil {
+                reminderURL = candidate
+            } else {
+                errorMessage = "Enter a complete URL, including https://."
+                return
+            }
             try await store.update(
                 task,
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                notes: notes,
+                url: reminderURL,
+                priority: priority,
+                listId: listId,
                 dueDate: dueDate,
                 includesTime: includesTime,
                 timeZoneIdentifier: data.household.timezone
@@ -732,8 +786,12 @@ struct CalendarEventEditorView: View {
                 Form {
                 Section("Event") {
                     TextField("Title", text: $title)
-                    Picker("Calendar", selection: $calendarId) { ForEach(data.editableCalendars) { Text($0.name).tag($0.id) } }
-                        .disabled(event != nil)
+                    Picker("Calendar", selection: $calendarId) { ForEach(calendarChoices) { Text($0.name).tag($0.id) } }
+                        .disabled(event != nil && !canMoveCalendar)
+                    if event != nil && canMoveCalendar && calendarChoices.count > 1 {
+                        Text("Moving an event changes its organizer calendar in Google Calendar.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                     Toggle("All-day event", isOn: $allDay)
                 }
                 Section("When") {
@@ -816,6 +874,10 @@ struct CalendarEventEditorView: View {
                         .pickerStyle(.segmented)
                         Text(recurringScope == "series" ? "Event details and times will be updated for the full series while its recurrence schedule stays intact." : "Only this occurrence will change.")
                             .font(.footnote).foregroundStyle(.secondary)
+                        if recurringScope == "occurrence" {
+                            Text("Choose Entire series to move this event to another calendar.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 if let event {
@@ -834,6 +896,11 @@ struct CalendarEventEditorView: View {
                     self.selectedLocationSuggestion = nil
                     locationSearchEnabled = true
                     locationSearchError = nil
+                }
+                .onChange(of: recurringScope) { _, scope in
+                    if scope == "occurrence", let sourceCalendarId = event?.calendarPreferenceId {
+                        calendarId = sourceCalendarId
+                    }
                 }
                 .navigationTitle(event == nil ? "Add event" : "Edit event")
                 .navigationBarTitleDisplayMode(.inline)
@@ -925,8 +992,19 @@ struct CalendarEventEditorView: View {
     private func save() async {
         isSaving = true
         let time = DateFormatter(); time.locale = Locale(identifier: "en_US_POSIX"); time.timeZone = TimeZone(identifier: data.household.timezone) ?? .current; time.dateFormat = "HH:mm"
-        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start, timeZoneIdentifier: data.household.timezone), endDate: WeekDate.string(end, timeZoneIdentifier: data.household.timezone), startTime: time.string(from: start), endTime: time.string(from: end), recurringEventId: event?.recurringEventId, recurringScope: event?.recurringEventId == nil ? nil : recurringScope)
+        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, sourceCalendarPreferenceId: event?.calendarPreferenceId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start, timeZoneIdentifier: data.household.timezone), endDate: WeekDate.string(end, timeZoneIdentifier: data.household.timezone), startTime: time.string(from: start), endTime: time.string(from: end), recurringEventId: event?.recurringEventId, recurringScope: event?.recurringEventId == nil ? nil : recurringScope)
         if await viewModel.saveEvent(draft, editing: event != nil) { dismiss() }
         isSaving = false
+    }
+
+    private var calendarChoices: [EditableCalendar] {
+        guard let event, let sourceUserId = event.sourceUserId else { return data.editableCalendars }
+        return data.editableCalendars.filter {
+            $0.id == event.calendarPreferenceId || $0.sourceUserId == sourceUserId
+        }
+    }
+
+    private var canMoveCalendar: Bool {
+        event?.recurringEventId == nil || recurringScope == "series"
     }
 }

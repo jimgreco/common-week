@@ -26,6 +26,7 @@ enum PlannerSheet: Identifiable {
 
 private enum PlannerDestination: String, CaseIterable, Identifiable {
     case calendar
+    case events
     case plans
     case tasks
 
@@ -34,6 +35,7 @@ private enum PlannerDestination: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .calendar: "Calendar"
+        case .events: "Events"
         case .plans: "Plans"
         case .tasks: "Tasks"
         }
@@ -41,16 +43,18 @@ private enum PlannerDestination: String, CaseIterable, Identifiable {
 
     var accessibilityTitle: String {
         switch self {
-        case .calendar: "Daily calendar"
-        case .plans: "Weekly plans"
-        case .tasks: "Weekly tasks"
+        case .calendar: "Daily planner"
+        case .events: "Weekly events"
+        case .plans: "Weekly and daily plans"
+        case .tasks: "Weekly and daily tasks"
         }
     }
 
     var icon: String {
         switch self {
         case .calendar: "calendar"
-        case .plans: "list.bullet"
+        case .events: "list.bullet.rectangle"
+        case .plans: "note.text"
         case .tasks: "checkmark.square"
         }
     }
@@ -170,10 +174,12 @@ struct PlannerView: View {
         switch selectedDestination {
         case .calendar:
             dayPager(data)
+        case .events:
+            WeeklyEventsList(data: data, sheet: $sheet)
         case .plans:
-            WeeklyItemsCard(type: .note, data: data, viewModel: viewModel, sheet: $sheet)
+            WeeklyItemsList(type: .note, data: data, viewModel: viewModel, appleReminders: appleReminders, sheet: $sheet)
         case .tasks:
-            WeeklyItemsCard(type: .task, data: data, viewModel: viewModel, sheet: $sheet)
+            WeeklyItemsList(type: .task, data: data, viewModel: viewModel, appleReminders: appleReminders, sheet: $sheet)
         }
     }
 
@@ -409,46 +415,196 @@ private struct LoadingWeekView: View {
     }
 }
 
-private struct WeeklyItemsCard: View {
+private struct WeeklyEventsList: View {
+    let data: WeeklyPlannerData
+    @Binding var sheet: PlannerSheet?
+
+    var body: some View {
+        LazyVStack(spacing: 14) {
+            CardSurface {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Weekly events")
+                        .font(CWTheme.display(28))
+                        .tracking(-0.7)
+                    Text("Every calendar event this week, grouped by day")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+
+            ForEach(data.days) { day in
+                DailyEventsCard(
+                    day: day,
+                    timeZoneIdentifier: data.household.timezone,
+                    canAddEvent: !data.editableCalendars.isEmpty,
+                    sheet: $sheet
+                )
+            }
+        }
+    }
+}
+
+private struct DailyEventsCard: View {
+    let day: DayPlan
+    let timeZoneIdentifier: String
+    let canAddEvent: Bool
+    @Binding var sheet: PlannerSheet?
+
+    var body: some View {
+        CardSurface {
+            VStack(alignment: .leading, spacing: 13) {
+                dayHeading(day.date, timeZoneIdentifier: timeZoneIdentifier)
+                if day.events.isEmpty {
+                    Text("No events")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                } else {
+                    ForEach(day.events) { event in
+                        CalendarEventRow(event: event, isSupplemental: event.sectionGroup == "supplemental") {
+                            sheet = .event(event)
+                        }
+                    }
+                }
+                if canAddEvent {
+                    addListButton("Add event", icon: "calendar.badge.plus") {
+                        sheet = .newEvent(day.date)
+                    }
+                }
+            }
+            .padding(18)
+        }
+    }
+}
+
+private struct WeeklyItemsList: View {
     let type: PlanningItemType
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
+    @ObservedObject var appleReminders: AppleRemindersStore
     @Binding var sheet: PlannerSheet?
 
     private var items: [PlanningItem] { data.weeklyItems.filter { $0.type == type } }
     private var isPlans: Bool { type == .note }
 
     var body: some View {
-        CardSurface {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(isPlans ? "Weekly plans" : "Weekly tasks")
-                        .font(CWTheme.display(28))
-                        .tracking(-0.7)
-                    Text(isPlans ? "Notes and plans that belong to the whole week" : "Tasks that don’t belong to a specific day")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        LazyVStack(spacing: 14) {
+            CardSurface {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(isPlans ? "All plans" : "All tasks")
+                            .font(CWTheme.display(28))
+                            .tracking(-0.7)
+                        Text(isPlans ? "Whole-week plans first, followed by each day" : "Whole-week tasks first, followed by each day")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Eyebrow(text: isPlans ? "This week’s plans" : "This week’s tasks")
+                    if items.isEmpty {
+                        Text(isPlans ? "No weekly plans yet" : "No weekly tasks yet")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(items) { item in
+                            PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: nil, type: item.type) }
+                        }
+                    }
+                    Button { sheet = .item(nil, date: nil, type: type) } label: {
+                        Label(isPlans ? "Add a weekly plan" : "Add a weekly task", systemImage: "plus")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(CWTheme.accent)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 44)
+                    }
+                    .buttonStyle(.plain)
                 }
-                Eyebrow(text: isPlans ? "Plans & notes" : "Tasks")
-                if items.isEmpty {
-                    Text(isPlans ? "No weekly plans yet" : "No weekly tasks yet")
+                .padding(20)
+            }
+
+            ForEach(data.days) { day in
+                DailyItemsCard(
+                    type: type,
+                    day: day,
+                    timeZoneIdentifier: data.household.timezone,
+                    viewModel: viewModel,
+                    appleReminders: appleReminders,
+                    sheet: $sheet
+                )
+            }
+        }
+    }
+}
+
+private struct DailyItemsCard: View {
+    let type: PlanningItemType
+    let day: DayPlan
+    let timeZoneIdentifier: String
+    @ObservedObject var viewModel: PlannerViewModel
+    @ObservedObject var appleReminders: AppleRemindersStore
+    @Binding var sheet: PlannerSheet?
+
+    private var items: [PlanningItem] { day.items.filter { $0.type == type } }
+    private var reminderTasks: [AppleReminderTask] { type == .task ? appleReminders.tasks(for: day.date) : [] }
+    private var isPlans: Bool { type == .note }
+
+    var body: some View {
+        CardSurface {
+            VStack(alignment: .leading, spacing: 13) {
+                dayHeading(day.date, timeZoneIdentifier: timeZoneIdentifier)
+                if items.isEmpty && reminderTasks.isEmpty {
+                    Text(isPlans ? "No plans" : "No tasks")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .italic()
                 } else {
                     ForEach(items) { item in
-                        PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: nil, type: item.type) }
+                        PlanningItemRow(item: item, viewModel: viewModel) {
+                            sheet = .item(item, date: day.date, type: item.type)
+                        }
+                    }
+                    ForEach(reminderTasks) { task in
+                        AppleReminderRow(task: task, store: appleReminders) {
+                            sheet = .appleReminder(task)
+                        }
                     }
                 }
-                Button { sheet = .item(nil, date: nil, type: type) } label: {
-                    Label(isPlans ? "Add a weekly plan" : "Add a weekly task", systemImage: "plus")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(CWTheme.accent)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: 44)
+                addListButton(isPlans ? "Add a plan" : "Add a task", icon: "plus") {
+                    sheet = .item(nil, date: day.date, type: type)
                 }
-                .buttonStyle(.plain)
-            }.padding(20)
+            }
+            .padding(18)
         }
     }
+}
+
+private func dayHeading(_ date: String, timeZoneIdentifier: String) -> some View {
+    HStack(spacing: 8) {
+        Text(WeekDate.longDay(date))
+            .font(CWTheme.display(22))
+            .tracking(-0.4)
+        Spacer()
+        if WeekDate.isToday(date, timeZoneIdentifier: timeZoneIdentifier) {
+            Text("TODAY")
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .tracking(1)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(CWTheme.brand, in: Capsule())
+        }
+    }
+}
+
+private func addListButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Label(title, systemImage: icon)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(CWTheme.accent)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 42)
+    }
+    .buttonStyle(.plain)
 }

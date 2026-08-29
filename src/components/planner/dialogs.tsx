@@ -202,6 +202,7 @@ function initialEventDraft(date: string, calendars: EditableCalendar[], timeZone
   return {
     requestId: crypto.randomUUID(),
     calendarPreferenceId: event.calendarPreferenceId ?? "",
+    sourceCalendarPreferenceId: event.calendarPreferenceId,
     providerEventId: event.providerEventId,
     etag: event.etag,
     recurringEventId: event.recurringEventId,
@@ -244,6 +245,10 @@ export function CalendarEventEditorDialog({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editing = Boolean(event);
+  const calendarChoices = editing && event?.sourceUserId
+    ? calendars.filter((calendar) => calendar.id === event.calendarPreferenceId || calendar.sourceUserId === event.sourceUserId)
+    : calendars;
+  const canMoveCalendar = !event?.recurringEventId || draft.recurringScope === "series";
 
   return (
     <Modal title={editing ? event?.recurringEventId ? "Edit event occurrence" : "Edit Google event" : "Add Google event"} onClose={onClose}>
@@ -258,8 +263,19 @@ export function CalendarEventEditorDialog({
       }}>
         <div className="modal-body form-stack calendar-event-form">
           <label>Title<input data-modal-autofocus value={draft.title} required maxLength={1000} onChange={(change) => setDraft({ ...draft, title: change.target.value })} /></label>
-          <label>Calendar<select value={draft.calendarPreferenceId} disabled={editing} onChange={(change) => setDraft({ ...draft, calendarPreferenceId: change.target.value })}>{calendars.map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.name}</option>)}</select></label>
-          {event?.recurringEventId && <label>Apply changes to<select value={draft.recurringScope ?? "occurrence"} onChange={(change) => setDraft({ ...draft, recurringScope: change.target.value as "occurrence" | "series" })}><option value="occurrence">This occurrence</option><option value="series">Entire series</option></select></label>}
+          <label>Calendar<select value={draft.calendarPreferenceId} disabled={editing && !canMoveCalendar} onChange={(change) => setDraft({ ...draft, calendarPreferenceId: change.target.value })}>{calendarChoices.map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.name}</option>)}</select></label>
+          {event?.recurringEventId && <label>Apply changes to<select value={draft.recurringScope ?? "occurrence"} onChange={(change) => {
+            const recurringScope = change.target.value as "occurrence" | "series";
+            setDraft({
+              ...draft,
+              recurringScope,
+              calendarPreferenceId: recurringScope === "occurrence"
+                ? draft.sourceCalendarPreferenceId ?? draft.calendarPreferenceId
+                : draft.calendarPreferenceId,
+            });
+          }}><option value="occurrence">This occurrence</option><option value="series">Entire series</option></select></label>}
+          {editing && event?.recurringEventId && !canMoveCalendar && <p className="event-edit-note">Choose Entire series to move this recurring event to another calendar.</p>}
+          {editing && canMoveCalendar && calendarChoices.length > 1 && <p className="event-edit-note">Moving an event changes its organizer calendar in Google Calendar.</p>}
           <label className="all-day-control"><input type="checkbox" checked={draft.allDay} onChange={(change) => setDraft({ ...draft, allDay: change.target.checked })} /><span>All-day event</span></label>
           <div className="event-date-row">
             <label>Starts<input type="date" value={draft.startDate} disabled={draft.recurringScope === "series"} required onChange={(change) => setDraft({ ...draft, startDate: change.target.value, endDate: draft.endDate < change.target.value ? change.target.value : draft.endDate })} /></label>

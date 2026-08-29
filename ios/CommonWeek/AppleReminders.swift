@@ -37,9 +37,39 @@ struct AppleReminderList: Identifiable, Hashable {
     let canModify: Bool
 }
 
+enum AppleReminderPriority: Int, CaseIterable, Identifiable, Hashable {
+    case none = 0
+    case high = 1
+    case medium = 5
+    case low = 9
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .none: "None"
+        case .high: "High"
+        case .medium: "Medium"
+        case .low: "Low"
+        }
+    }
+
+    init(eventKitValue: Int) {
+        switch eventKitValue {
+        case 1...4: self = .high
+        case 5: self = .medium
+        case 6...9: self = .low
+        default: self = .none
+        }
+    }
+}
+
 struct AppleReminderTask: Identifiable, Hashable {
     let id: String
     let title: String
+    let notes: String?
+    let url: String?
+    let priority: AppleReminderPriority
     let listId: String
     let listTitle: String
     let dueDate: String
@@ -55,6 +85,9 @@ struct AppleReminderTask: Identifiable, Hashable {
     var carryoverLabel: String? {
         carryoverCount > 0 ? "Carried from \(WeekDate.longDay(dueDate))" : nil
     }
+
+    var canEditDetails: Bool { canModify }
+    var canDelete: Bool { canModify }
 
 }
 
@@ -98,7 +131,6 @@ enum AppleRemindersError: LocalizedError {
     case listUnavailable
     case reminderUnavailable
     case readOnly
-    case recurringMutation
 
     var errorDescription: String? {
         switch self {
@@ -106,7 +138,6 @@ enum AppleRemindersError: LocalizedError {
         case .listUnavailable: "That Reminders list is no longer available."
         case .reminderUnavailable: "That reminder changed or is no longer available."
         case .readOnly: "That Reminders list is read-only."
-        case .recurringMutation: "Recurring reminders can be completed here, but not edited or deleted."
         }
     }
 }
@@ -293,15 +324,28 @@ final class AppleRemindersStore: ObservableObject {
     func update(
         _ task: AppleReminderTask,
         title: String,
+        notes: String,
+        url: URL?,
+        priority: AppleReminderPriority,
+        listId: String,
         dueDate: Date,
         includesTime: Bool,
         timeZoneIdentifier: String
     ) async throws {
         try requireAccess()
-        guard !task.isRecurring else { throw AppleRemindersError.recurringMutation }
         let reminder = try reminder(for: task)
         guard reminder.calendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
+        guard let targetCalendar = eventStore.calendar(withIdentifier: listId) else {
+            throw AppleRemindersError.listUnavailable
+        }
+        guard targetCalendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
         reminder.title = title
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        reminder.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+        reminder.url = url
+        reminder.priority = priority.rawValue
+        reminder.calendar = targetCalendar
+        // Recurrence rules intentionally remain untouched; these edits apply to the reminder series metadata.
         let components = dueComponents(
             from: dueDate,
             includesTime: includesTime,
@@ -318,9 +362,9 @@ final class AppleRemindersStore: ObservableObject {
 
     func delete(_ task: AppleReminderTask) async throws {
         try requireAccess()
-        guard !task.isRecurring else { throw AppleRemindersError.recurringMutation }
         let reminder = try reminder(for: task)
         guard reminder.calendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
+        // EventKit has no occurrence-span overload for reminders, so removing a recurring reminder removes its series.
         try eventStore.remove(reminder, commit: true)
         await reloadVisibleWeek()
         show("Reminder deleted")
@@ -399,6 +443,9 @@ final class AppleRemindersStore: ObservableObject {
         return AppleReminderTask(
             id: reminder.calendarItemIdentifier,
             title: reminder.title ?? "Untitled reminder",
+            notes: reminder.notes,
+            url: reminder.url?.absoluteString,
+            priority: AppleReminderPriority(eventKitValue: reminder.priority),
             listId: reminder.calendar.calendarIdentifier,
             listTitle: reminder.calendar.title,
             dueDate: dueDate,

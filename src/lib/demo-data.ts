@@ -206,8 +206,8 @@ export function getDemoPlannerData(requestedWeek?: string): WeeklyPlannerData {
     calendarState: { status: "ready" },
     weatherState: { status: "ready" },
     editableCalendars: [
-      { id: "demo-F", name: "Family", color: "#688173", sectionGroup: "critical" },
-      { id: "demo-J", name: "Jim", color: "#587f9b", sectionGroup: "supplemental" },
+      { id: "demo-F", sourceUserId: "demo-jim", name: "Family", color: "#688173", sectionGroup: "critical" },
+      { id: "demo-J", sourceUserId: "demo-jim", name: "Jim", color: "#587f9b", sectionGroup: "supplemental" },
     ],
     isDemo: true,
   };

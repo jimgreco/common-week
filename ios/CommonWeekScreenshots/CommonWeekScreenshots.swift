@@ -13,7 +13,7 @@ final class CommonWeekScreenshots: XCTestCase {
         launchDemo()
         snapshot("01-Shared-Week")
 
-        let tasks = app.buttons["Weekly tasks"]
+        let tasks = app.buttons["Weekly and daily tasks"]
         XCTAssertTrue(tasks.waitForExistence(timeout: 5))
         tasks.tap()
         XCTAssertTrue(app.descendants(matching: .any)["Order groceries"].waitForExistence(timeout: 5))
@@ -46,7 +46,7 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.staticTexts["WEEKLY PLAN"].waitForExistence(timeout: 20))
 
         let taskText = "Simulator save task"
-        app.buttons["Weekly tasks"].tap()
+        app.buttons["Weekly and daily tasks"].tap()
         XCTAssertTrue(app.buttons["Add a weekly task"].waitForExistence(timeout: 5))
         app.buttons["Add a weekly task"].tap()
         let taskField = app.textFields["What needs doing?"]
@@ -57,7 +57,7 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.buttons[taskText].waitForExistence(timeout: 10))
 
         let noteText = "Simulator save note"
-        app.buttons["Weekly plans"].tap()
+        app.buttons["Weekly and daily plans"].tap()
         XCTAssertTrue(app.buttons["Add a weekly plan"].waitForExistence(timeout: 5))
         app.buttons["Add a weekly plan"].tap()
         let noteField = app.textFields["What are you planning?"]
@@ -102,6 +102,32 @@ final class CommonWeekScreenshots: XCTestCase {
         )
     }
 
+    func testPlannerContentTabsShowFullWeekRollups() throws {
+        launchDemo()
+
+        XCTAssertTrue(app.buttons["Daily planner"].exists)
+        XCTAssertTrue(app.buttons["Weekly events"].exists)
+        XCTAssertTrue(app.buttons["Weekly and daily plans"].exists)
+        XCTAssertTrue(app.buttons["Weekly and daily tasks"].exists)
+
+        app.buttons["Weekly events"].tap()
+        XCTAssertTrue(app.staticTexts["Weekly events"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["Camp"].waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Weekly events rollup")
+
+        app.buttons["Weekly and daily plans"].tap()
+        XCTAssertTrue(app.staticTexts["All plans"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["Keep Saturday afternoon open"].waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToExistence(app.descendants(matching: .any)["Dinner: Pasta"]))
+        attachCurrentScreen(named: "Weekly and daily plans rollup")
+
+        app.buttons["Weekly and daily tasks"].tap()
+        XCTAssertTrue(app.staticTexts["All tasks"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["Order groceries"].waitForExistence(timeout: 5))
+        XCTAssertTrue(scrollToExistence(app.descendants(matching: .any)["Groceries"]))
+        attachCurrentScreen(named: "Weekly and daily tasks rollup")
+    }
+
     private func launchDemo() {
         setupSnapshot(app)
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
@@ -120,5 +146,12 @@ final class CommonWeekScreenshots: XCTestCase {
             if element.waitForExistence(timeout: 1) { return true }
         }
         return element.exists
+    }
+
+    private func attachCurrentScreen(named name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

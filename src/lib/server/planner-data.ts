@@ -281,6 +281,7 @@ export async function getPlannerData(
       .filter((calendar) => writablePreferenceIds.has(calendar.id))
       .map((calendar) => ({
         id: calendar.id,
+        sourceUserId: calendar.user_id,
         name: calendar.display_alias ?? calendar.calendar_name,
         color: calendar.color,
         sectionGroup: calendar.section_group,

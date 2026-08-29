@@ -135,6 +135,7 @@ export type GoogleCalendarAccessRole =
 
 export interface EditableCalendar {
   id: string;
+  sourceUserId?: string;
   name: string;
   color: string;
   sectionGroup: CalendarSectionGroup;
@@ -143,6 +144,7 @@ export interface EditableCalendar {
 export interface CalendarEventDraft {
   requestId: string;
   calendarPreferenceId: string;
+  sourceCalendarPreferenceId?: string;
   providerEventId?: string;
   etag?: string;
   title: string;

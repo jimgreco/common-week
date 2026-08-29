@@ -17,6 +17,7 @@ const dateOnly = z.string().refine(isDateOnly, "Choose a valid date.");
 const eventDraftSchema = z.object({
   requestId: z.string().uuid(),
   calendarPreferenceId: z.string().uuid(),
+  sourceCalendarPreferenceId: z.string().uuid().optional(),
   providerEventId: z.string().trim().min(1).max(1024).optional(),
   etag: z.string().trim().min(1).max(1024).optional(),
   title: z.string().trim().min(1).max(1000),
@@ -123,24 +124,53 @@ export async function updateCalendarEventAction(input: CalendarEventDraft): Prom
   try {
     const draft = eventDraftSchema.parse(input);
     if (!draft.providerEventId || !draft.etag) throw new Error("Refresh the week before editing this event.");
-    const { context, calendar, accessToken } = await requireWritableCalendar(draft.calendarPreferenceId);
+    const sourcePreferenceId = draft.sourceCalendarPreferenceId ?? draft.calendarPreferenceId;
+    const { context, calendar: sourceCalendar, accessToken } = await requireWritableCalendar(sourcePreferenceId);
+    const destination = draft.calendarPreferenceId === sourcePreferenceId
+      ? { calendar: sourceCalendar }
+      : await requireWritableCalendar(draft.calendarPreferenceId);
+    if (destination.calendar.calendar_owner_user_id !== sourceCalendar.calendar_owner_user_id) {
+      throw new Error("Events can only move between calendars connected through the same Google account.");
+    }
+    const movingCalendars = destination.calendar.google_calendar_id !== sourceCalendar.google_calendar_id;
+    if (movingCalendars && draft.recurringEventId && draft.recurringScope !== "series") {
+      throw new Error("Choose Entire series before moving a recurring event to another calendar.");
+    }
     const targetEventId = draft.recurringScope === "series" && draft.recurringEventId
       ? draft.recurringEventId
       : draft.providerEventId;
-    const current = await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, targetEventId);
+    const current = await googleCalendarService.getEvent(accessToken, sourceCalendar.google_calendar_id, targetEventId);
     if (!current.etag || (targetEventId === draft.providerEventId && current.etag !== draft.etag)) {
       return { ok: false, error: "This event changed in Google Calendar. Refresh the week and try again." };
     }
+    if (movingCalendars && current.eventType && current.eventType !== "default") {
+      throw new Error("Google only allows regular events to move between calendars.");
+    }
     await googleCalendarService.updateEvent(
       accessToken,
-      calendar.google_calendar_id,
+      sourceCalendar.google_calendar_id,
       targetEventId,
       current.etag,
       targetEventId === draft.providerEventId
-        ? buildGoogleCalendarEventInput(draft, calendar.timezone)
-        : buildGoogleCalendarSeriesInput(draft, current, calendar.timezone),
+        ? buildGoogleCalendarEventInput(draft, sourceCalendar.timezone)
+        : buildGoogleCalendarSeriesInput(draft, current, sourceCalendar.timezone),
     );
-    await finishMutation(calendar.calendar_owner_user_id, context.householdId);
+    if (movingCalendars) {
+      try {
+        await googleCalendarService.moveEvent(
+          accessToken,
+          sourceCalendar.google_calendar_id,
+          targetEventId,
+          destination.calendar.google_calendar_id,
+        );
+      } catch (error) {
+        if (error instanceof GoogleCalendarApiError && error.statusCode === 400) {
+          throw new Error("Google does not allow this event to move to that calendar.");
+        }
+        throw error;
+      }
+    }
+    await finishMutation(sourceCalendar.calendar_owner_user_id, context.householdId);
     await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,

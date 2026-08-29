@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   deleteEvent: vi.fn(),
   getEvent: vi.fn(),
   getGoogleAccessToken: vi.fn(),
+  moveEvent: vi.fn(),
   patchEvent: vi.fn(),
   queueHouseholdChange: vi.fn(),
   query: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("@/lib/integrations/google-calendar", () => {
       createEvent: (...args: unknown[]) => mocks.createEvent(...args),
       deleteEvent: (...args: unknown[]) => mocks.deleteEvent(...args),
       getEvent: (...args: unknown[]) => mocks.getEvent(...args),
+      moveEvent: (...args: unknown[]) => mocks.moveEvent(...args),
       patchEvent: (...args: unknown[]) => mocks.patchEvent(...args),
       updateEvent: (...args: unknown[]) => mocks.updateEvent(...args),
     },
@@ -59,6 +61,7 @@ describe("Google Calendar write privacy", () => {
     mocks.createEvent.mockResolvedValue({ id: "event-1" });
     mocks.deleteEvent.mockResolvedValue(undefined);
     mocks.getEvent.mockResolvedValue({ id: "occurrence-1", etag: "etag-1", recurringEventId: "series-1" });
+    mocks.moveEvent.mockResolvedValue({ id: "occurrence-1", etag: "etag-moved" });
     mocks.updateEvent.mockResolvedValue({ id: "occurrence-1" });
     mocks.patchEvent.mockResolvedValue({ id: "occurrence-1" });
   });
@@ -185,6 +188,155 @@ describe("Google Calendar write privacy", () => {
       "etag-1",
       expect.objectContaining({ summary: "Weekly lesson, later" }),
     );
+  });
+
+  it("moves an edited event between calendars on the same Google connection", async () => {
+    const sourcePreferenceId = "00000000-0000-4000-8000-000000000011";
+    const destinationPreferenceId = "00000000-0000-4000-8000-000000000012";
+    mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("from calendar_preferences")) {
+        const destination = params?.[0] === destinationPreferenceId;
+        return {
+          rows: [{
+            calendar_owner_user_id: "member-a",
+            google_calendar_id: destination ? "personal@example.com" : "family@example.com",
+            access_role: "owner",
+            visibility: "private",
+            actor_role: "member",
+            scope: "calendar.events",
+            timezone: "America/New_York",
+          }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+    mocks.getEvent.mockResolvedValue({
+      id: "event-1",
+      etag: "etag-1",
+      eventType: "default",
+      start: { dateTime: "2026-08-14T10:00:00-04:00" },
+      end: { dateTime: "2026-08-14T11:00:00-04:00" },
+    });
+
+    const result = await updateCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      sourceCalendarPreferenceId: sourcePreferenceId,
+      calendarPreferenceId: destinationPreferenceId,
+      providerEventId: "event-1",
+      etag: "etag-1",
+      title: "Moved appointment",
+      description: "",
+      location: "",
+      allDay: false,
+      startDate: "2026-08-14",
+      endDate: "2026-08-14",
+      startTime: "10:00",
+      endTime: "11:00",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.updateEvent).toHaveBeenCalledWith(
+      "token-a",
+      "family@example.com",
+      "event-1",
+      "etag-1",
+      expect.objectContaining({ summary: "Moved appointment" }),
+    );
+    expect(mocks.moveEvent).toHaveBeenCalledWith(
+      "token-a",
+      "family@example.com",
+      "event-1",
+      "personal@example.com",
+    );
+  });
+
+  it("rejects calendar moves across different Google connections", async () => {
+    const sourcePreferenceId = "00000000-0000-4000-8000-000000000011";
+    const destinationPreferenceId = "00000000-0000-4000-8000-000000000012";
+    mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("from calendar_preferences")) {
+        const destination = params?.[0] === destinationPreferenceId;
+        return {
+          rows: [{
+            calendar_owner_user_id: destination ? "member-b" : "member-a",
+            google_calendar_id: destination ? "partner@example.com" : "family@example.com",
+            access_role: "owner",
+            visibility: "share",
+            actor_role: "member",
+            scope: "calendar.events",
+            timezone: "America/New_York",
+          }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const result = await updateCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      sourceCalendarPreferenceId: sourcePreferenceId,
+      calendarPreferenceId: destinationPreferenceId,
+      providerEventId: "event-1",
+      etag: "etag-1",
+      title: "Moved appointment",
+      description: "",
+      location: "",
+      allDay: false,
+      startDate: "2026-08-14",
+      endDate: "2026-08-14",
+      startTime: "10:00",
+      endTime: "11:00",
+    });
+
+    expect(result).toEqual({ ok: false, error: "Events can only move between calendars connected through the same Google account." });
+    expect(mocks.updateEvent).not.toHaveBeenCalled();
+    expect(mocks.moveEvent).not.toHaveBeenCalled();
+  });
+
+  it("requires a series edit before moving a recurring event", async () => {
+    const sourcePreferenceId = "00000000-0000-4000-8000-000000000011";
+    const destinationPreferenceId = "00000000-0000-4000-8000-000000000012";
+    mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes("from calendar_preferences")) {
+        return {
+          rows: [{
+            calendar_owner_user_id: "member-a",
+            google_calendar_id: params?.[0] === destinationPreferenceId ? "personal@example.com" : "family@example.com",
+            access_role: "owner",
+            visibility: "private",
+            actor_role: "member",
+            scope: "calendar.events",
+            timezone: "America/New_York",
+          }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const result = await updateCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      sourceCalendarPreferenceId: sourcePreferenceId,
+      calendarPreferenceId: destinationPreferenceId,
+      providerEventId: "occurrence-1",
+      recurringEventId: "series-1",
+      recurringScope: "occurrence",
+      etag: "etag-1",
+      title: "Weekly lesson",
+      description: "",
+      location: "",
+      allDay: false,
+      startDate: "2026-08-14",
+      endDate: "2026-08-14",
+      startTime: "10:00",
+      endTime: "11:00",
+    });
+
+    expect(result).toEqual({ ok: false, error: "Choose Entire series before moving a recurring event to another calendar." });
+    expect(mocks.getEvent).not.toHaveBeenCalled();
+    expect(mocks.updateEvent).not.toHaveBeenCalled();
+    expect(mocks.moveEvent).not.toHaveBeenCalled();
   });
 
   it("deletes one recurring occurrence after verifying its current ETag", async () => {

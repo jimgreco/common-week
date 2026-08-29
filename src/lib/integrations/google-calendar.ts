@@ -26,6 +26,7 @@ export interface GoogleCalendarEventInput {
 export interface GoogleCalendarEventResource extends GoogleCalendarEventInput {
   id: string;
   etag?: string;
+  eventType?: string;
   recurringEventId?: string;
   originalStartTime?: { date?: string; dateTime?: string };
   htmlLink?: string;
@@ -56,6 +57,7 @@ export interface GoogleCalendarService {
   getEvent(accessToken: string, calendarId: string, eventId: string): Promise<GoogleCalendarEventResource>;
   createEvent(accessToken: string, calendarId: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource>;
   updateEvent(accessToken: string, calendarId: string, eventId: string, etag: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource>;
+  moveEvent(accessToken: string, sourceCalendarId: string, eventId: string, destinationCalendarId: string): Promise<GoogleCalendarEventResource>;
   patchEvent(accessToken: string, calendarId: string, eventId: string, etag: string, patch: Record<string, unknown>, sendUpdates?: "all" | "none"): Promise<GoogleCalendarEventResource>;
   deleteEvent(accessToken: string, calendarId: string, eventId: string, etag: string): Promise<void>;
 }
@@ -244,6 +246,13 @@ export class GoogleCalendarApiService implements GoogleCalendarService {
       accessToken,
       { method: "PATCH", headers: { "If-Match": etag }, body: JSON.stringify(event) },
     );
+  }
+
+  async moveEvent(accessToken: string, sourceCalendarId: string, eventId: string, destinationCalendarId: string): Promise<GoogleCalendarEventResource> {
+    const url = new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(sourceCalendarId)}/events/${encodeURIComponent(eventId)}/move`);
+    url.searchParams.set("destination", destinationCalendarId);
+    url.searchParams.set("sendUpdates", "none");
+    return googleFetch<GoogleCalendarEventResource>(url, accessToken, { method: "POST" });
   }
 
   async patchEvent(accessToken: string, calendarId: string, eventId: string, etag: string, patch: Record<string, unknown>, sendUpdates: "all" | "none" = "none"): Promise<GoogleCalendarEventResource> {

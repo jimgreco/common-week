@@ -205,6 +205,95 @@ describe("CalendarEventEditorDialog", () => {
     expect(screen.getByLabelText("Location")).toHaveValue("The patio");
   });
 
+  it("moves an existing event to another calendar on the same Google connection", async () => {
+    const sourceId = "00000000-0000-4000-8000-000000000001";
+    const destinationId = "00000000-0000-4000-8000-000000000002";
+    const event: CalendarEvent = {
+      id: "family:event-1",
+      providerEventId: "event-1",
+      sourceUserId: "user-a",
+      calendarPreferenceId: sourceId,
+      etag: "etag-1",
+      canEdit: true,
+      title: "Dinner reservation",
+      start: "2026-08-15T19:00:00-04:00",
+      end: "2026-08-15T21:00:00-04:00",
+      allDay: false,
+      calendarId: "family",
+      calendarName: "Family",
+      calendarAlias: "Family",
+      calendarColor: "#688173",
+      attribution: "FA",
+      sectionGroup: "critical",
+    };
+    const onSave = vi.fn().mockResolvedValue(null);
+    render(<CalendarEventEditorDialog
+      date="2026-08-15"
+      event={event}
+      calendars={[
+        { ...calendars[0], sourceUserId: "user-a" },
+        { id: destinationId, sourceUserId: "user-a", name: "Personal", color: "#587f9b", sectionGroup: "supplemental" },
+        { id: "00000000-0000-4000-8000-000000000003", sourceUserId: "user-b", name: "Partner", color: "#999999", sectionGroup: "supplemental" },
+      ]}
+      timeZone="America/New_York"
+      onClose={vi.fn()}
+      onSave={onSave}
+      onDelete={vi.fn()}
+    />);
+
+    const calendar = screen.getByLabelText("Calendar");
+    expect(calendar).toBeEnabled();
+    expect(screen.queryByRole("option", { name: "Partner" })).not.toBeInTheDocument();
+    fireEvent.change(calendar, { target: { value: destinationId } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      sourceCalendarPreferenceId: sourceId,
+      calendarPreferenceId: destinationId,
+    })));
+  });
+
+  it("requires a series edit before moving a recurring event", () => {
+    const sourceId = "00000000-0000-4000-8000-000000000001";
+    const event: CalendarEvent = {
+      id: "family:occurrence-1",
+      providerEventId: "occurrence-1",
+      sourceUserId: "user-a",
+      calendarPreferenceId: sourceId,
+      etag: "etag-1",
+      recurringEventId: "series-1",
+      canEdit: true,
+      title: "Weekly lesson",
+      start: "2026-08-15T19:00:00-04:00",
+      end: "2026-08-15T21:00:00-04:00",
+      allDay: false,
+      calendarId: "family",
+      calendarName: "Family",
+      calendarAlias: "Family",
+      calendarColor: "#688173",
+      attribution: "FA",
+      sectionGroup: "critical",
+    };
+    render(<CalendarEventEditorDialog
+      date="2026-08-15"
+      event={event}
+      calendars={[
+        { ...calendars[0], sourceUserId: "user-a" },
+        { id: "00000000-0000-4000-8000-000000000002", sourceUserId: "user-a", name: "Personal", color: "#587f9b", sectionGroup: "supplemental" },
+      ]}
+      timeZone="America/New_York"
+      onClose={vi.fn()}
+      onSave={vi.fn()}
+      onDelete={vi.fn()}
+    />);
+
+    const calendar = screen.getByLabelText("Calendar");
+    expect(calendar).toBeDisabled();
+    expect(screen.getByText(/choose entire series to move/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Apply changes to"), { target: { value: "series" } });
+    expect(calendar).toBeEnabled();
+  });
+
   it("requires explicit confirmation before deleting from Google", async () => {
     const event: CalendarEvent = {
       id: "family:event-1",

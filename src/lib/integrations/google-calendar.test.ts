@@ -104,9 +104,10 @@ describe("GoogleCalendarApiService", () => {
     })]);
   });
 
-  it("creates, updates, and deletes through the selected calendar with concurrency headers", async () => {
+  it("creates, updates, moves, and deletes through the selected calendar with concurrency headers", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "event-2", summary: "Lunch", start: {}, end: {} }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "event-2", summary: "Lunch later", start: {}, end: {} }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "event-2", summary: "Lunch later", start: {}, end: {} }), { status: 200 }))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -119,11 +120,16 @@ describe("GoogleCalendarApiService", () => {
 
     await service.createEvent("opaque-token", "family@example.com", input);
     await service.updateEvent("opaque-token", "family@example.com", "event-2", "etag-1", { ...input, summary: "Lunch later" });
+    await service.moveEvent("opaque-token", "family@example.com", "event-2", "personal@example.com");
     await service.deleteEvent("opaque-token", "family@example.com", "event-2", "etag-2");
 
     expect(fetchMock.mock.calls[0][0].pathname).toBe("/calendar/v3/calendars/family%40example.com/events");
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST", body: JSON.stringify(input) });
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "PATCH", headers: { "If-Match": "etag-1" } });
-    expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "DELETE", headers: { "If-Match": "etag-2" } });
+    expect(fetchMock.mock.calls[2][0].pathname).toBe("/calendar/v3/calendars/family%40example.com/events/event-2/move");
+    expect(fetchMock.mock.calls[2][0].searchParams.get("destination")).toBe("personal@example.com");
+    expect(fetchMock.mock.calls[2][0].searchParams.get("sendUpdates")).toBe("none");
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "POST" });
+    expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: "DELETE", headers: { "If-Match": "etag-2" } });
   });
 });

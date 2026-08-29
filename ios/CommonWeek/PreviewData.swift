@@ -56,8 +56,8 @@ enum PreviewData {
             ],
             locations: [east, city],
             editableCalendars: [
-                EditableCalendar(id: "calendar-family", name: "Family", color: "#688173", sectionGroup: "critical"),
-                EditableCalendar(id: "calendar-personal", name: "Jim", color: "#587F9B", sectionGroup: "supplemental"),
+                EditableCalendar(id: "calendar-family", sourceUserId: "demo-jim", name: "Family", color: "#688173", sectionGroup: "critical"),
+                EditableCalendar(id: "calendar-personal", sourceUserId: "demo-jim", name: "Jim", color: "#587F9B", sectionGroup: "supplemental"),
             ],
             calendarState: PlannerSourceState(status: "ready", message: nil),
             weatherState: PlannerSourceState(status: "ready", message: nil),

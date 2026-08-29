@@ -233,6 +233,7 @@ struct CalendarAttendee: Codable, Hashable, Identifiable {
 
 struct EditableCalendar: Codable, Identifiable, Hashable {
     let id: String
+    let sourceUserId: String?
     let name: String
     let color: String
     let sectionGroup: String
@@ -289,6 +290,7 @@ struct PlannerSourceState: Codable {
 struct CalendarEventDraft: Encodable {
     let requestId: String
     let calendarPreferenceId: String
+    let sourceCalendarPreferenceId: String?
     let providerEventId: String?
     let etag: String?
     let title: String
