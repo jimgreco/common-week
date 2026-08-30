@@ -254,6 +254,10 @@ export async function getPlannerData(
       }))
       .map((calendar) => calendar.id),
   );
+  const visibleCalendarRows = accessibleCalendarsResult.rows.filter((calendar) => (
+    calendar.visibility === "share"
+    || (calendar.user_id === context.userId && calendar.visibility === "private")
+  ));
 
   return {
     household: {
@@ -297,7 +301,14 @@ export async function getPlannerData(
     }; }),
     weeklyItems: items.filter((item) => item.planningDate === null),
     locations,
-    editableCalendars: accessibleCalendarsResult.rows
+    visibleCalendars: visibleCalendarRows.map((calendar) => ({
+      id: calendar.id,
+      sourceUserId: calendar.user_id,
+      name: calendar.display_alias ?? calendar.calendar_name,
+      color: calendar.color,
+      sectionGroup: calendar.section_group,
+    })),
+    editableCalendars: visibleCalendarRows
       .filter((calendar) => writablePreferenceIds.has(calendar.id))
       .map((calendar) => ({
         id: calendar.id,

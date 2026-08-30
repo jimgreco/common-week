@@ -176,6 +176,19 @@ export interface EditableCalendar {
   sectionGroup: CalendarSectionGroup;
 }
 
+export type CalendarRecurrenceFrequency = "daily" | "weekly" | "monthly" | "yearly";
+
+export type CalendarRecurrenceWeekday = "MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU";
+
+export interface CalendarRecurrenceRule {
+  frequency: CalendarRecurrenceFrequency;
+  interval: number;
+  weekdays?: CalendarRecurrenceWeekday[];
+  ends: "never" | "onDate" | "afterCount";
+  untilDate?: string;
+  count?: number;
+}
+
 export interface CalendarEventDraft {
   requestId: string;
   calendarPreferenceId: string;
@@ -192,6 +205,8 @@ export interface CalendarEventDraft {
   endTime: string;
   recurringEventId?: string;
   recurringScope?: "occurrence" | "series";
+  recurrence?: CalendarRecurrenceRule;
+  guestEmails?: string[];
 }
 
 export type PlannerSearchResult =
@@ -252,6 +267,7 @@ export interface WeeklyPlannerData {
   days: DayPlan[];
   weeklyItems: PlanningItem[];
   locations: HouseholdLocation[];
+  visibleCalendars: EditableCalendar[];
   editableCalendars: EditableCalendar[];
   calendarState: PlannerSourceState;
   weatherState: PlannerSourceState;

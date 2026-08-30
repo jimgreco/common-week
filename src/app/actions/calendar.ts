@@ -14,6 +14,24 @@ import { queueHouseholdChange } from "@/lib/server/notifications";
 import type { ActionResult, CalendarEventDraft, CalendarResponseStatus, GoogleCalendarAccessRole } from "@/types/domain";
 
 const dateOnly = z.string().refine(isDateOnly, "Choose a valid date.");
+const recurrenceRuleSchema = z.object({
+  frequency: z.enum(["daily", "weekly", "monthly", "yearly"]),
+  interval: z.number().int().min(1).max(99),
+  weekdays: z.array(z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"])).max(7).optional(),
+  ends: z.enum(["never", "onDate", "afterCount"]),
+  untilDate: dateOnly.optional(),
+  count: z.number().int().min(1).max(999).optional(),
+}).superRefine((rule, context) => {
+  if (rule.frequency === "weekly" && !rule.weekdays?.length) {
+    context.addIssue({ code: "custom", message: "Choose at least one weekday." });
+  }
+  if (rule.ends === "onDate" && !rule.untilDate) {
+    context.addIssue({ code: "custom", message: "Choose when the recurrence ends." });
+  }
+  if (rule.ends === "afterCount" && !rule.count) {
+    context.addIssue({ code: "custom", message: "Choose how many occurrences to create." });
+  }
+});
 const eventDraftSchema = z.object({
   requestId: z.string().uuid(),
   calendarPreferenceId: z.string().uuid(),
@@ -30,8 +48,14 @@ const eventDraftSchema = z.object({
   endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   recurringEventId: z.string().trim().min(1).max(1024).optional(),
   recurringScope: z.enum(["occurrence", "series"]).optional(),
+  recurrence: recurrenceRuleSchema.optional(),
+  guestEmails: z.array(z.string().trim().toLowerCase().email().max(320)).max(200).optional()
+    .refine((emails) => !emails || new Set(emails).size === emails.length, "Remove duplicate guest emails."),
 }).refine((draft) => draft.endDate >= draft.startDate, {
   message: "End date must not be before the start date.",
+}).refine((draft) => !draft.recurrence || draft.recurrence.ends !== "onDate"
+  || Boolean(draft.recurrence.untilDate && draft.recurrence.untilDate >= draft.startDate), {
+  message: "The recurrence must not end before the event starts.",
 });
 
 interface WritableCalendarRow {

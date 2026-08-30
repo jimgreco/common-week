@@ -1,7 +1,25 @@
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { addDateDays } from "@/lib/date";
 import type { GoogleCalendarEventInput, GoogleCalendarEventResource } from "@/lib/integrations/google-calendar";
-import type { CalendarEventDraft } from "@/types/domain";
+import type { CalendarEventDraft, CalendarRecurrenceRule } from "@/types/domain";
+
+export function buildGoogleRecurrenceRule(rule: CalendarRecurrenceRule, timeZone: string, allDay = false): string {
+  const parts = [`FREQ=${rule.frequency.toUpperCase()}`, `INTERVAL=${rule.interval}`];
+  if (rule.frequency === "weekly" && rule.weekdays?.length) {
+    parts.push(`BYDAY=${rule.weekdays.join(",")}`);
+  }
+  if (rule.ends === "onDate" && rule.untilDate) {
+    if (allDay) {
+      parts.push(`UNTIL=${rule.untilDate.replaceAll("-", "")}`);
+    } else {
+      const endOfDay = fromZonedTime(`${rule.untilDate}T23:59:59`, timeZone);
+      parts.push(`UNTIL=${formatInTimeZone(endOfDay, "UTC", "yyyyMMdd'T'HHmmss'Z'")}`);
+    }
+  } else if (rule.ends === "afterCount" && rule.count) {
+    parts.push(`COUNT=${rule.count}`);
+  }
+  return `RRULE:${parts.join(";")}`;
+}
 
 export function buildGoogleCalendarEventInput(
   draft: CalendarEventDraft,
@@ -13,6 +31,10 @@ export function buildGoogleCalendarEventInput(
     summary: draft.title.trim(),
     ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
     ...(draft.location.trim() ? { location: draft.location.trim() } : {}),
+    ...(draft.recurrence ? { recurrence: [buildGoogleRecurrenceRule(draft.recurrence, timeZone, draft.allDay)] } : {}),
+    ...(draft.guestEmails?.length
+      ? { attendees: draft.guestEmails.map((email) => ({ email: email.trim().toLowerCase() })) }
+      : {}),
   };
 
   if (draft.allDay) {

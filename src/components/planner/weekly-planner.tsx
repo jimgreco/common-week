@@ -19,6 +19,7 @@ import {
   updatePlanningItemAction,
 } from "@/app/actions/planner";
 import { BrandMark } from "@/components/brand-mark";
+import { ALL_CALENDARS, ALL_PEOPLE, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
 import { NotificationInboxButton } from "@/components/planner/notification-inbox";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { useTheme } from "@/components/theme-provider";
@@ -56,6 +57,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [editingItem, setEditingItem] = useState<PlanningItem | null>(focusedItem);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(focusedEvent);
   const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent } | null>(null);
+  const [calendarFilter, setCalendarFilter] = useState(ALL_CALENDARS);
+  const [personFilter, setPersonFilter] = useState(ALL_PEOPLE);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlannerSearchResult[]>([]);
@@ -176,6 +179,18 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   }, [initialData.household.timezone, initialData.weekStart]);
 
   const allItems = useMemo(() => [...days.flatMap((day) => day.items), ...weeklyItems], [days, weeklyItems]);
+  const activeCalendarFilter = calendarFilter === ALL_CALENDARS
+    || initialData.visibleCalendars.some((calendar) => calendar.id === calendarFilter)
+    ? calendarFilter
+    : ALL_CALENDARS;
+  const activePersonFilter = personFilter === ALL_PEOPLE
+    || initialData.members.some((member) => member.userId === personFilter)
+    ? personFilter
+    : ALL_PEOPLE;
+  const filteredDays = useMemo(() => days.map((day) => ({
+    ...day,
+    events: day.events.filter((event) => calendarEventMatchesFilters(event, activeCalendarFilter, activePersonFilter)),
+  })), [activeCalendarFilter, activePersonFilter, days]);
   const thisWeek = currentWeekStart(initialData.household.timezone);
   const previousWeek = addDateDays(initialData.weekStart, -7);
   const nextWeek = addDateDays(initialData.weekStart, 7);
@@ -462,12 +477,22 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
           <Link className="plan-next-link" href={`/planner?week=${nextWeek}`} onClick={() => { followsCurrentWeek.current = false; }}><CalendarRange size={15} /> Plan next week <ArrowRight size={14} /></Link>
         </header>
 
+        <CalendarFilters
+          calendars={initialData.visibleCalendars}
+          members={initialData.members}
+          calendarId={activeCalendarFilter}
+          personId={activePersonFilter}
+          onCalendar={setCalendarFilter}
+          onPerson={setPersonFilter}
+          onClear={() => { setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); }}
+        />
+
         {calendarState.status === "error" && <div className="source-alert" role="status"><CalendarRange size={14} />{calendarState.message}</div>}
         {calendarState.status === "not-connected" && <div className="source-alert"><CalendarRange size={14} />{calendarState.message}<Link href="/settings">Connect</Link></div>}
         {weatherState.status === "error" && <div className="source-alert" role="status"><CloudOff size={14} />{weatherState.message}</div>}
 
         <div className="week-grid">
-          {days.map((day) => (
+          {filteredDays.map((day) => (
             <DayColumn
               day={day}
               timeZone={initialData.household.timezone}

@@ -151,6 +151,56 @@ describe("Google Calendar write privacy", () => {
     );
   });
 
+  it("creates a recurring event with normalized guest invitations", async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("from calendar_preferences")) return {
+        rows: [{
+          calendar_owner_user_id: "member-a",
+          google_calendar_id: "family@example.com",
+          actor_access_role: "owner",
+          visibility: "private",
+          actor_role: "member",
+          actor_scope: "calendar.events",
+          actor_google_connected: true,
+          timezone: "America/New_York",
+        }],
+        rowCount: 1,
+      };
+      return { rows: [], rowCount: 0 };
+    });
+
+    const result = await createCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      calendarPreferenceId: "00000000-0000-4000-8000-000000000011",
+      title: "Biweekly dinner",
+      description: "",
+      location: "",
+      allDay: false,
+      startDate: "2026-08-14",
+      endDate: "2026-08-14",
+      startTime: "18:00",
+      endTime: "19:00",
+      recurrence: {
+        frequency: "weekly",
+        interval: 2,
+        weekdays: ["FR"],
+        ends: "afterCount",
+        count: 6,
+      },
+      guestEmails: ["Guest@Example.com", "friend@example.com"],
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.createEvent).toHaveBeenCalledWith(
+      "token-a",
+      "family@example.com",
+      expect.objectContaining({
+        recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=FR;COUNT=6"],
+        attendees: [{ email: "guest@example.com" }, { email: "friend@example.com" }],
+      }),
+    );
+  });
+
   it("explains when Google has not shared a household calendar with the actor", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("from calendar_preferences")) return {

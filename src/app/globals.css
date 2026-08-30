@@ -836,6 +836,12 @@ textarea:focus-visible {
 .week-navigation a.is-current { background: var(--accent-soft); color: var(--accent-strong); box-shadow: inset 0 0 0 1px rgb(23 107 85 / 8%); }
 .plan-next-link { min-height: 44px; padding: 10px 14px; border: 0; border-radius: 12px; background: var(--white); color: var(--accent-strong); box-shadow: var(--shadow-sm); font-size: 12px; }
 .plan-next-link:hover { background: var(--accent); color: #fff; transform: translateY(-1px); }
+.planner-filters { max-width: 1800px; min-height: 52px; display: flex; align-items: center; gap: 10px; margin: -8px auto 18px; padding: 7px 9px; border: 1px solid rgb(203 215 207 / 78%); border-radius: 13px; background: rgb(255 255 255 / 68%); box-shadow: var(--shadow-sm); }
+.planner-filters label { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.planner-filters label > svg { flex: 0 0 auto; color: var(--accent); }
+.planner-filters select { min-width: 150px; min-height: 36px; padding: 7px 30px 7px 9px; border: 1px solid var(--rule); border-radius: 9px; background: var(--white); color: var(--ink); font-size: 11px; font-weight: 620; letter-spacing: normal; text-transform: none; }
+.planner-filters button { min-height: 34px; display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 6px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--accent-strong); font-size: 9px; font-weight: 700; cursor: pointer; }
+.planner-filters button:hover { background: var(--accent-soft); }
 .source-alert { margin-bottom: 12px; padding: 11px 13px; border-color: #ead9bb; border-radius: 12px; background: #fff9ed; box-shadow: var(--shadow-sm); font-size: 11px; }
 
 .week-grid { gap: 12px; border: 0; background: transparent; align-items: stretch; }
@@ -917,6 +923,20 @@ textarea:focus-visible {
 .form-stack input,
 .form-stack textarea,
 .form-stack select { min-height: 46px; padding: 10px 12px; border-color: var(--rule-strong); border-radius: 10px; font-size: 13px; }
+.event-authoring-options { display: grid; gap: 14px; padding: 15px; border: 1px solid var(--rule); border-radius: 12px; background: var(--accent-wash); }
+.event-authoring-options > label > small { color: var(--muted); font-size: 9px; font-weight: 500; line-height: 1.45; }
+.recurrence-interval-row { display: grid; grid-template-columns: minmax(90px, .42fr) 1fr; align-items: end; gap: 10px; }
+.recurrence-interval-row > span { min-height: 46px; display: flex; align-items: center; color: var(--ink-soft); font-size: 12px; }
+.recurrence-weekdays { margin: 0; padding: 0; border: 0; }
+.recurrence-weekdays legend { margin-bottom: 7px; color: var(--ink-soft); font-size: 10px; font-weight: 700; }
+.recurrence-weekdays > div { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.form-stack .recurrence-weekdays label { display: block; cursor: pointer; }
+.recurrence-weekdays input { position: absolute; opacity: 0; pointer-events: none; }
+.recurrence-weekdays label > span { min-height: 36px; display: grid; place-items: center; padding: 5px 2px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--white); color: var(--muted); font-size: 9px; font-weight: 750; }
+.recurrence-weekdays input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.recurrence-weekdays input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.recurrence-weekdays input:disabled + span { cursor: default; opacity: .72; }
+.recurrence-end-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(110px, .7fr); gap: 10px; }
 .event-location-input { min-height: 46px; padding-inline: 12px; border-radius: 10px; }
 .form-stack .event-location-input input { min-height: 44px; padding: 0; border: 0; border-radius: 0; }
 .event-location-results { border-radius: 0 0 10px 10px; }
@@ -1024,6 +1044,10 @@ textarea:focus-visible {
   .planner-shell { padding: 22px 10px 52px; }
   .week-header { gap: 13px; margin-bottom: 18px; }
   .week-header h1 { font-size: clamp(32px, 10vw, 40px); }
+  .planner-filters { align-items: stretch; flex-direction: column; gap: 8px; margin-top: -5px; padding: 10px; }
+  .planner-filters label { display: grid; grid-template-columns: 16px 62px minmax(0, 1fr); }
+  .planner-filters select { min-width: 0; width: 100%; min-height: 42px; }
+  .planner-filters button { min-height: 40px; margin-left: 85px; align-self: flex-start; }
   .week-navigation { padding: 4px; }
   .week-navigation a { min-height: 42px; padding-inline: 13px; }
   .plan-next-link { min-height: 42px; padding-inline: 10px; }
@@ -1036,6 +1060,9 @@ textarea:focus-visible {
   .modal-header { min-height: 64px; }
   .modal-footer { min-height: 72px; }
   .event-hide-note { align-items: flex-start; flex-direction: column; }
+  .recurrence-weekdays > div { gap: 3px; }
+  .recurrence-weekdays label > span { font-size: 8px; }
+  .recurrence-end-row { grid-template-columns: 1fr; }
   .landing-shell { padding-inline: 18px; }
   .landing-hero { gap: 52px; padding: 60px 0; }
   .landing-copy h1 { font-size: clamp(47px, 14vw, 62px); }
@@ -1101,6 +1128,9 @@ textarea:focus-visible {
   .week-navigation,
   .plan-next-link,
   .button-secondary { border-color: var(--rule); background: rgb(24 34 29 / 86%); }
+  .planner-filters { border-color: var(--rule); background: rgb(24 34 29 / 78%); }
+  .planner-filters select,
+  .recurrence-weekdays label > span { border-color: var(--rule); background: #121b16; color: var(--ink); }
   .plan-next-link:hover { background: var(--accent); color: #0e2118; }
   .modal-panel,
   .modal-header,

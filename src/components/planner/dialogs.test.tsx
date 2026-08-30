@@ -209,6 +209,31 @@ describe("CalendarEventEditorDialog", () => {
     expect(screen.getByLabelText("Location")).toHaveValue("The patio");
   });
 
+  it("authors a recurring event and normalizes guest invitations", async () => {
+    const onSave = vi.fn().mockResolvedValue(null);
+    render(<CalendarEventEditorDialog date="2026-08-15" calendars={calendars} timeZone="America/New_York" onClose={vi.fn()} onSave={onSave} onDelete={vi.fn()} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: "Biweekly dinner" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Repeats" }), { target: { value: "weekly" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Repeat interval" }), { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Mon" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Repeat ends" }), { target: { value: "afterCount" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Recurrence count" }), { target: { value: "6" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Guests/ }), { target: { value: "Alex@example.com, sam@example.com, alex@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add event" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      recurrence: {
+        frequency: "weekly",
+        interval: 2,
+        weekdays: ["MO", "SA"],
+        ends: "afterCount",
+        count: 6,
+      },
+      guestEmails: ["alex@example.com", "sam@example.com"],
+    })));
+  });
+
   it("moves an existing event to any calendar the actor can edit", async () => {
     const sourceId = "00000000-0000-4000-8000-000000000001";
     const destinationId = "00000000-0000-4000-8000-000000000003";

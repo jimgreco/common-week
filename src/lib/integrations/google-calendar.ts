@@ -20,10 +20,10 @@ export interface GoogleCalendarEventInput {
   start: { date?: string; dateTime?: string; timeZone?: string };
   end: { date?: string; dateTime?: string; timeZone?: string };
   recurrence?: string[];
-  attendees?: CalendarAttendee[];
+  attendees?: Array<{ email: string }>;
 }
 
-export interface GoogleCalendarEventResource extends GoogleCalendarEventInput {
+export interface GoogleCalendarEventResource extends Omit<GoogleCalendarEventInput, "attendees"> {
   id: string;
   etag?: string;
   eventType?: string;
@@ -233,16 +233,20 @@ export class GoogleCalendarApiService implements GoogleCalendarService {
   }
 
   async createEvent(accessToken: string, calendarId: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource> {
+    const url = new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events`);
+    if (event.attendees?.length) url.searchParams.set("sendUpdates", "all");
     return googleFetch<GoogleCalendarEventResource>(
-      new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events`),
+      url,
       accessToken,
       { method: "POST", body: JSON.stringify(event) },
     );
   }
 
   async updateEvent(accessToken: string, calendarId: string, eventId: string, etag: string, event: GoogleCalendarEventInput): Promise<GoogleCalendarEventResource> {
+    const url = new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`);
+    if (event.attendees?.length) url.searchParams.set("sendUpdates", "all");
     return googleFetch<GoogleCalendarEventResource>(
-      new URL(`${GOOGLE_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`),
+      url,
       accessToken,
       { method: "PATCH", headers: { "If-Match": etag }, body: JSON.stringify(event) },
     );

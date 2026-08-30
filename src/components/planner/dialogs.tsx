@@ -8,7 +8,7 @@ import { EventLocationAutocomplete } from "@/components/planner/event-location-a
 import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, HouseholdMember, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, CalendarRecurrenceFrequency, CalendarRecurrenceWeekday, CalendarResponseStatus, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, HouseholdMember, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
 
 export type LocationSelection =
   | { kind: "saved"; location: HouseholdLocation }
@@ -25,6 +25,47 @@ const demoLocationResults: GeocodingResult[] = [
   { id: "demo-paris", name: "Paris", admin1: "Île-de-France", country: "France", latitude: 48.8566, longitude: 2.3522, timezone: "Europe/Paris" },
   { id: "demo-sag-harbor", name: "Sag Harbor", admin1: "New York", country: "United States", latitude: 41.0007, longitude: -72.2957, timezone: "America/New_York" },
 ];
+
+const recurrenceWeekdays: Array<{ value: CalendarRecurrenceWeekday; label: string }> = [
+  { value: "MO", label: "Mon" },
+  { value: "TU", label: "Tue" },
+  { value: "WE", label: "Wed" },
+  { value: "TH", label: "Thu" },
+  { value: "FR", label: "Fri" },
+  { value: "SA", label: "Sat" },
+  { value: "SU", label: "Sun" },
+];
+
+function recurrenceWeekdayForDate(date: string): CalendarRecurrenceWeekday {
+  return (["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as CalendarRecurrenceWeekday[])[parseDateOnly(date).getUTCDay()];
+}
+
+function recurrenceUnit(frequency: CalendarRecurrenceFrequency, interval: number): string {
+  const singular = frequency === "daily" ? "day" : frequency === "weekly" ? "week" : frequency === "monthly" ? "month" : "year";
+  return interval === 1 ? singular : `${singular}s`;
+}
+
+function normalizeGuestEmails(value: string): string[] {
+  return Array.from(new Set(value.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean)));
+}
+
+function eventDraftWithStartDate(draft: CalendarEventDraft, startDate: string): CalendarEventDraft {
+  let recurrence = draft.recurrence;
+  if (recurrence?.frequency === "weekly"
+    && recurrence.weekdays?.length === 1
+    && recurrence.weekdays[0] === recurrenceWeekdayForDate(draft.startDate)) {
+    recurrence = { ...recurrence, weekdays: [recurrenceWeekdayForDate(startDate)] };
+  }
+  if (recurrence?.ends === "onDate" && recurrence.untilDate && recurrence.untilDate < startDate) {
+    recurrence = { ...recurrence, untilDate: startDate };
+  }
+  return {
+    ...draft,
+    recurrence,
+    startDate,
+    endDate: draft.endDate < startDate ? startDate : draft.endDate,
+  };
+}
 
 function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   const panelRef = useRef<HTMLElement>(null);
@@ -193,6 +234,7 @@ function initialEventDraft(date: string, calendars: EditableCalendar[], timeZone
       endDate: date,
       startTime: "09:00",
       endTime: "10:00",
+      guestEmails: [],
     };
   }
   const start = event.allDay ? { date: event.start.slice(0, 10), time: "09:00" } : eventDateAndTime(event.start, timeZone);
@@ -215,6 +257,7 @@ function initialEventDraft(date: string, calendars: EditableCalendar[], timeZone
     endDate: end.date,
     startTime: start.time,
     endTime: end.time,
+    guestEmails: [],
   };
 }
 
@@ -240,6 +283,7 @@ export function CalendarEventEditorDialog({
   onDelete: (event: CalendarEvent, scope: "occurrence" | "series") => Promise<string | null>;
 }) {
   const [draft, setDraft] = useState(() => initialEventDraft(date, calendars, timeZone, event));
+  const [guestInput, setGuestInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -252,9 +296,14 @@ export function CalendarEventEditorDialog({
     <Modal title={editing ? event?.recurringEventId ? "Edit event occurrence" : "Edit Google event" : "Add Google event"} onClose={onClose}>
       <form onSubmit={async (submitEvent) => {
         submitEvent.preventDefault();
+        const guestEmails = normalizeGuestEmails(guestInput);
+        if (guestEmails.length > 200) {
+          setError("Invite no more than 200 guests at a time.");
+          return;
+        }
         setSaving(true);
         setError(null);
-        const saveError = await onSave(draft);
+        const saveError = await onSave({ ...draft, guestEmails });
         setSaving(false);
         if (saveError) setError(saveError);
         else onClose();
@@ -276,13 +325,61 @@ export function CalendarEventEditorDialog({
           {editing && canMoveCalendar && calendarChoices.length > 1 && <p className="event-edit-note">Moving an event changes its organizer calendar in Google Calendar.</p>}
           <label className="all-day-control"><input type="checkbox" checked={draft.allDay} onChange={(change) => setDraft({ ...draft, allDay: change.target.checked })} /><span>All-day event</span></label>
           <div className="event-date-row">
-            <label>Starts<input type="date" value={draft.startDate} disabled={draft.recurringScope === "series"} required onChange={(change) => setDraft({ ...draft, startDate: change.target.value, endDate: draft.endDate < change.target.value ? change.target.value : draft.endDate })} /></label>
+            <label>Starts<input type="date" value={draft.startDate} disabled={draft.recurringScope === "series"} required onChange={(change) => setDraft(eventDraftWithStartDate(draft, change.target.value))} /></label>
             {!draft.allDay && <label>Time<input type="time" value={draft.startTime} required onChange={(change) => setDraft({ ...draft, startTime: change.target.value })} /></label>}
           </div>
           <div className="event-date-row">
             <label>Ends<input type="date" value={draft.endDate} disabled={draft.recurringScope === "series"} min={draft.startDate} required onChange={(change) => setDraft({ ...draft, endDate: change.target.value })} /></label>
             {!draft.allDay && <label>Time<input type="time" value={draft.endTime} required onChange={(change) => setDraft({ ...draft, endTime: change.target.value })} /></label>}
           </div>
+          {!editing && <div className="event-authoring-options">
+            <label>Repeats<select aria-label="Repeats" value={draft.recurrence?.frequency ?? "never"} onChange={(change) => {
+              const frequency = change.target.value as CalendarRecurrenceFrequency | "never";
+              setDraft({
+                ...draft,
+                recurrence: frequency === "never" ? undefined : {
+                  frequency,
+                  interval: 1,
+                  ...(frequency === "weekly" ? { weekdays: [recurrenceWeekdayForDate(draft.startDate)] } : {}),
+                  ends: "never",
+                },
+              });
+            }}><option value="never">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
+            {draft.recurrence && <>
+              <div className="recurrence-interval-row">
+                <label>Every<input aria-label="Repeat interval" type="number" min={1} max={99} required value={draft.recurrence.interval} onChange={(change) => setDraft({ ...draft, recurrence: { ...draft.recurrence!, interval: Number(change.target.value) } })} /></label>
+                <span>{recurrenceUnit(draft.recurrence.frequency, draft.recurrence.interval)}</span>
+              </div>
+              {draft.recurrence.frequency === "weekly" && <fieldset className="recurrence-weekdays">
+                <legend>Repeat on</legend>
+                <div>{recurrenceWeekdays.map((weekday) => {
+                  const selected = draft.recurrence?.weekdays?.includes(weekday.value) ?? false;
+                  const onlySelected = selected && draft.recurrence?.weekdays?.length === 1;
+                  return <label key={weekday.value}><input type="checkbox" checked={selected} disabled={onlySelected} onChange={(change) => {
+                    const current = draft.recurrence?.weekdays ?? [];
+                    const weekdays = change.target.checked
+                      ? recurrenceWeekdays.map(({ value }) => value).filter((value) => value === weekday.value || current.includes(value))
+                      : current.filter((value) => value !== weekday.value);
+                    setDraft({ ...draft, recurrence: { ...draft.recurrence!, weekdays } });
+                  }} /><span>{weekday.label}</span></label>;
+                })}</div>
+              </fieldset>}
+              <div className="recurrence-end-row">
+                <label>Repeat ends<select aria-label="Repeat ends" value={draft.recurrence.ends} onChange={(change) => {
+                  const ends = change.target.value as "never" | "onDate" | "afterCount";
+                  setDraft({ ...draft, recurrence: {
+                    ...draft.recurrence!,
+                    ends,
+                    ...(ends === "onDate" ? { untilDate: draft.recurrence?.untilDate ?? draft.startDate } : {}),
+                    ...(ends === "afterCount" ? { count: draft.recurrence?.count ?? 10 } : {}),
+                  } });
+                }}><option value="never">Never</option><option value="onDate">On date</option><option value="afterCount">After number of events</option></select></label>
+                {draft.recurrence.ends === "onDate" && <label>Last date<input aria-label="Recurrence last date" type="date" min={draft.startDate} required value={draft.recurrence.untilDate ?? draft.startDate} onChange={(change) => setDraft({ ...draft, recurrence: { ...draft.recurrence!, untilDate: change.target.value } })} /></label>}
+                {draft.recurrence.ends === "afterCount" && <label>Events<input aria-label="Recurrence count" type="number" min={1} max={999} required value={draft.recurrence.count ?? 10} onChange={(change) => setDraft({ ...draft, recurrence: { ...draft.recurrence!, count: Number(change.target.value) } })} /></label>}
+              </div>
+            </>}
+            <label>Guests<input type="email" multiple value={guestInput} maxLength={5000} placeholder="alex@example.com, sam@example.com" onChange={(change) => setGuestInput(change.target.value)} /><small>Separate email addresses with commas. Google Calendar will email invitations.</small></label>
+          </div>}
           <EventLocationAutocomplete value={draft.location} onChange={(location) => setDraft((current) => ({ ...current, location }))} bias={locationBias} isDemo={isDemo} />
           <label>Notes<textarea value={draft.description} maxLength={8192} placeholder="Optional" onChange={(change) => setDraft({ ...draft, description: change.target.value })} /></label>
           <p className="event-timezone-note">Times use the household timezone: {timeZone}</p>

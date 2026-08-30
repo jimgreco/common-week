@@ -209,6 +209,12 @@ export function getDemoPlannerData(requestedWeek?: string): WeeklyPlannerData {
     locations,
     calendarState: { status: "ready" },
     weatherState: { status: "ready" },
+    visibleCalendars: [
+      { id: "demo-F", sourceUserId: "demo-jim", name: "Family", color: "#688173", sectionGroup: "critical" },
+      { id: "demo-J", sourceUserId: "demo-jim", name: "Jim", color: "#587f9b", sectionGroup: "supplemental" },
+      { id: "demo-R", sourceUserId: "demo-rachel", name: "Rachel", color: "#a76f67", sectionGroup: "supplemental" },
+      { id: "demo-M", sourceUserId: "demo-jim", name: "Miriam", color: "#88729d", sectionGroup: "critical" },
+    ],
     editableCalendars: [
       { id: "demo-F", sourceUserId: "demo-jim", name: "Family", color: "#688173", sectionGroup: "critical" },
       { id: "demo-J", sourceUserId: "demo-jim", name: "Jim", color: "#587f9b", sectionGroup: "supplemental" },

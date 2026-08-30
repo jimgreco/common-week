@@ -132,4 +132,23 @@ describe("GoogleCalendarApiService", () => {
     expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "POST" });
     expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: "DELETE", headers: { "If-Match": "etag-2" } });
   });
+
+  it("asks Google to email guests when creating an invitation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "event-3",
+      summary: "Dinner",
+      start: {},
+      end: {},
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new GoogleCalendarApiService().createEvent("opaque-token", "family@example.com", {
+      summary: "Dinner",
+      start: { dateTime: "2026-08-15T22:00:00.000Z", timeZone: "America/New_York" },
+      end: { dateTime: "2026-08-15T23:00:00.000Z", timeZone: "America/New_York" },
+      attendees: [{ email: "guest@example.com" }],
+    });
+
+    expect(fetchMock.mock.calls[0][0].searchParams.get("sendUpdates")).toBe("all");
+  });
 });
