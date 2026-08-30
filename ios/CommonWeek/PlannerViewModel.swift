@@ -631,9 +631,13 @@ final class PlannerViewModel: ObservableObject {
 
     private func insert(_ item: PlanningItem) {
         guard var planner = data else { return }
-        if let date = item.planningDate, let index = planner.days.firstIndex(where: { $0.date == date }) {
-            planner.days[index].items.append(item)
-        } else { planner.weeklyItems.append(item) }
+        if let date = item.planningDate {
+            if let index = planner.days.firstIndex(where: { $0.date == date }) {
+                planner.days[index].items.append(item)
+            }
+        } else if item.weekStartDate == planner.weekStart {
+            planner.weeklyItems.append(item)
+        }
         data = planner
     }
 

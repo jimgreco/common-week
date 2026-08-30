@@ -128,6 +128,20 @@ final class CommonWeekScreenshots: XCTestCase {
         attachCurrentScreen(named: "Weekly and daily tasks rollup")
     }
 
+    func testDailyItemEditorAllowsRescheduling() throws {
+        launchDemo()
+
+        app.buttons["Weekly and daily tasks"].tap()
+        let task = app.buttons["Groceries"]
+        XCTAssertTrue(scrollToExistence(task))
+        task.tap()
+
+        XCTAssertTrue(app.navigationBars["Edit item"].waitForExistence(timeout: 5))
+        let when = app.datePickers["planning-date"]
+        XCTAssertTrue(when.waitForExistence(timeout: 5))
+        XCTAssertTrue(when.isEnabled)
+    }
+
     private func launchDemo() {
         setupSnapshot(app)
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

@@ -11,8 +11,8 @@ struct ItemEditorView: View {
     @State private var type: PlanningItemType
     @State private var reminderEnabled: Bool
     @State private var reminderDate: Date
+    @State private var scheduledDate: Date
     @State private var destination: TaskCreationDestination
-    @State private var appleDueDate: Date
     @State private var appleDueTimeEnabled = false
     @State private var saveError: String?
     @State private var isSaving = false
@@ -28,14 +28,14 @@ struct ItemEditorView: View {
         let existingReminder = item?.reminder.flatMap { WeekDate.iso8601.date(from: $0.remindAt) }
         _reminderEnabled = State(initialValue: existingReminder != nil)
         _reminderDate = State(initialValue: existingReminder ?? Date().addingTimeInterval(3600))
+        _scheduledDate = State(initialValue: (item?.planningDate ?? planningDate).map {
+            WeekDate.calendarDate($0, hour: 9, timeZoneIdentifier: data.household.timezone)
+        } ?? Date())
         let canUseAppleDefault = item == nil && planningDate != nil && defaultType == .task
             && appleReminders.writableSelectedLists.contains {
                 appleReminders.defaultDestination == .appleReminders($0.id)
             }
         _destination = State(initialValue: canUseAppleDefault ? appleReminders.defaultDestination : .weekOfUs)
-        _appleDueDate = State(initialValue: planningDate.map {
-            WeekDate.calendarDate($0, hour: 9, timeZoneIdentifier: data.household.timezone)
-        } ?? Date())
     }
 
     var body: some View {
@@ -64,7 +64,12 @@ struct ItemEditorView: View {
                     }
                 }
                 Section("Schedule") {
-                    LabeledContent("When", value: planningDate.map(WeekDate.longDay) ?? "This week")
+                    if isDailyItem {
+                        DatePicker("When", selection: $scheduledDate, displayedComponents: [.date])
+                            .accessibilityIdentifier("planning-date")
+                    } else {
+                        LabeledContent("When", value: "This week")
+                    }
                     if destination == .weekOfUs {
                         Toggle("Remind me", isOn: $reminderEnabled)
                         if reminderEnabled {
@@ -73,7 +78,7 @@ struct ItemEditorView: View {
                     } else {
                         Toggle("Include due time", isOn: $appleDueTimeEnabled)
                         if appleDueTimeEnabled {
-                            DatePicker("Due time", selection: $appleDueDate, displayedComponents: [.hourAndMinute])
+                            DatePicker("Due time", selection: $scheduledDate, displayedComponents: [.hourAndMinute])
                         }
                     }
                 }
@@ -105,6 +110,10 @@ struct ItemEditorView: View {
         item == nil && planningDate != nil && type == .task && !appleReminders.writableSelectedLists.isEmpty
     }
 
+    private var isDailyItem: Bool {
+        item?.planningDate != nil || planningDate != nil
+    }
+
     private func save() async {
         isSaving = true
         saveError = nil
@@ -118,7 +127,7 @@ struct ItemEditorView: View {
                 try await appleReminders.createReminder(
                     title: trimmed,
                     listId: listId,
-                    dueDate: appleDueDate,
+                    dueDate: scheduledDate,
                     includesTime: appleDueTimeEnabled,
                     timeZoneIdentifier: data.household.timezone
                 )
@@ -128,12 +137,15 @@ struct ItemEditorView: View {
             }
             return
         }
+        let selectedPlanningDate = isDailyItem
+            ? WeekDate.string(scheduledDate, timeZoneIdentifier: data.household.timezone)
+            : nil
         let draft = PlanningItemDraft(
             id: item?.id,
             text: trimmed,
             type: type,
-            planningDate: item?.planningDate ?? planningDate,
-            weekStartDate: data.weekStart,
+            planningDate: selectedPlanningDate,
+            weekStartDate: selectedPlanningDate.map(WeekDate.weekStart) ?? data.weekStart,
             remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil
         )
         if await viewModel.saveItem(draft) { dismiss() }
