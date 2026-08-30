@@ -23,6 +23,7 @@ struct CommonWeekApp: App {
                     case .active:
                         planner.applicationDidBecomeActive()
                         AppleRemindersStore.shared.applicationDidBecomeActive()
+                        Task { await NotificationCoordinator.shared.refreshInbox() }
                     case .background:
                         planner.applicationDidEnterBackground()
                         BackgroundRefreshCoordinator.shared.schedule()
@@ -57,6 +58,7 @@ struct RootView: View {
                     .task(id: user.userId) {
                         await planner.activate(user: user)
                         await NotificationCoordinator.shared.syncStoredToken()
+                        await NotificationCoordinator.shared.refreshInbox()
                     }
             }
         }

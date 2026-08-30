@@ -6,9 +6,10 @@ struct PlannerNotificationDestination: Hashable {
     enum Target: Hashable {
         case planningItem(String)
         case calendarReminder(String)
+        case inbox(String)
     }
 
-    let weekStart: String
+    let weekStart: String?
     let target: Target
 }
 
@@ -18,6 +19,8 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var registrationError: String?
     @Published private(set) var pendingDestination: PlannerNotificationDestination?
+    @Published private(set) var inbox = NotificationInbox(items: [], unreadCount: 0)
+    @Published private(set) var inboxError: String?
 
     private override init() {
         super.init()
@@ -26,6 +29,54 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
 
     func refreshAuthorizationStatus() async {
         authorizationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    func refreshInbox() async {
+        guard APIClient.shared.token != nil else {
+            inbox = NotificationInbox(items: [], unreadCount: 0)
+            return
+        }
+        do {
+            inbox = try await APIClient.shared.notificationInbox()
+            inboxError = nil
+            try? await UNUserNotificationCenter.current().setBadgeCount(inbox.unreadCount)
+        } catch {
+            inboxError = error.localizedDescription
+        }
+    }
+
+    func markRead(_ id: String) async {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        if let index = inbox.items.firstIndex(where: { $0.id == id }), inbox.items[index].readAt == nil {
+            inbox.items[index].readAt = timestamp
+            inbox.unreadCount = max(0, inbox.unreadCount - 1)
+        }
+        try? await UNUserNotificationCenter.current().setBadgeCount(inbox.unreadCount)
+        do {
+            _ = try await APIClient.shared.markNotificationRead(id: id)
+            inboxError = nil
+        } catch {
+            inboxError = error.localizedDescription
+            await refreshInbox()
+        }
+    }
+
+    func markAllRead() async {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        inbox.items = inbox.items.map { item in
+            var updated = item
+            updated.readAt = updated.readAt ?? timestamp
+            return updated
+        }
+        inbox.unreadCount = 0
+        try? await UNUserNotificationCenter.current().setBadgeCount(0)
+        do {
+            _ = try await APIClient.shared.markNotificationRead()
+            inboxError = nil
+        } catch {
+            inboxError = error.localizedDescription
+            await refreshInbox()
+        }
     }
 
     func enablePush() async -> Bool {
@@ -84,16 +135,21 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
 
     nonisolated static func plannerDestination(for path: String) -> PlannerNotificationDestination? {
         guard let components = URLComponents(string: path),
-              components.path == "/planner",
-              let week = components.queryItems?.first(where: { $0.name == "week" })?.value,
-              week.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
+              components.path == "/planner" else { return nil }
+        let week = components.queryItems?.first(where: { $0.name == "week" })?.value
+        let validWeek = week?.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil ? week : nil
+        if let notification = components.queryItems?.first(where: { $0.name == "notification" })?.value,
+           notification.range(of: #"^[0-9A-Fa-f-]{36}$"#, options: .regularExpression) != nil {
+            return PlannerNotificationDestination(weekStart: validWeek, target: .inbox(notification))
+        }
+        guard let validWeek else { return nil }
         if let item = components.queryItems?.first(where: { $0.name == "item" })?.value,
            item.range(of: #"^[A-Za-z0-9:_-]{1,128}$"#, options: .regularExpression) != nil {
-            return PlannerNotificationDestination(weekStart: week, target: .planningItem(item))
+            return PlannerNotificationDestination(weekStart: validWeek, target: .planningItem(item))
         }
         if let reminder = components.queryItems?.first(where: { $0.name == "reminder" })?.value,
            reminder.range(of: #"^[A-Za-z0-9:_-]{1,128}$"#, options: .regularExpression) != nil {
-            return PlannerNotificationDestination(weekStart: week, target: .calendarReminder(reminder))
+            return PlannerNotificationDestination(weekStart: validWeek, target: .calendarReminder(reminder))
         }
         return nil
     }
@@ -103,6 +159,7 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        Task { @MainActor in await self.refreshInbox() }
         completionHandler([.banner, .sound, .list])
     }
 
@@ -115,6 +172,7 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
             .flatMap(Self.plannerDestination(for:))
         Task { @MainActor in
             if let destination { self.pendingDestination = destination }
+            await self.refreshInbox()
             completionHandler()
         }
     }

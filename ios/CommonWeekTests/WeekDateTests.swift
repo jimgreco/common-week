@@ -16,6 +16,16 @@ final class WeekDateTests: XCTestCase {
         )
     }
 
+    func testInboxNotificationDestinationDoesNotRequireAWeek() {
+        XCTAssertEqual(
+            NotificationCoordinator.plannerDestination(for: "/planner?notification=123e4567-e89b-12d3-a456-426614174000"),
+            PlannerNotificationDestination(
+                weekStart: nil,
+                target: .inbox("123e4567-e89b-12d3-a456-426614174000")
+            )
+        )
+    }
+
     func testRejectsNonPlannerNotificationDestination() {
         XCTAssertNil(NotificationCoordinator.plannerDestination(for: "/settings?week=2026-08-31&item=item-123"))
     }

@@ -12,7 +12,7 @@ The production application uses the existing self-hosted PostgreSQL 16 service. 
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
 - Native SwiftUI iPhone companion with Keychain sessions, Google OAuth handoff, in-app Calendar connection and management, protected offline snapshots, queued planner/location edits, and background refresh
 - Daily and weekly notes/tasks, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
-- Email and iPhone-push reminders, morning agendas, Sunday planning prompts, and opt-in household-change alerts with per-user delivery preferences
+- Email and iPhone-push reminders, morning agendas, Sunday planning prompts, and opt-in household-change alerts with a shared web/native inbox, per-channel delivery history, reliable deep links, and catch-up after downtime
 - Calendar search, attendee status and RSVP, plus occurrence-or-series editing and deletion for recurring Google events
 - Saved/default/travel locations, day/through-Sunday/whole-week assignment, and Open-Meteo geocoding
 - Location-specific daily/hourly weather with honest forecast-unavailable states and PostgreSQL caching
@@ -90,4 +90,4 @@ Key paths:
 
 ## Recommended next feature
 
-After both household accounts complete production acceptance, add a household activity history so members can review recent changes without turning every change into an immediate alert.
+After both household accounts complete production acceptance, add operator-facing notification delivery metrics so repeated provider failures are visible before a household reports them.

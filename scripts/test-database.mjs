@@ -311,6 +311,48 @@ try {
   )).rows[0];
   assert.deepEqual(reopenedTask, { planning_date: "2026-08-27", carryover_count: 9 }, "reopened tasks continue carrying by date");
 
+  await client.query(
+    "insert into notification_preferences (user_id, email_enabled, push_enabled) values ($1, false, true)",
+    [userA],
+  );
+  const inboxNotification = (await client.query(
+    `insert into notification_outbox (
+       user_id, household_id, dedupe_key, kind, title, body, deep_link, scheduled_for
+     ) values ($1, $2, $3, 'reminder', 'Reminder', 'Private A task', '/planner?week=2026-08-24', now())
+     returning id, read_at`,
+    [userA, householdA, `database-test:${suffix}`],
+  )).rows[0];
+  assert.equal(inboxNotification.read_at, null, "new inbox notifications begin unread");
+  await client.query(
+    `insert into notification_deliveries (outbox_id, channel, status, attempts, last_error)
+     values ($1, 'email', 'skipped', 0, 'Email is disabled.'),
+            ($1, 'push', 'failed', 2, 'Push unavailable.')`,
+    [inboxNotification.id],
+  );
+  const channelStates = await client.query(
+    `select channel, status, attempts from notification_deliveries
+      where outbox_id = $1 order by channel`,
+    [inboxNotification.id],
+  );
+  assert.deepEqual(channelStates.rows, [
+    { channel: "email", status: "skipped", attempts: 0 },
+    { channel: "push", status: "failed", attempts: 2 },
+  ], "email and push retain independent delivery state");
+  const foreignInboxRead = await client.query(
+    "update notification_outbox set read_at = now() where id = $1 and user_id = $2",
+    [inboxNotification.id, userB],
+  );
+  assert.equal(foreignInboxRead.rowCount, 0, "another user cannot mark inbox history read");
+  const ownInboxRead = await client.query(
+    "update notification_outbox set read_at = now() where id = $1 and user_id = $2 returning read_at",
+    [inboxNotification.id, userA],
+  );
+  assert.ok(ownInboxRead.rows[0].read_at, "the owning user can mark inbox history read");
+  const schedulerState = await client.query(
+    "select last_processed_at from notification_scheduler_state where singleton = true",
+  );
+  assert.equal(schedulerState.rowCount, 1, "the notification catch-up checkpoint is durable");
+
   await client.query("savepoint invalid_carryover_target");
   let rejectedInvalidCarryoverTarget = false;
   try {
@@ -324,7 +366,7 @@ try {
   }
   assert.equal(rejectedInvalidCarryoverTarget, true, "carryover rejects a non-Monday target week");
 
-  process.stdout.write("Database migration, household isolation, date constraints, and task carryover passed.\n");
+  process.stdout.write("Database migration, household isolation, notification delivery, date constraints, and task carryover passed.\n");
 } finally {
   await client.query("rollback");
   await client.end();

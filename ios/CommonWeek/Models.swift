@@ -101,6 +101,52 @@ struct NotificationPreferences: Codable, Equatable {
     var householdChangeAlerts: Bool
 }
 
+enum NotificationDeliveryStatus: String, Codable, Hashable {
+    case pending
+    case sending
+    case delivered
+    case failed
+    case skipped
+}
+
+struct NotificationChannelState: Codable, Hashable {
+    let status: NotificationDeliveryStatus
+    let attempts: Int
+    let deliveredAt: String?
+    let lastError: String?
+}
+
+struct NotificationChannels: Codable, Hashable {
+    let email: NotificationChannelState
+    let push: NotificationChannelState
+}
+
+struct NotificationInboxTarget: Codable, Hashable {
+    let kind: String
+    let weekStart: String
+    let planningItemId: String?
+    let calendarPreferenceId: String?
+    let providerEventId: String?
+}
+
+struct NotificationInboxItem: Codable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let title: String
+    let body: String
+    let deepLink: String
+    let scheduledFor: String
+    let createdAt: String
+    var readAt: String?
+    let channels: NotificationChannels
+    let target: NotificationInboxTarget?
+}
+
+struct NotificationInbox: Codable, Equatable {
+    var items: [NotificationInboxItem]
+    var unreadCount: Int
+}
+
 enum PlanningItemType: String, Codable, CaseIterable, Identifiable {
     case note
     case task

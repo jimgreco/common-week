@@ -52,6 +52,41 @@ export interface NotificationPreferences {
   householdChangeAlerts: boolean;
 }
 
+export type NotificationDeliveryStatus = "pending" | "sending" | "delivered" | "failed" | "skipped";
+
+export interface NotificationChannelState {
+  status: NotificationDeliveryStatus;
+  attempts: number;
+  deliveredAt: string | null;
+  lastError: string | null;
+}
+
+export type NotificationInboxTarget =
+  | { kind: "planner"; weekStart: string }
+  | { kind: "planning_item"; weekStart: string; planningItemId: string }
+  | { kind: "calendar_event"; weekStart: string; calendarPreferenceId: string; providerEventId: string };
+
+export interface NotificationInboxItem {
+  id: string;
+  kind: "reminder" | "morning_digest" | "sunday_planning" | "household_change";
+  title: string;
+  body: string;
+  deepLink: string;
+  scheduledFor: string;
+  createdAt: string;
+  readAt: string | null;
+  channels: {
+    email: NotificationChannelState;
+    push: NotificationChannelState;
+  };
+  target: NotificationInboxTarget | null;
+}
+
+export interface NotificationInbox {
+  items: NotificationInboxItem[];
+  unreadCount: number;
+}
+
 export interface HouseholdLocation {
   id: string;
   name: string;

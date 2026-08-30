@@ -7,6 +7,7 @@ import { postgresErrorCode, query } from "@/lib/server/database";
 import { getGoogleAccessToken } from "@/lib/server/google-tokens";
 import {
   getNotificationPreferences,
+  markNotificationRead,
   saveNotificationPreferences,
   upsertCalendarReminder,
 } from "@/lib/server/notifications";
@@ -50,6 +51,17 @@ export async function updateNotificationPreferencesAction(
     }
     console.error("Notification preferences error:", { error, errorMessage });
     return { ok: false, error: error instanceof z.ZodError ? "Check the notification settings and try again." : errorMessage };
+  }
+}
+
+export async function markNotificationReadAction(notificationId?: string): Promise<ActionResult> {
+  try {
+    const context = await requireHouseholdContext();
+    const id = notificationId == null ? undefined : z.string().uuid().parse(notificationId);
+    await markNotificationRead(context.userId, id);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Notification history could not be updated." };
   }
 }
 

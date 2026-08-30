@@ -19,21 +19,36 @@ import {
   updatePlanningItemAction,
 } from "@/app/actions/planner";
 import { BrandMark } from "@/components/brand-mark";
+import { NotificationInboxButton } from "@/components/planner/notification-inbox";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { useTheme } from "@/components/theme-provider";
 import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
-import type { PlannerNotificationTarget } from "@/lib/notification-links";
-import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
+import type { PlannerNotificationTarget, ResolvedPlannerNotificationTarget } from "@/lib/notification-links";
+import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, HouseholdLocation, NotificationInbox, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
-export function WeeklyPlanner({ initialData, currentUserName, initialFocus = null }: { initialData: WeeklyPlannerData; currentUserName: string; initialFocus?: PlannerNotificationTarget | null }) {
+type PlannerFocusTarget = PlannerNotificationTarget | ResolvedPlannerNotificationTarget;
+
+export function WeeklyPlanner({ initialData, currentUserName, initialFocus = null, initialInbox }: { initialData: WeeklyPlannerData; currentUserName: string; initialFocus?: PlannerFocusTarget | null; initialInbox: NotificationInbox }) {
   const router = useRouter();
   const focusedItem = initialFocus?.kind === "planning_item"
     ? [...initialData.days.flatMap((day) => day.items), ...initialData.weeklyItems].find((item) => item.id === initialFocus.id) ?? null
     : null;
   const focusedEvent = initialFocus?.kind === "calendar_reminder"
     ? initialData.days.flatMap((day) => day.events).find((event) => event.reminder?.id === initialFocus.id) ?? null
-    : null;
+    : initialFocus?.kind === "calendar_event"
+      ? initialData.days.flatMap((day) => day.events).find((event) => (
+          event.calendarPreferenceId === initialFocus.calendarPreferenceId
+          && event.providerEventId === initialFocus.providerEventId
+        )) ?? null
+      : null;
+  const focusKey = initialFocus?.kind === "planning_item"
+    ? `item:${initialFocus.id}`
+    : initialFocus?.kind === "calendar_reminder"
+      ? `reminder:${initialFocus.id}`
+      : initialFocus?.kind === "calendar_event"
+        ? `event:${initialFocus.calendarPreferenceId}:${initialFocus.providerEventId}`
+        : null;
   const [days, setDays] = useState(initialData.days);
   const [weeklyItems, setWeeklyItems] = useState(initialData.weeklyItems);
   const [locationDate, setLocationDate] = useState<string | null>(null);
@@ -52,7 +67,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [mobileMenu, setMobileMenu] = useState(false);
   const [lastInitialData, setLastInitialData] = useState(initialData);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initialFocusHandled = useRef(Boolean(focusedItem || focusedEvent));
+  const handledFocusKey = useRef<string | null>(focusedItem || focusedEvent ? focusKey : null);
   const followsCurrentWeek = useRef(initialData.weekStart === currentWeekStart(initialData.household.timezone));
   const { theme, toggleTheme } = useTheme();
 
@@ -63,6 +78,20 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     setCalendarState(initialData.calendarState);
     setWeatherState(initialData.weatherState);
   }
+
+  useEffect(() => {
+    if (!focusKey || handledFocusKey.current === focusKey) return;
+    const timer = window.setTimeout(() => {
+      if (focusedItem) {
+        setEditingItem(focusedItem);
+        handledFocusKey.current = focusKey;
+      } else if (focusedEvent) {
+        setSelectedEvent(focusedEvent);
+        handledFocusKey.current = focusKey;
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [focusKey, focusedEvent, focusedItem]);
 
   useEffect(() => {
     if (initialData.isDemo) return;
@@ -80,11 +109,13 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         const source = sources.get(day.date);
         return source ? { ...day, events: source.events, location: source.location, weather: source.weather, memberLocations: source.memberLocations } : day;
       }));
-      if (initialFocus?.kind === "calendar_reminder" && !initialFocusHandled.current) {
-        const event = sourceDays.flatMap((day) => day.events)
-          .find((candidate) => candidate.reminder?.id === initialFocus.id);
+      if ((initialFocus?.kind === "calendar_reminder" || initialFocus?.kind === "calendar_event") && handledFocusKey.current !== focusKey) {
+        const event = sourceDays.flatMap((day) => day.events).find((candidate) => initialFocus.kind === "calendar_reminder"
+          ? candidate.reminder?.id === initialFocus.id
+          : candidate.calendarPreferenceId === initialFocus.calendarPreferenceId
+            && candidate.providerEventId === initialFocus.providerEventId);
         if (event) {
-          initialFocusHandled.current = true;
+          handledFocusKey.current = focusKey;
           setSelectedEvent(event);
         }
       }
@@ -92,7 +123,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       setWeatherState(result.data.weatherState);
     });
     return () => { cancelled = true; };
-  }, [initialData, initialFocus]);
+  }, [focusKey, initialData, initialFocus]);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -404,6 +435,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         <div className="topbar-household"><Users size={14} /><span>{initialData.household.name}</span></div>
         <nav className={`topbar-actions ${mobileMenu ? "is-open" : ""}`} aria-label="Account navigation">
           <button className="topbar-link" type="button" onClick={() => { setSearchOpen(true); setMobileMenu(false); }}><Search size={15} /> Search</button>
+          <NotificationInboxButton initialInbox={initialInbox} timeZone={initialData.household.timezone} />
           <button className="topbar-link" type="button" onClick={toggleTheme} title="Toggle dark mode"><span className="avatar" title={theme === "dark" ? "Dark mode" : "Light mode"}>{theme === "dark" ? "🌙" : "☀️"}</span></button>
           <Link className="topbar-link" href="/settings"><Settings size={15} /> Settings</Link>
           {!initialData.isDemo && <form action={signOut}><button className="topbar-link" type="submit">Sign out</button></form>}

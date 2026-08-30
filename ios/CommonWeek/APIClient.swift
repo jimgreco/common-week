@@ -181,6 +181,14 @@ final class APIClient {
         try await send(path: "/api/ios/notifications")
     }
 
+    func notificationInbox() async throws -> NotificationInbox {
+        try await send(path: "/api/ios/notification-inbox")
+    }
+
+    func markNotificationRead(id: String? = nil) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/notification-inbox", method: "PATCH", body: NotificationReadRequest(id: id))
+    }
+
     func updateNotificationPreferences(_ preferences: NotificationPreferences) async throws -> NotificationPreferences {
         try await send(path: "/api/ios/notifications", method: "PATCH", body: preferences)
     }
@@ -376,6 +384,10 @@ private struct EventResponseRequest: Encodable {
 private struct PushDeviceRequest: Encodable {
     let deviceToken: String
     let environment: String
+}
+
+private struct NotificationReadRequest: Encodable {
+    let id: String?
 }
 
 private struct PushDeviceRemovalRequest: Encodable {

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { currentWeekStart, datesForLocationScope, isDateOnly, weekStartForDate } from "@/lib/date";
 import { geocodingService } from "@/lib/integrations/geocoding";
+import { plannerNotificationDeepLink } from "@/lib/notification-links";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
 import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
 import { getPlannerData } from "@/lib/server/planner-data";
@@ -219,6 +220,7 @@ export async function createPlanningItemAction(input: {
         householdId: context.householdId,
         title: `${context.displayName} added ${parsed.type === "task" ? "a task" : "a plan"}`,
         body: parsed.text,
+        deepLink: plannerNotificationDeepLink({ kind: "planning_item", id: row.id, weekStart: row.week_start_date }),
       });
     }
     revalidatePath("/planner");
@@ -278,6 +280,7 @@ export async function updatePlanningItemAction(input: {
       householdId: context.householdId,
       title: `${context.displayName} updated ${parsed.type === "task" ? "a task" : "a plan"}`,
       body: parsed.text,
+      deepLink: plannerNotificationDeepLink({ kind: "planning_item", id: parsed.id, weekStart: parsed.weekStartDate }),
     });
     const saved = await query<PlanningRow>(
         `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,

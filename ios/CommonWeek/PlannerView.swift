@@ -8,6 +8,7 @@ enum PlannerSheet: Identifiable {
     case weather(DayPlan)
     case location(DayPlan)
     case search
+    case notifications
     case settings
 
     var id: String {
@@ -19,6 +20,7 @@ enum PlannerSheet: Identifiable {
         case .weather(let day): "weather-\(day.date)"
         case .location(let day): "location-\(day.date)"
         case .search: "search"
+        case .notifications: "notifications"
         case .settings: "settings"
         }
     }
@@ -100,6 +102,21 @@ struct PlannerView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { sheet = .search } label: { Image(systemName: "magnifyingglass") }
                         .accessibilityLabel("Search")
+                    Button { sheet = .notifications } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: notifications.inbox.unreadCount > 0 ? "bell.fill" : "bell")
+                            if notifications.inbox.unreadCount > 0 {
+                                Text("\(min(notifications.inbox.unreadCount, 99))")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .frame(minWidth: 15, minHeight: 15)
+                                    .background(Color.red, in: Capsule())
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                    }
+                    .accessibilityLabel(notifications.inbox.unreadCount > 0 ? "Notifications, \(notifications.inbox.unreadCount) unread" : "Notifications")
                     Button { sheet = .settings } label: {
                         ProfileAvatar(user: user)
                     }
@@ -118,8 +135,20 @@ struct PlannerView: View {
 
     private func openPendingNotification() async {
         guard let destination = notifications.pendingDestination else { return }
-        await viewModel.move(toWeek: destination.weekStart)
-        guard let data = viewModel.data, data.weekStart == destination.weekStart else { return }
+        if case .inbox(let id) = destination.target {
+            await notifications.refreshInbox()
+            if let item = notifications.inbox.items.first(where: { $0.id == id }) {
+                await openInboxItem(item)
+            }
+            notifications.consume(destination)
+            return
+        }
+        guard let weekStart = destination.weekStart else {
+            notifications.consume(destination)
+            return
+        }
+        await viewModel.move(toWeek: weekStart)
+        guard let data = viewModel.data, data.weekStart == weekStart else { return }
 
         switch destination.target {
         case .planningItem(let id):
@@ -136,8 +165,36 @@ struct PlannerView: View {
                 selectedDayDate = match.0
                 sheet = .event(match.1)
             }
+        case .inbox:
+            break
         }
         notifications.consume(destination)
+    }
+
+    private func openInboxItem(_ item: NotificationInboxItem) async {
+        await notifications.markRead(item.id)
+        sheet = nil
+        guard let target = item.target else { return }
+        await viewModel.move(toWeek: target.weekStart)
+        guard let data = viewModel.data, data.weekStart == target.weekStart else { return }
+
+        if target.kind == "planning_item", let id = target.planningItemId,
+           let planningItem = (data.days.flatMap(\.items) + data.weeklyItems).first(where: { $0.id == id }) {
+            selectedDestination = planningItem.type == .task ? .tasks : .plans
+            if let date = planningItem.planningDate { selectedDayDate = date }
+            sheet = .item(planningItem, date: planningItem.planningDate, type: planningItem.type)
+        } else if target.kind == "calendar_event",
+                  let calendarPreferenceId = target.calendarPreferenceId,
+                  let providerEventId = target.providerEventId,
+                  let match = data.days.lazy.compactMap({ day in
+                      day.events.first(where: {
+                          $0.calendarPreferenceId == calendarPreferenceId && $0.providerEventId == providerEventId
+                      }).map { (day.date, $0) }
+                  }).first {
+            selectedDestination = .calendar
+            selectedDayDate = match.0
+            sheet = .event(match.1)
+        }
     }
 
     @ViewBuilder
@@ -350,11 +407,122 @@ struct PlannerView: View {
             case .weather(let day): WeatherDetailView(day: day, unit: data.household.temperatureUnit)
             case .location(let day): LocationPickerView(day: day, locations: data.locations, viewModel: viewModel)
             case .search: PlannerSearchView(viewModel: viewModel)
+            case .notifications: NotificationInboxView(coordinator: notifications, onOpen: { item in
+                Task { await openInboxItem(item) }
+            })
             case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth, appleReminders: appleReminders)
             }
         } else {
             EmptyView()
         }
+    }
+}
+
+private struct NotificationInboxView: View {
+    @ObservedObject var coordinator: NotificationCoordinator
+    let onOpen: (NotificationInboxItem) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if coordinator.inbox.items.isEmpty {
+                    ContentUnavailableView(
+                        "You’re all caught up",
+                        systemImage: "bell",
+                        description: Text("Reminders and household updates will appear here.")
+                    )
+                } else {
+                    List(coordinator.inbox.items) { item in
+                        Button { onOpen(item) } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                    Image(systemName: notificationIcon(item.kind))
+                                        .foregroundStyle(CWTheme.accentStrong)
+                                    Text(item.title)
+                                        .font(.subheadline.weight(item.readAt == nil ? .bold : .semibold))
+                                        .foregroundStyle(CWTheme.ink)
+                                    if item.readAt == nil {
+                                        Circle().fill(CWTheme.accent).frame(width: 7, height: 7)
+                                    }
+                                    Spacer(minLength: 4)
+                                    Text(notificationDate(item.createdAt))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Text(item.body)
+                                    .font(.caption)
+                                    .foregroundStyle(CWTheme.secondaryInk)
+                                    .lineLimit(3)
+                                HStack(spacing: 6) {
+                                    deliveryChip("Email", icon: "envelope", state: item.channels.email)
+                                    deliveryChip("Push", icon: "iphone", state: item.channels.push)
+                                }
+                            }
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(item.readAt == nil ? CWTheme.mint.opacity(0.35) : Color.clear)
+                    }
+                    .listStyle(.plain)
+                    .refreshable { await coordinator.refreshInbox() }
+                }
+            }
+            .navigationTitle("Notifications")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                if coordinator.inbox.unreadCount > 0 {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Mark all read") { Task { await coordinator.markAllRead() } }
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if let error = coordinator.inboxError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(10)
+                        .frame(maxWidth: .infinity)
+                        .background(.thinMaterial)
+                }
+            }
+            .task { await coordinator.refreshInbox() }
+        }
+    }
+
+    private func notificationIcon(_ kind: String) -> String {
+        switch kind {
+        case "reminder": "clock.badge"
+        case "household_change": "person.2.badge.gearshape"
+        default: "bell.badge"
+        }
+    }
+
+    private func deliveryChip(_ label: String, icon: String, state: NotificationChannelState) -> some View {
+        let status: String = switch state.status {
+        case .delivered: "Delivered"
+        case .skipped: "Off"
+        case .failed where state.attempts >= 5: "Failed"
+        case .failed: "Retrying"
+        case .pending, .sending: "Queued"
+        }
+        return Label("\(label) · \(status)", systemImage: status == "Failed" ? "exclamationmark.triangle" : icon)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(status == "Failed" ? Color.red : Color.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+    }
+
+    private func notificationDate(_ value: String) -> String {
+        guard let date = ISO8601DateFormatter().date(from: value) else { return value }
+        if Calendar.current.isDateInToday(date) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }
 
