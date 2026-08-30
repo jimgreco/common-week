@@ -620,7 +620,7 @@ struct EventDetailView: View {
                     }
                     guestContent
                     reminderContent
-                    Text(event.canEdit == true ? (event.recurringEventId == nil ? "This event can be edited in Week of Us." : "You can update or delete this occurrence or its recurring series.") : "This calendar is read-only here. You can still hide the event from the shared planner.")
+                    Text(event.canEdit == true ? (event.recurringEventId == nil ? "This event can be edited in Week of Us." : "You can update or delete this occurrence or its recurring series.") : "This event is read-only for your Google account. Enable Calendar editing and ask the calendar owner to grant your Google address permission to make changes. You can still hide it from the shared planner.")
                         .font(.footnote).foregroundStyle(.secondary).padding(14).background(CWTheme.mint.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
                     if event.canEdit == true {
                         HStack {
@@ -1022,10 +1022,7 @@ struct CalendarEventEditorView: View {
     }
 
     private var calendarChoices: [EditableCalendar] {
-        guard let event, let sourceUserId = event.sourceUserId else { return data.editableCalendars }
-        return data.editableCalendars.filter {
-            $0.id == event.calendarPreferenceId || $0.sourceUserId == sourceUserId
-        }
+        data.editableCalendars
     }
 
     private var canMoveCalendar: Bool {

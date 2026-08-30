@@ -23,7 +23,8 @@ vi.mock("@/lib/server/database", () => ({
 }));
 vi.mock("@/lib/server/google-oauth", () => ({
   GOOGLE_CALENDAR_WRITE_SCOPE: "calendar.events",
-  hasGoogleScope: () => true,
+  hasGoogleScope: (scope: string | null | undefined, expected: string) =>
+    Boolean(scope?.split(" ").includes(expected)),
 }));
 vi.mock("@/lib/server/google-tokens", () => ({
   getGoogleAccessToken: (...args: unknown[]) => mocks.getGoogleAccessToken(...args),
@@ -72,10 +73,11 @@ describe("Google Calendar write privacy", () => {
         rows: [{
           calendar_owner_user_id: "member-a",
           google_calendar_id: "personal@example.com",
-          access_role: "owner",
+          actor_access_role: "owner",
           visibility: "hide",
           actor_role: "member",
-          scope: "calendar.events",
+          actor_scope: "calendar.events",
+          actor_google_connected: true,
           timezone: "America/New_York",
         }],
         rowCount: 1,
@@ -104,23 +106,24 @@ describe("Google Calendar write privacy", () => {
     expect(mocks.createEvent).not.toHaveBeenCalled();
   });
 
-  it("creates an event for a household member through the shared calendar owner's connection", async () => {
+  it("creates an event for a household member through the actor's Google connection", async () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("from calendar_preferences")) return {
         rows: [{
           calendar_owner_user_id: "member-b",
           google_calendar_id: "family@example.com",
-          access_role: "owner",
+          actor_access_role: "writer",
           visibility: "share",
           actor_role: "member",
-          scope: "calendar.events",
+          actor_scope: "calendar.events",
+          actor_google_connected: true,
           timezone: "America/New_York",
         }],
         rowCount: 1,
       };
       return { rows: [], rowCount: 0 };
     });
-    mocks.getGoogleAccessToken.mockImplementation(async (userId: string) => userId === "member-b" ? "token-b" : null);
+    mocks.getGoogleAccessToken.mockImplementation(async (userId: string) => userId === "member-a" ? "token-a" : null);
 
     const result = await createCalendarEventAction({
       requestId: "00000000-0000-4000-8000-000000000010",
@@ -136,16 +139,54 @@ describe("Google Calendar write privacy", () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(mocks.getGoogleAccessToken).toHaveBeenCalledWith("member-b");
+    expect(mocks.getGoogleAccessToken).toHaveBeenCalledWith("member-a");
     expect(mocks.createEvent).toHaveBeenCalledWith(
-      "token-b",
+      "token-a",
       "family@example.com",
       expect.objectContaining({ summary: "Shared family event" }),
     );
     expect(mocks.query).toHaveBeenCalledWith(
-      "delete from calendar_event_cache where user_id = $1",
-      ["member-b"],
+      expect.stringContaining("delete from calendar_event_cache"),
+      ["household-a"],
     );
+  });
+
+  it("explains when Google has not shared a household calendar with the actor", async () => {
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("from calendar_preferences")) return {
+        rows: [{
+          calendar_owner_user_id: "member-b",
+          google_calendar_id: "family@example.com",
+          actor_access_role: null,
+          visibility: "share",
+          actor_role: "member",
+          actor_scope: "calendar.events",
+          actor_google_connected: true,
+          timezone: "America/New_York",
+        }],
+        rowCount: 1,
+      };
+      return { rows: [], rowCount: 0 };
+    });
+
+    const result = await createCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      calendarPreferenceId: "00000000-0000-4000-8000-000000000011",
+      title: "Shared family event",
+      description: "",
+      location: "",
+      allDay: false,
+      startDate: "2026-08-14",
+      endDate: "2026-08-14",
+      startTime: "10:00",
+      endTime: "11:00",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Google has not shared this calendar with your account. Add it in Google Calendar, then refresh calendars in Settings.",
+    });
+    expect(mocks.createEvent).not.toHaveBeenCalled();
   });
 
   it("updates one recurring occurrence after verifying its current ETag", async () => {
@@ -154,10 +195,11 @@ describe("Google Calendar write privacy", () => {
         rows: [{
           calendar_owner_user_id: "member-a",
           google_calendar_id: "family@example.com",
-          access_role: "owner",
+          actor_access_role: "owner",
           visibility: "share",
           actor_role: "member",
-          scope: "calendar.events",
+          actor_scope: "calendar.events",
+          actor_google_connected: true,
           timezone: "America/New_York",
         }],
         rowCount: 1,
@@ -200,10 +242,11 @@ describe("Google Calendar write privacy", () => {
           rows: [{
             calendar_owner_user_id: "member-a",
             google_calendar_id: destination ? "personal@example.com" : "family@example.com",
-            access_role: "owner",
+            actor_access_role: "owner",
             visibility: "private",
             actor_role: "member",
-            scope: "calendar.events",
+            actor_scope: "calendar.events",
+            actor_google_connected: true,
             timezone: "America/New_York",
           }],
           rowCount: 1,
@@ -251,7 +294,7 @@ describe("Google Calendar write privacy", () => {
     );
   });
 
-  it("rejects calendar moves across different Google connections", async () => {
+  it("moves between calendars from different household connections when the actor can write both", async () => {
     const sourcePreferenceId = "00000000-0000-4000-8000-000000000011";
     const destinationPreferenceId = "00000000-0000-4000-8000-000000000012";
     mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
@@ -261,10 +304,11 @@ describe("Google Calendar write privacy", () => {
           rows: [{
             calendar_owner_user_id: destination ? "member-b" : "member-a",
             google_calendar_id: destination ? "partner@example.com" : "family@example.com",
-            access_role: "owner",
+            actor_access_role: "writer",
             visibility: "share",
             actor_role: "member",
-            scope: "calendar.events",
+            actor_scope: "calendar.events",
+            actor_google_connected: true,
             timezone: "America/New_York",
           }],
           rowCount: 1,
@@ -289,9 +333,14 @@ describe("Google Calendar write privacy", () => {
       endTime: "11:00",
     });
 
-    expect(result).toEqual({ ok: false, error: "Events can only move between calendars connected through the same Google account." });
-    expect(mocks.updateEvent).not.toHaveBeenCalled();
-    expect(mocks.moveEvent).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true });
+    expect(mocks.updateEvent).toHaveBeenCalled();
+    expect(mocks.moveEvent).toHaveBeenCalledWith(
+      "token-a",
+      "family@example.com",
+      "event-1",
+      "partner@example.com",
+    );
   });
 
   it("requires a series edit before moving a recurring event", async () => {
@@ -303,10 +352,11 @@ describe("Google Calendar write privacy", () => {
           rows: [{
             calendar_owner_user_id: "member-a",
             google_calendar_id: params?.[0] === destinationPreferenceId ? "personal@example.com" : "family@example.com",
-            access_role: "owner",
+            actor_access_role: "owner",
             visibility: "private",
             actor_role: "member",
-            scope: "calendar.events",
+            actor_scope: "calendar.events",
+            actor_google_connected: true,
             timezone: "America/New_York",
           }],
           rowCount: 1,
@@ -345,10 +395,11 @@ describe("Google Calendar write privacy", () => {
         rows: [{
           calendar_owner_user_id: "member-a",
           google_calendar_id: "family@example.com",
-          access_role: "writer",
+          actor_access_role: "writer",
           visibility: "share",
           actor_role: "member",
-          scope: "calendar.events",
+          actor_scope: "calendar.events",
+          actor_google_connected: true,
           timezone: "America/New_York",
         }],
         rowCount: 1,
@@ -375,8 +426,8 @@ describe("Google Calendar write privacy", () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("from calendar_preferences")) return {
         rows: [{
-          calendar_owner_user_id: "member-a", google_calendar_id: "family@example.com", access_role: "owner",
-          visibility: "share", actor_role: "member", scope: "calendar.events", timezone: "America/New_York",
+          calendar_owner_user_id: "member-a", google_calendar_id: "family@example.com", actor_access_role: "owner",
+          visibility: "share", actor_role: "member", actor_scope: "calendar.events", actor_google_connected: true, timezone: "America/New_York",
         }],
         rowCount: 1,
       };
@@ -420,8 +471,8 @@ describe("Google Calendar write privacy", () => {
     mocks.query.mockImplementation(async (sql: string) => {
       if (sql.includes("from calendar_preferences")) return {
         rows: [{
-          calendar_owner_user_id: "member-a", google_calendar_id: "primary@example.com", access_role: "owner",
-          visibility: "private", actor_role: "member", scope: "calendar.events", timezone: "America/New_York",
+          calendar_owner_user_id: "member-a", google_calendar_id: "primary@example.com", actor_access_role: "owner",
+          visibility: "private", actor_role: "member", actor_scope: "calendar.events", actor_google_connected: true, timezone: "America/New_York",
         }],
         rowCount: 1,
       };

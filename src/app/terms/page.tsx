@@ -17,13 +17,13 @@ export default function TermsPage() {
         {
           title: "The service",
           paragraphs: [
-            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, tasks, reminders, and optional notifications. Features may change as the service improves. Google Calendar editing is optional and applies only to events on calendars where the connected Google account has write permission. Choosing Share authorizes household owners and members to add, edit, and delete permitted events or recurring series on that calendar through Week of Us. Invitation responses are limited to the connected account that received them.",
+            "Week of Us provides a shared weekly planner for household calendars, locations, weather, notes, tasks, reminders, and optional notifications. Features may change as the service improves. Google Calendar editing is optional and applies only to events on calendars where the acting member’s connected Google account has write permission. Choosing Share makes a calendar visible to the household but does not grant Google write access. Invitation responses are limited to the connected account that received them.",
           ],
         },
         {
           title: "Your account and household",
           paragraphs: [
-            "You are responsible for your Apple or Google account, the accuracy of information you provide, and activity performed through your Week of Us session. Invite only people you trust to join your household. Household owners and members can see and change calendar data that you explicitly Share into the common planner when Calendar editing is enabled.",
+            "You are responsible for your Apple or Google account, the accuracy of information you provide, and activity performed through your Week of Us session. Invite only people you trust to join your household. Household owners and members can see calendar data that you explicitly Share into the common planner. They can change it only when Google separately grants their own account write access.",
           ],
         },
         {

@@ -352,7 +352,7 @@ struct SettingsView: View {
                 if !settings.writeEnabled {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Calendar access is read-only.").font(.subheadline)
-                        Text("Enable editing to add, edit, and delete events on writable calendars you share with your household.").font(.caption).foregroundStyle(.secondary)
+                        Text("Enable editing for your Google account. Another member’s calendar also requires Google permission to make changes.").font(.caption).foregroundStyle(.secondary)
                         Button { Task { await connectCalendar(writeAccess: true) } } label: {
                             Label(isAuthorizingCalendar ? "Authorizing…" : "Enable calendar editing", systemImage: "pencil.and.outline")
                         }.disabled(isAuthorizingCalendar)
@@ -627,7 +627,7 @@ private struct CalendarPreferenceEditor: View {
                 ForEach(CalendarVisibility.allCases) { visibility in Text(visibility.title).tag(visibility) }
             }.pickerStyle(.segmented)
 
-            Text(calendar.visibility == .share ? "Household owners and members can view this calendar and edit it when Google grants write access and Calendar editing is enabled." : calendar.visibility == .private ? "Only you can see and edit this calendar in Week of Us." : "This calendar is removed from Week of Us.")
+            Text(calendar.visibility == .share ? "Household members can view this calendar. Each person can edit only when Google grants their own account permission to make changes." : calendar.visibility == .private ? "Only you can see this calendar in Week of Us; editing follows your Google permission." : "This calendar is removed from Week of Us.")
                 .font(.caption).foregroundStyle(.secondary)
 
             TextField("Display alias", text: optionalBinding(\CalendarPreference.displayAlias))

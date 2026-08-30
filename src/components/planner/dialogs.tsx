@@ -146,7 +146,7 @@ export function EventDetailDialog({
         {event.canRespond && <div className="event-response-actions"><span>Your response: <strong>{selfAttendee?.responseStatus === "needsAction" ? "Not answered" : selfAttendee?.responseStatus}</strong></span><div><button type="button" disabled={responding} onClick={() => void respond("accepted")}>Accept</button><button type="button" disabled={responding} onClick={() => void respond("tentative")}>Maybe</button><button type="button" disabled={responding} onClick={() => void respond("declined")}>Decline</button></div></div>}
         {event.calendarPreferenceId && event.providerEventId && !event.allDay && <label className="event-reminder-control"><Bell size={15} /><span>Remind me</span><select value={reminder ? String(reminderLead) : "-1"} onChange={(change) => void saveReminder(Number(change.target.value))}><option value="-1">No reminder</option><option value="0">At start time</option><option value="10">10 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>}
         {event.recurringEventId && event.canEdit && <p className="event-edit-note">You can change this occurrence or the entire recurring series.</p>}
-        {!event.canEdit && <p className="event-edit-note">This event is read-only here. Calendar editing can be enabled in Settings; partner-owned and Google read-only calendars remain view-only.</p>}
+        {!event.canEdit && <p className="event-edit-note">This event is read-only for your Google account. Enable Calendar editing, and ask the calendar owner to grant your Google address permission to make changes.</p>}
         <div className="event-hide-note"><p>Hiding affects Week of Us for the household. It does not change Google Calendar, and you can restore the event in Settings.</p><button className="button button-danger-quiet" type="button" disabled={hiding} onClick={async () => { setHiding(true); setError(null); const result = await onHide(event); if (result) { setError(result); setHiding(false); } }}><EyeOff size={14} />{hiding ? "Hiding…" : "Hide from Week of Us"}</button></div>
         {error && <p className="location-picker-error" role="alert">{error}</p>}
         {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event.recurringEventId ? "What should be deleted from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
@@ -245,9 +245,7 @@ export function CalendarEventEditorDialog({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editing = Boolean(event);
-  const calendarChoices = editing && event?.sourceUserId
-    ? calendars.filter((calendar) => calendar.id === event.calendarPreferenceId || calendar.sourceUserId === event.sourceUserId)
-    : calendars;
+  const calendarChoices = calendars;
   const canMoveCalendar = !event?.recurringEventId || draft.recurringScope === "series";
 
   return (

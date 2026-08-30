@@ -8,7 +8,7 @@ The production application uses the existing self-hosted PostgreSQL 16 service. 
 
 - Independent Google sign-in for each member, read-only Calendar by default, and a separate opt-in for event editing
 - Shared single-household model with email-matched partner invitations
-- Three-state calendar access: Hide removes a calendar from the app, Private shows it only to its owner, and Share lets household members view and edit events when the calendar owner has enabled Google write access; newly discovered calendars start hidden
+- Three-state calendar access: Hide removes a calendar from the app, Private shows it only to its owner, and Share lets household members view it; editing additionally requires Google to grant the acting member write access through their own connected account
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
 - Native SwiftUI iPhone companion with Keychain sessions, Google OAuth handoff, in-app Calendar connection and management, protected offline snapshots, queued planner/location edits, and background refresh
 - Daily and weekly notes/tasks, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
@@ -82,7 +82,7 @@ Key paths:
 
 ## Current V1 constraints
 
-- Household owners and members can create, edit, and delete events on visible calendars they connected and on calendars another member explicitly Shared when that calendar's Google connection has write access. Private, hidden, read-only, and viewer-access calendars remain non-editable. RSVP is intentionally limited to the signed-in member's own connected Google account.
+- Household owners and members can create, edit, and delete events on visible calendars only when their own connected Google account has write access. A calendar another member Shares in Week of Us remains read-only until its Google owner also grants the acting member permission to make changes and the acting member enables Calendar editing. Private, hidden, Google read-only, and viewer-access calendars remain non-editable. RSVP is intentionally limited to the signed-in member's own connected Google account.
 - Forecasts use Open-Meteo's useful forecast horizon. Past weather is not reconstructed.
 - Collaboration is item-level last-write-wins, not simultaneous rich-text editing.
 - Offline iPhone replay covers plans, tasks, completion, deletion, and location assignment. Google Calendar changes remain online-only so stale provider ETags are never replayed.

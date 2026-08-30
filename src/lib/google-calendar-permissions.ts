@@ -14,11 +14,11 @@ export function canHouseholdMemberWriteGoogleCalendar(input: {
   actorUserId: string;
   calendarOwnerUserId: string;
   visibility: CalendarVisibility;
-  accessRole: GoogleCalendarAccessRole;
+  actorAccessRole: GoogleCalendarAccessRole | null;
   calendarWriteEnabled: boolean;
 }): boolean {
   if (input.actorRole === "viewer" || !input.calendarWriteEnabled) return false;
-  if (!isWritableGoogleCalendarRole(input.accessRole)) return false;
+  if (!input.actorAccessRole || !isWritableGoogleCalendarRole(input.actorAccessRole)) return false;
   if (input.calendarOwnerUserId === input.actorUserId) return input.visibility !== "hide";
   return input.visibility === "share";
 }

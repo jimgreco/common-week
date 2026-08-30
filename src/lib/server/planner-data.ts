@@ -162,18 +162,27 @@ export async function getPlannerData(
       query<{
         id: string;
         user_id: string;
+        google_calendar_id: string;
         calendar_name: string;
         display_alias: string | null;
         color: string;
         section_group: "critical" | "supplemental";
         access_role: "freeBusyReader" | "reader" | "writer" | "owner";
+        actor_access_role: "freeBusyReader" | "reader" | "writer" | "owner" | null;
         visibility: "hide" | "private" | "share";
-        scope: string | null;
+        actor_scope: string | null;
       }>(
-        `select cp.id, cp.user_id, cp.calendar_name, cp.display_alias, cp.color,
-                cp.section_group, cp.access_role, cp.visibility, gc.scope
+        `select cp.id, cp.user_id, cp.google_calendar_id, cp.calendar_name,
+                cp.display_alias, cp.color, cp.section_group, cp.access_role,
+                actor_cp.access_role as actor_access_role, cp.visibility,
+                actor_gc.scope as actor_scope
            from calendar_preferences cp
-           left join google_connections gc on gc.user_id = cp.user_id
+           join google_connections owner_gc on owner_gc.user_id = cp.user_id
+           left join calendar_preferences actor_cp
+             on actor_cp.household_id = cp.household_id
+            and actor_cp.user_id = $2
+            and actor_cp.google_calendar_id = cp.google_calendar_id
+           left join google_connections actor_gc on actor_gc.user_id = $2
           where cp.household_id = $1
             and (cp.user_id = $2 or cp.visibility = 'share')
           order by (cp.user_id = $2) desc, cp.is_primary desc, cp.calendar_name`,
@@ -240,8 +249,8 @@ export async function getPlannerData(
         actorUserId: context.userId,
         calendarOwnerUserId: calendar.user_id,
         visibility: calendar.visibility,
-        accessRole: calendar.access_role,
-        calendarWriteEnabled: hasGoogleScope(calendar.scope, GOOGLE_CALENDAR_WRITE_SCOPE),
+        actorAccessRole: calendar.actor_access_role,
+        calendarWriteEnabled: hasGoogleScope(calendar.actor_scope, GOOGLE_CALENDAR_WRITE_SCOPE),
       }))
       .map((calendar) => calendar.id),
   );

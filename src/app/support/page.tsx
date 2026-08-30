@@ -30,7 +30,7 @@ export default function SupportPage() {
         {
           title: "Google Calendar",
           paragraphs: [
-            "Google Calendar is optional. Connect it from Settings, refresh the calendar list, then choose Hide, Private, or Share for each calendar. Calendar editing remains off until you enable it separately.",
+            "Google Calendar is optional. Connect it from Settings, refresh the calendar list, then choose Hide, Private, or Share for each calendar. Calendar editing remains off until you enable it separately. To edit another member’s calendar, ask its Google owner to grant your Google address permission to make changes, add that calendar in Google Calendar, and refresh Week of Us.",
           ],
         },
       ]}

@@ -6,12 +6,12 @@ const base = {
   actorUserId: "member-b",
   calendarOwnerUserId: "member-a",
   visibility: "share" as const,
-  accessRole: "owner" as const,
+  actorAccessRole: "writer" as const,
   calendarWriteEnabled: true,
 };
 
 describe("household Google Calendar write permissions", () => {
-  it("lets a household member change events on a shared writable calendar", () => {
+  it("lets a household member change events when Google grants that member write access", () => {
     expect(canHouseholdMemberWriteGoogleCalendar(base)).toBe(true);
   });
 
@@ -22,7 +22,8 @@ describe("household Google Calendar write permissions", () => {
 
   it("keeps viewer roles, read-only calendars, and calendars without write authorization read-only", () => {
     expect(canHouseholdMemberWriteGoogleCalendar({ ...base, actorRole: "viewer" })).toBe(false);
-    expect(canHouseholdMemberWriteGoogleCalendar({ ...base, accessRole: "reader" })).toBe(false);
+    expect(canHouseholdMemberWriteGoogleCalendar({ ...base, actorAccessRole: "reader" })).toBe(false);
+    expect(canHouseholdMemberWriteGoogleCalendar({ ...base, actorAccessRole: null })).toBe(false);
     expect(canHouseholdMemberWriteGoogleCalendar({ ...base, calendarWriteEnabled: false })).toBe(false);
   });
 

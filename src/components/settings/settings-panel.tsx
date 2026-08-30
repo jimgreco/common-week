@@ -125,11 +125,11 @@ export function SettingsPanel({
         </section>
 
         <section className="settings-section" id="calendars">
-          <header><p className="eyebrow">Calendars</p><h2>Choose who can use each calendar</h2><p>Hide removes a calendar from Week of Us. Private shows it only to you. Share lets household members view it and, when editing is enabled and Google permits it, add, edit, and delete events.</p></header>
+          <header><p className="eyebrow">Calendars</p><h2>Choose who can use each calendar</h2><p>Hide removes a calendar from Week of Us. Private shows it only to you. Share lets household members view it. To edit, each person must also have Google permission to make changes.</p></header>
           <div className="calendar-privacy-note"><LockKeyhole size={17} /><div><strong>Hidden by default</strong><p>New Google calendars stay hidden until you choose Private or Share. Calendar names and events are never shared unless you choose Share. <Link href="/privacy">Read how Google data is handled.</Link></p></div></div>
           {!isDemo && calendarConnected && (
             <div className={`calendar-editing-access ${calendarWriteEnabled ? "is-enabled" : ""}`}>
-              <div><strong>{calendarWriteEnabled ? "Calendar editing enabled" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "You and your household members can create, edit, and delete events or recurring series on calendars you Share where Google gives you write access." : "Enable this separately to keep the default Google connection read-only. Shared calendars stay view-only until their owner enables editing."}</p></div>
+              <div><strong>{calendarWriteEnabled ? "Calendar editing enabled for you" : "Calendar editing is off"}</strong><p>{calendarWriteEnabled ? "Edits use your Google account. For another member’s calendar, its Google owner must grant your Google address permission to make changes." : "Enable this for your own Google account. A Week of Us Shared calendar stays read-only unless Google also gives you write access."}</p></div>
               {!calendarWriteEnabled && <a className="button button-secondary" href="/auth/google?calendar_write=1">Enable calendar editing</a>}
             </div>
           )}

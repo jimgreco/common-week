@@ -37,43 +37,72 @@ const eventDraftSchema = z.object({
 interface WritableCalendarRow {
   calendar_owner_user_id: string;
   google_calendar_id: string;
-  access_role: GoogleCalendarAccessRole;
+  actor_access_role: GoogleCalendarAccessRole | null;
   visibility: "hide" | "private" | "share";
   actor_role: "owner" | "member" | "viewer";
-  scope: string | null;
+  actor_scope: string | null;
+  actor_google_connected: boolean;
   timezone: string;
 }
 
 async function requireWritableCalendar(calendarPreferenceId: string) {
   const context = await requireHouseholdContext();
   const result = await query<WritableCalendarRow>(
-    `select cp.user_id as calendar_owner_user_id, cp.google_calendar_id, cp.access_role,
-            cp.visibility, actor.role as actor_role, gc.scope, h.timezone
+    `select cp.user_id as calendar_owner_user_id, cp.google_calendar_id,
+            actor_cp.access_role as actor_access_role, cp.visibility,
+            actor.role as actor_role, actor_gc.scope as actor_scope,
+            (actor_gc.user_id is not null) as actor_google_connected, h.timezone
        from calendar_preferences cp
-       join google_connections gc on gc.user_id = cp.user_id
        join households h on h.id = cp.household_id
        join household_members actor on actor.household_id = cp.household_id and actor.user_id = $3
+       left join calendar_preferences actor_cp
+         on actor_cp.household_id = cp.household_id
+        and actor_cp.user_id = actor.user_id
+        and actor_cp.google_calendar_id = cp.google_calendar_id
+       left join google_connections actor_gc on actor_gc.user_id = actor.user_id
       where cp.id = $1 and cp.household_id = $2`,
     [calendarPreferenceId, context.householdId, context.userId],
   );
   const calendar = result.rows[0];
-  if (!calendar || !canHouseholdMemberWriteGoogleCalendar({
+  const calendarVisibleToActor = calendar && (
+    calendar.calendar_owner_user_id === context.userId
+      ? calendar.visibility !== "hide"
+      : calendar.visibility === "share"
+  );
+  if (!calendar || calendar.actor_role === "viewer" || !calendarVisibleToActor) {
+    throw new Error("That calendar is not editable by this household member.");
+  }
+  if (!calendar.actor_google_connected) {
+    throw new Error("Connect your own Google Calendar before changing this event.");
+  }
+  if (!hasGoogleScope(calendar.actor_scope, GOOGLE_CALENDAR_WRITE_SCOPE)) {
+    throw new Error("Enable Calendar editing for your Google account before changing this event.");
+  }
+  if (!calendar.actor_access_role) {
+    throw new Error("Google has not shared this calendar with your account. Add it in Google Calendar, then refresh calendars in Settings.");
+  }
+  if (!canHouseholdMemberWriteGoogleCalendar({
     actorRole: calendar.actor_role,
     actorUserId: context.userId,
     calendarOwnerUserId: calendar.calendar_owner_user_id,
     visibility: calendar.visibility,
-    accessRole: calendar.access_role,
-    calendarWriteEnabled: hasGoogleScope(calendar.scope, GOOGLE_CALENDAR_WRITE_SCOPE),
+    actorAccessRole: calendar.actor_access_role,
+    calendarWriteEnabled: true,
   })) {
-    throw new Error("That calendar is not editable by this household member.");
+    throw new Error("Your Google account has read-only access to this calendar. Ask its owner to grant permission to make changes, then refresh calendars in Settings.");
   }
-  const accessToken = await getGoogleAccessToken(calendar.calendar_owner_user_id);
-  if (!accessToken) throw new Error("The person sharing this calendar needs to reconnect Google Calendar.");
+  const accessToken = await getGoogleAccessToken(context.userId);
+  if (!accessToken) throw new Error("Reconnect your own Google Calendar before changing this event.");
   return { context, calendar, accessToken };
 }
 
-async function finishMutation(userId: string, householdId: string) {
-  await query("delete from calendar_event_cache where user_id = $1", [userId]);
+async function finishMutation(householdId: string) {
+  await query(
+    `delete from calendar_event_cache cache
+      using household_members member
+      where cache.user_id = member.user_id and member.household_id = $1`,
+    [householdId],
+  );
   await query(
     "select pg_notify('common_week_changes', json_build_object('householdId', $1::text, 'table', 'google_calendar_events')::text)",
     [householdId],
@@ -107,7 +136,7 @@ export async function createCalendarEventAction(input: CalendarEventDraft): Prom
       if (!(error instanceof GoogleCalendarApiError) || error.statusCode !== 409) throw error;
       await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, providerEventId);
     }
-    await finishMutation(calendar.calendar_owner_user_id, context.householdId);
+    await finishMutation(context.householdId);
     await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,
@@ -129,9 +158,6 @@ export async function updateCalendarEventAction(input: CalendarEventDraft): Prom
     const destination = draft.calendarPreferenceId === sourcePreferenceId
       ? { calendar: sourceCalendar }
       : await requireWritableCalendar(draft.calendarPreferenceId);
-    if (destination.calendar.calendar_owner_user_id !== sourceCalendar.calendar_owner_user_id) {
-      throw new Error("Events can only move between calendars connected through the same Google account.");
-    }
     const movingCalendars = destination.calendar.google_calendar_id !== sourceCalendar.google_calendar_id;
     if (movingCalendars && draft.recurringEventId && draft.recurringScope !== "series") {
       throw new Error("Choose Entire series before moving a recurring event to another calendar.");
@@ -170,7 +196,7 @@ export async function updateCalendarEventAction(input: CalendarEventDraft): Prom
         throw error;
       }
     }
-    await finishMutation(sourceCalendar.calendar_owner_user_id, context.householdId);
+    await finishMutation(context.householdId);
     await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,
@@ -201,7 +227,7 @@ export async function deleteCalendarEventAction(input: Pick<CalendarEventDraft, 
       return { ok: false, error: "This event changed in Google Calendar. Refresh the week and try again." };
     }
     await googleCalendarService.deleteEvent(accessToken, calendar.google_calendar_id, targetEventId, current.etag);
-    await finishMutation(calendar.calendar_owner_user_id, context.householdId);
+    await finishMutation(context.householdId);
     await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,
@@ -247,7 +273,7 @@ export async function respondToCalendarEventAction(input: {
       { attendees: nextAttendees },
       "all",
     );
-    await finishMutation(calendar.calendar_owner_user_id, context.householdId);
+    await finishMutation(context.householdId);
     return { ok: true };
   } catch (error) {
     return mutationFailure(error);

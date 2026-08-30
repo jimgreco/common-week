@@ -9,7 +9,7 @@ import { googleCalendarService, type GoogleCalendarListEntry } from "@/lib/integ
 import { query, withTransaction } from "@/lib/server/database";
 import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import { getGoogleAccessToken } from "@/lib/server/google-tokens";
-import type { CalendarEvent, CalendarPreference, PlannerSourceState } from "@/types/domain";
+import type { CalendarEvent, CalendarPreference, GoogleCalendarAccessRole, PlannerSourceState } from "@/types/domain";
 
 interface MemberIdentity {
   userId: string;
@@ -259,12 +259,21 @@ export async function searchHouseholdCalendarEvents(
   );
   const settings = household.rows[0];
   if (!settings) return [];
-  const preferences = await query<PreferenceRow & { scope: string | null }>(
+  const preferences = await query<PreferenceRow & {
+    actor_access_role: GoogleCalendarAccessRole | null;
+    actor_scope: string | null;
+  }>(
     `select cp.id, cp.user_id, cp.google_calendar_id, cp.calendar_name, cp.display_alias,
             cp.display_abbreviation, cp.color, cp.visibility, cp.is_primary,
-            cp.section_group, cp.access_role, gc.scope
+            cp.section_group, cp.access_role,
+            actor_cp.access_role as actor_access_role, actor_gc.scope as actor_scope
        from calendar_preferences cp
-       join google_connections gc on gc.user_id = cp.user_id
+       join google_connections owner_gc on owner_gc.user_id = cp.user_id
+       left join calendar_preferences actor_cp
+         on actor_cp.household_id = cp.household_id
+        and actor_cp.user_id = $2
+        and actor_cp.google_calendar_id = cp.google_calendar_id
+       left join google_connections actor_gc on actor_gc.user_id = $2
       where cp.household_id = $1
         and (cp.visibility = 'share' or (cp.visibility = 'private' and cp.user_id = $2))`,
     [context.householdId, context.userId],
@@ -294,8 +303,8 @@ export async function searchHouseholdCalendarEvents(
         actorUserId: context.userId,
         calendarOwnerUserId: row.user_id,
         visibility: row.visibility,
-        accessRole: row.access_role,
-        calendarWriteEnabled: hasGoogleScope(row.scope, GOOGLE_CALENDAR_WRITE_SCOPE),
+        actorAccessRole: row.actor_access_role,
+        calendarWriteEnabled: hasGoogleScope(row.actor_scope, GOOGLE_CALENDAR_WRITE_SCOPE),
       });
       return events.map((event) => ({
         ...event,

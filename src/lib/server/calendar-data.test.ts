@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getGoogleAccessToken: vi.fn(),
   listCalendars: vi.fn(),
   listEvents: vi.fn(),
+  searchEvents: vi.fn(),
   query: vi.fn(),
   transactionQuery: vi.fn(),
   withTransaction: vi.fn(),
@@ -22,12 +23,14 @@ vi.mock("@/lib/integrations/google-calendar", () => ({
   googleCalendarService: {
     listCalendars: (...args: unknown[]) => mocks.listCalendars(...args),
     listEvents: (...args: unknown[]) => mocks.listEvents(...args),
+    searchEvents: (...args: unknown[]) => mocks.searchEvents(...args),
   },
 }));
 
 import {
   getHouseholdCalendarEvents,
   refreshCurrentUserCalendarPreferences,
+  searchHouseholdCalendarEvents,
 } from "@/lib/server/calendar-data";
 
 function preferenceRow(input: {
@@ -147,6 +150,63 @@ describe("household calendar privacy", () => {
     expect(mocks.listEvents).toHaveBeenCalledTimes(3);
     expect(mocks.listEvents.mock.calls.map((call) => (call[1] as CalendarPreference).calendarName)).not.toEqual(
       expect.arrayContaining(["Hidden A", "Work B"]),
+    );
+  });
+
+  it("uses the searching member's Google access role for editability", async () => {
+    const shared = {
+      ...preferenceRow({
+        id: "shared-b",
+        userId: "member-b",
+        calendarId: "family@example.com",
+        name: "Family",
+        visibility: "share",
+      }),
+      access_role: "owner" as const,
+      actor_access_role: "reader" as const,
+      actor_scope: "calendar.events",
+    };
+    mocks.getGoogleAccessToken.mockResolvedValue("owner-token");
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("select h.timezone")) return {
+        rows: [{ timezone: "America/New_York", actor_role: "member" }],
+        rowCount: 1,
+      };
+      if (sql.includes("from calendar_preferences")) return { rows: [shared], rowCount: 1 };
+      if (sql.includes("from notification_reminders")) return { rows: [], rowCount: 0 };
+      throw new Error(`Unexpected search query: ${sql}`);
+    });
+    mocks.searchEvents.mockResolvedValue([{
+      id: "family@example.com:event-1",
+      providerEventId: "event-1",
+      calendarPreferenceId: "shared-b",
+      sourceUserId: "member-b",
+      title: "Dinner",
+      start: "2026-08-10T18:00:00-04:00",
+      end: "2026-08-10T19:00:00-04:00",
+      allDay: false,
+      calendarId: "family@example.com",
+      calendarName: "Family",
+      calendarAlias: "Family",
+      calendarColor: "#345678",
+      attribution: "FA",
+      sectionGroup: "critical",
+    } satisfies CalendarEvent]);
+
+    const result = await searchHouseholdCalendarEvents(
+      { householdId: "household-a", userId: "member-a" },
+      "Dinner",
+    );
+
+    expect(result).toMatchObject([{ title: "Dinner", canEdit: false }]);
+    expect(mocks.searchEvents).toHaveBeenCalledWith(
+      "owner-token",
+      expect.objectContaining({ googleCalendarId: "family@example.com" }),
+      "Dinner",
+      expect.any(String),
+      expect.any(String),
+      "America/New_York",
+      expect.any(String),
     );
   });
 });
