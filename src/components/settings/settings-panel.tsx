@@ -41,8 +41,6 @@ const defaultNotificationPreferences: NotificationPreferences = {
 };
 
 export function SettingsPanel({
-  theme,
-  toggleTheme,
   household,
   members,
   invitations,
@@ -55,8 +53,6 @@ export function SettingsPanel({
   currentUserId,
   isDemo,
 }: {
-  theme: string;
-  toggleTheme: () => void;
   household: HouseholdSummary;
   members: HouseholdMember[];
   invitations: Invitation[];
@@ -69,6 +65,7 @@ export function SettingsPanel({
   currentUserId: string;
   isDemo: boolean;
 }) {
+  const { theme, toggleTheme } = useTheme();
   const router = useRouter();
   const [locations, setLocations] = useState(initialLocations);
   const [calendars, setCalendars] = useState(initialCalendars);

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { acceptPendingInvitation, findOrCreateProviderUser } from "@/lib/server/account-identity";
+import { acceptPendingInvitation, ensurePersonalHousehold, findOrCreateProviderUser } from "@/lib/server/account-identity";
 import { appleNativeClientId, exchangeAppleAuthorizationCode, verifyAppleIdentityToken } from "@/lib/server/apple-auth";
 import { withTransaction } from "@/lib/server/database";
 import { createDatabaseSession } from "@/lib/server/session";
@@ -39,20 +39,7 @@ export async function POST(request: Request) {
         [userId, encryptProviderToken(exchanged.refreshToken), clientId],
       );
       const householdId = await acceptPendingInvitation(database, userId, verified.email);
-      if (!householdId) {
-        const membership = await database.query("select 1 from household_members where user_id = $1", [userId]);
-        if (!membership.rowCount) {
-          const householdName = input.displayName ? `${input.displayName}'s household` : "Our household";
-          const household = await database.query<{ id: string }>(
-            "insert into households (name, timezone) values ($1, $2) returning id",
-            [householdName.slice(0, 80), "America/New_York"],
-          );
-          await database.query(
-            "insert into household_members (household_id, user_id, role) values ($1, $2, 'owner')",
-            [household.rows[0].id, userId],
-          );
-        }
-      }
+      if (!householdId) await ensurePersonalHousehold(database, userId, input.displayName ?? "");
       return createDatabaseSession(database, userId);
     });
     return Response.json({ ok: true, data: { token: session.token, expiresAt: session.expires.toISOString() } }, { headers: { "Cache-Control": "no-store" } });

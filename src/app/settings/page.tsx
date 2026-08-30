@@ -12,17 +12,12 @@ import { getNotificationPreferences } from "@/lib/server/notifications";
 import { query } from "@/lib/server/database";
 import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import type { HiddenCalendarEvent, HouseholdLocation, HouseholdMember, NotificationPreferences } from "@/types/domain";
-import { ThemeProvider, useTheme } from "@/components/theme-provider";
+import type { ReactNode } from "react";
 
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
-function SettingsPageContent() {
-  const { theme, toggleTheme } = useTheme();
-  return <SettingsPageInternal theme={theme} toggleTheme={toggleTheme} />;
-}
-
-async function SettingsPageInternal({ theme, toggleTheme }: { theme: string; toggleTheme: () => void }) {
+export default async function SettingsPage() {
   if (isDemoMode) {
     const data = getDemoPlannerData();
     const demoCalendars = Array.from(new Map(data.days.flatMap((day) => day.events).map((event) => [event.calendarId, event])).values()).map((event, index) => ({
@@ -39,7 +34,7 @@ async function SettingsPageInternal({ theme, toggleTheme }: { theme: string; tog
       accessRole: "owner" as const,
     }));
     const demoNotifications: NotificationPreferences = { emailEnabled: true, pushEnabled: true, morningDigestEnabled: false, morningDigestTime: "07:00", sundayPlanningEnabled: false, sundayPlanningTime: "18:00", householdChangeAlerts: false };
-    return <SettingsScaffold><SettingsPanel theme={theme} toggleTheme={toggleTheme} household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} notificationPreferences={demoNotifications} calendarConnected={false} calendarWriteEnabled currentUserId="demo-jim" isDemo /></SettingsScaffold>;
+    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} notificationPreferences={demoNotifications} calendarConnected={false} calendarWriteEnabled currentUserId="demo-jim" isDemo /></SettingsScaffold>;
   }
 
   const context = await getUserContext();
@@ -91,17 +86,9 @@ async function SettingsPageInternal({ theme, toggleTheme }: { theme: string; tog
   const members: HouseholdMember[] = membersResult.rows.map((member) => ({ id: member.id, userId: member.user_id, displayName: member.display_name, email: member.email, role: member.role }));
   const locations: HouseholdLocation[] = locationsResult.rows.map((location) => ({ id: location.id, name: location.name, latitude: Number(location.latitude), longitude: Number(location.longitude), timezone: location.timezone, isSaved: location.is_saved, isDefault: location.id === household.default_location_id }));
   const hiddenEvents: HiddenCalendarEvent[] = hiddenEventsResult.rows.map((event) => ({ id: event.id, eventId: event.event_id, title: event.title, calendarName: event.calendar_name, eventStart: event.event_start, hiddenAt: event.hidden_at.toISOString() }));
-  return <SettingsScaffold><SettingsPanel theme={theme} toggleTheme={toggleTheme} household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString(), sentAt: invite.sent_at?.toISOString() ?? null, deliveryError: invite.delivery_error }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} notificationPreferences={notificationPreferences} calendarConnected={Boolean(connectionResult.rowCount)} calendarWriteEnabled={hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE)} currentUserId={context.userId} isDemo={false} /></SettingsScaffold>;
+  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString(), sentAt: invite.sent_at?.toISOString() ?? null, deliveryError: invite.delivery_error }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} notificationPreferences={notificationPreferences} calendarConnected={Boolean(connectionResult.rowCount)} calendarWriteEnabled={hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE)} currentUserId={context.userId} isDemo={false} /></SettingsScaffold>;
 }
 
-function SettingsScaffold({ children }: { children: React.ReactNode }) {
+function SettingsScaffold({ children }: { children: ReactNode }) {
   return <main className="app-frame"><header className="app-topbar"><BrandMark compact /><Link className="topbar-link back-to-planner" href="/planner"><ArrowLeft size={15} />Back to planner</Link></header><section className="settings-shell"><header className="settings-title"><p className="eyebrow">Week of Us</p><h1>Settings</h1></header>{children}</section></main>;
-}
-
-export default function SettingsPage() {
-  return (
-    <ThemeProvider>
-      <SettingsPageContent />
-    </ThemeProvider>
-  );
 }

@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { applicationOrigin } from "@/lib/env";
-import { acceptPendingInvitation, findOrCreateProviderUser } from "@/lib/server/account-identity";
+import { acceptPendingInvitation, ensurePersonalHousehold, findOrCreateProviderUser } from "@/lib/server/account-identity";
 import { refreshCurrentUserCalendarPreferences } from "@/lib/server/calendar-data";
 import { withTransaction } from "@/lib/server/database";
 import {
@@ -125,7 +125,11 @@ export async function GET(request: NextRequest) {
         ],
       );
 
-      const householdId = await acceptPendingInvitation(database, userId, email);
+      let householdId = await acceptPendingInvitation(database, userId, email);
+      const isNativeSignIn = oauthPlatform === "ios" && Boolean(clientState) && !connectToken;
+      if (!householdId && isNativeSignIn) {
+        householdId = await ensurePersonalHousehold(database, userId, displayName);
+      }
 
       const authorization = oauthPlatform === "ios" && clientState
         ? { kind: "native" as const, ...(await createNativeAuthorizationCode(database, userId, clientState)) }

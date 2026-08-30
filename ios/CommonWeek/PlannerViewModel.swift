@@ -142,7 +142,10 @@ final class PlannerViewModel: ObservableObject {
 
     func moveWeek(by days: Int) async {
         guard let current = data?.weekStart else { return }
-        let target = WeekDate.addDays(days, to: current)
+        await move(toWeek: WeekDate.addDays(days, to: current))
+    }
+
+    func move(toWeek target: String) async {
         let timeZone = data?.household.timezone ?? TimeZone.current.identifier
         followsCurrentWeek = target == WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
         await load(week: target)

@@ -78,3 +78,28 @@ export async function acceptPendingInvitation(database: PoolClient, userId: stri
   );
   return invitation.rows[0].household_id;
 }
+
+export async function ensurePersonalHousehold(
+  database: PoolClient,
+  userId: string,
+  displayName: string,
+  timezone = "America/New_York",
+): Promise<string> {
+  const membership = await database.query<{ household_id: string }>(
+    "select household_id from household_members where user_id = $1",
+    [userId],
+  );
+  if (membership.rows[0]) return membership.rows[0].household_id;
+
+  const trimmedName = displayName.trim();
+  const householdName = trimmedName ? `${trimmedName}'s household` : "Our household";
+  const household = await database.query<{ id: string }>(
+    "insert into households (name, timezone) values ($1, $2) returning id",
+    [householdName.slice(0, 80), timezone],
+  );
+  await database.query(
+    "insert into household_members (household_id, user_id, role) values ($1, $2, 'owner')",
+    [household.rows[0].id, userId],
+  );
+  return household.rows[0].id;
+}

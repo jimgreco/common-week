@@ -2,11 +2,22 @@ import Foundation
 import UIKit
 import UserNotifications
 
+struct PlannerNotificationDestination: Hashable {
+    enum Target: Hashable {
+        case planningItem(String)
+        case calendarReminder(String)
+    }
+
+    let weekStart: String
+    let target: Target
+}
+
 @MainActor
 final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationCoordinator()
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var registrationError: String?
+    @Published private(set) var pendingDestination: PlannerNotificationDestination?
 
     private override init() {
         super.init()
@@ -67,12 +78,45 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
         }
     }
 
+    func consume(_ destination: PlannerNotificationDestination) {
+        if pendingDestination == destination { pendingDestination = nil }
+    }
+
+    nonisolated static func plannerDestination(for path: String) -> PlannerNotificationDestination? {
+        guard let components = URLComponents(string: path),
+              components.path == "/planner",
+              let week = components.queryItems?.first(where: { $0.name == "week" })?.value,
+              week.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
+        if let item = components.queryItems?.first(where: { $0.name == "item" })?.value,
+           item.range(of: #"^[A-Za-z0-9:_-]{1,128}$"#, options: .regularExpression) != nil {
+            return PlannerNotificationDestination(weekStart: week, target: .planningItem(item))
+        }
+        if let reminder = components.queryItems?.first(where: { $0.name == "reminder" })?.value,
+           reminder.range(of: #"^[A-Za-z0-9:_-]{1,128}$"#, options: .regularExpression) != nil {
+            return PlannerNotificationDestination(weekStart: week, target: .calendarReminder(reminder))
+        }
+        return nil
+    }
+
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound, .list])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let destination = (response.notification.request.content.userInfo["path"] as? String)
+            .flatMap(Self.plannerDestination(for:))
+        Task { @MainActor in
+            if let destination { self.pendingDestination = destination }
+            completionHandler()
+        }
     }
 }
 

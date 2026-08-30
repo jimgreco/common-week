@@ -6,6 +6,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { importPKCS8, SignJWT } from "jose";
 import { addDateDays, currentWeekStart, todayInTimeZone } from "@/lib/date";
 import { applicationOrigin } from "@/lib/env";
+import { plannerNotificationDeepLink } from "@/lib/notification-links";
 import { query } from "@/lib/server/database";
 import { getPlannerData } from "@/lib/server/planner-data";
 import type { NotificationPreferences, NotificationReminder } from "@/types/domain";
@@ -192,19 +193,47 @@ export async function upsertCalendarReminder(input: {
 }
 
 async function materializeReminderDeliveries() {
-  await query(
-    `insert into notification_outbox (
-       user_id, household_id, dedupe_key, kind, title, body, deep_link, scheduled_for
-     )
-     select nr.user_id, nr.household_id, 'reminder:' || nr.id::text, 'reminder',
-            case when nr.resource_kind = 'calendar_event' then 'Upcoming event' else 'Household reminder' end,
-            nr.resource_title,
-            case when nr.resource_kind = 'calendar_event' then '/planner?reminder=' || nr.id::text else '/planner?item=' || nr.planning_item_id::text end,
-            nr.remind_at
+  const reminders = await query<{
+    id: string;
+    user_id: string;
+    household_id: string;
+    resource_kind: "planning_item" | "calendar_event";
+    planning_item_id: string | null;
+    resource_title: string;
+    remind_at: Date;
+    week_start: string;
+  }>(
+    `select nr.id, nr.user_id, nr.household_id, nr.resource_kind, nr.planning_item_id,
+            nr.resource_title, nr.remind_at,
+            coalesce(
+              pi.week_start_date::text,
+              to_char(date_trunc('week', nr.resource_start at time zone h.timezone), 'YYYY-MM-DD')
+            ) as week_start
        from notification_reminders nr
-      where nr.delivered_at is null and nr.remind_at <= now() + interval '1 minute'
-     on conflict (dedupe_key) do nothing`,
+       join households h on h.id = nr.household_id
+       left join planning_items pi on pi.id = nr.planning_item_id
+      where nr.delivered_at is null and nr.remind_at <= now() + interval '1 minute'`,
   );
+  for (const reminder of reminders.rows) {
+    const deepLink = reminder.resource_kind === "planning_item"
+      ? plannerNotificationDeepLink({ kind: "planning_item", id: reminder.planning_item_id!, weekStart: reminder.week_start })
+      : plannerNotificationDeepLink({ kind: "calendar_reminder", id: reminder.id, weekStart: reminder.week_start });
+    await query(
+      `insert into notification_outbox (
+         user_id, household_id, dedupe_key, kind, title, body, deep_link, scheduled_for
+       ) values ($1, $2, $3, 'reminder', $4, $5, $6, $7)
+       on conflict (dedupe_key) do nothing`,
+      [
+        reminder.user_id,
+        reminder.household_id,
+        `reminder:${reminder.id}`,
+        reminder.resource_kind === "calendar_event" ? "Upcoming event" : "Household reminder",
+        reminder.resource_title,
+        deepLink,
+        reminder.remind_at,
+      ],
+    );
+  }
 }
 
 function summaryBody(planner: Awaited<ReturnType<typeof getPlannerData>>, date: string): string {

@@ -23,16 +23,23 @@ import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { useTheme } from "@/components/theme-provider";
 import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
+import type { PlannerNotificationTarget } from "@/lib/notification-links";
 import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
-export function WeeklyPlanner({ initialData, currentUserName }: { initialData: WeeklyPlannerData; currentUserName: string }) {
+export function WeeklyPlanner({ initialData, currentUserName, initialFocus = null }: { initialData: WeeklyPlannerData; currentUserName: string; initialFocus?: PlannerNotificationTarget | null }) {
   const router = useRouter();
+  const focusedItem = initialFocus?.kind === "planning_item"
+    ? [...initialData.days.flatMap((day) => day.items), ...initialData.weeklyItems].find((item) => item.id === initialFocus.id) ?? null
+    : null;
+  const focusedEvent = initialFocus?.kind === "calendar_reminder"
+    ? initialData.days.flatMap((day) => day.events).find((event) => event.reminder?.id === initialFocus.id) ?? null
+    : null;
   const [days, setDays] = useState(initialData.days);
   const [weeklyItems, setWeeklyItems] = useState(initialData.weeklyItems);
   const [locationDate, setLocationDate] = useState<string | null>(null);
   const [weatherDay, setWeatherDay] = useState<DayPlan | null>(null);
-  const [editingItem, setEditingItem] = useState<PlanningItem | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [editingItem, setEditingItem] = useState<PlanningItem | null>(focusedItem);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(focusedEvent);
   const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent } | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -45,6 +52,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
   const [mobileMenu, setMobileMenu] = useState(false);
   const [lastInitialData, setLastInitialData] = useState(initialData);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialFocusHandled = useRef(Boolean(focusedItem || focusedEvent));
   const followsCurrentWeek = useRef(initialData.weekStart === currentWeekStart(initialData.household.timezone));
   const { theme, toggleTheme } = useTheme();
 
@@ -67,15 +75,24 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
         return;
       }
       const sources = new Map(result.data.days.map((day) => [day.date, day]));
+      const sourceDays = result.data.days;
       setDays((current) => current.map((day) => {
         const source = sources.get(day.date);
         return source ? { ...day, events: source.events, location: source.location, weather: source.weather, memberLocations: source.memberLocations } : day;
       }));
+      if (initialFocus?.kind === "calendar_reminder" && !initialFocusHandled.current) {
+        const event = sourceDays.flatMap((day) => day.events)
+          .find((candidate) => candidate.reminder?.id === initialFocus.id);
+        if (event) {
+          initialFocusHandled.current = true;
+          setSelectedEvent(event);
+        }
+      }
       setCalendarState(result.data.calendarState);
       setWeatherState(result.data.weatherState);
     });
     return () => { cancelled = true; };
-  }, [initialData]);
+  }, [initialData, initialFocus]);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);

@@ -2,6 +2,24 @@ import XCTest
 @testable import CommonWeek
 
 final class WeekDateTests: XCTestCase {
+    func testPlanningItemNotificationDestination() {
+        XCTAssertEqual(
+            NotificationCoordinator.plannerDestination(for: "/planner?week=2026-08-31&item=item-123"),
+            PlannerNotificationDestination(weekStart: "2026-08-31", target: .planningItem("item-123"))
+        )
+    }
+
+    func testCalendarReminderNotificationDestination() {
+        XCTAssertEqual(
+            NotificationCoordinator.plannerDestination(for: "/planner?week=2026-08-31&reminder=reminder-123"),
+            PlannerNotificationDestination(weekStart: "2026-08-31", target: .calendarReminder("reminder-123"))
+        )
+    }
+
+    func testRejectsNonPlannerNotificationDestination() {
+        XCTAssertNil(NotificationCoordinator.plannerDestination(for: "/settings?week=2026-08-31&item=item-123"))
+    }
+
     func testAddsDaysWithoutChangingDateShape() {
         XCTAssertEqual(WeekDate.addDays(6, to: "2026-08-10"), "2026-08-16")
     }

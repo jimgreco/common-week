@@ -11,8 +11,9 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:smoke": "playwright test",
     "test:database": "node scripts/test-database.mjs",
-    "check": "npm run lint && npm run typecheck && npm run test:run && npm run build"
+    "check": "npm run lint && npm run typecheck && npm run test:run && npm run build && npm run test:smoke"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
@@ -28,6 +29,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",

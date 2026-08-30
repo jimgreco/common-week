@@ -42,12 +42,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:run
       - run: npm run db:migrate
       - run: npm run test:database
       - run: npm run build
+      - run: npm run test:smoke
 
   ios:
     name: iOS simulator build and unit tests

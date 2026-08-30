@@ -70,6 +70,7 @@ struct PlannerView: View {
     @State private var selectedDestination: PlannerDestination = .calendar
     @GestureState private var dayDragOffset: CGFloat = 0
     @StateObject private var appleReminders = AppleRemindersStore.shared
+    @ObservedObject private var notifications = NotificationCoordinator.shared
 
     var body: some View {
         NavigationStack {
@@ -109,7 +110,34 @@ struct PlannerView: View {
                 sheetView(destination)
                     .presentationDragIndicator(.visible)
             }
+            .task(id: notifications.pendingDestination) {
+                await openPendingNotification()
+            }
         }
+    }
+
+    private func openPendingNotification() async {
+        guard let destination = notifications.pendingDestination else { return }
+        await viewModel.move(toWeek: destination.weekStart)
+        guard let data = viewModel.data, data.weekStart == destination.weekStart else { return }
+
+        switch destination.target {
+        case .planningItem(let id):
+            if let item = (data.days.flatMap(\.items) + data.weeklyItems).first(where: { $0.id == id }) {
+                selectedDestination = item.type == .task ? .tasks : .plans
+                if let date = item.planningDate { selectedDayDate = date }
+                sheet = .item(item, date: item.planningDate, type: item.type)
+            }
+        case .calendarReminder(let id):
+            if let match = data.days.lazy.compactMap({ day in
+                day.events.first(where: { $0.reminder?.id == id }).map { (day.date, $0) }
+            }).first {
+                selectedDestination = .calendar
+                selectedDayDate = match.0
+                sheet = .event(match.1)
+            }
+        }
+        notifications.consume(destination)
     }
 
     @ViewBuilder

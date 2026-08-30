@@ -41,8 +41,6 @@ describe("SettingsPanel calendar degradation", () => {
     });
 
     render(<SettingsPanel
-      theme="light"
-      toggleTheme={() => {}}
       household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
       members={[{ id: "member", userId: "user", displayName: "Jim", email: "jim@example.com", role: "owner" }]}
       invitations={[]}
@@ -63,8 +61,6 @@ describe("SettingsPanel calendar degradation", () => {
 
   it("shows the complete owner and self-service account lifecycle", () => {
     render(<SettingsPanel
-      theme="light"
-      toggleTheme={() => {}}
       household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
       members={[
         { id: "owner-member", userId: "owner", displayName: "Jim", email: "jim@example.com", role: "owner" },
@@ -92,8 +88,6 @@ describe("SettingsPanel calendar degradation", () => {
     updateCalendarPreferenceAction.mockResolvedValue({ ok: true });
 
     render(<SettingsPanel
-      theme="light"
-      toggleTheme={() => {}}
       household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
       members={[{ id: "member", userId: "user", displayName: "Jim", email: "jim@example.com", role: "owner" }]}
       invitations={[]}
@@ -151,8 +145,6 @@ describe("SettingsPanel calendar degradation", () => {
     updateCalendarPreferenceAction.mockResolvedValue({ ok: true });
 
     render(<SettingsPanel
-      theme="light"
-      toggleTheme={() => {}}
       household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
       members={[{ id: "member", userId: "user", displayName: "Jim", email: "jim@example.com", role: "owner" }]}
       invitations={[]}
@@ -204,8 +196,6 @@ describe("SettingsPanel calendar degradation", () => {
   it("restores an event hidden from the household planner", async () => {
     restoreCalendarEventAction.mockResolvedValue({ ok: true });
     render(<SettingsPanel
-      theme="light"
-      toggleTheme={() => {}}
       household={{ id: "household", name: "Greco family", timezone: "America/New_York", temperatureUnit: "fahrenheit" }}
       members={[]}
       invitations={[]}

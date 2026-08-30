@@ -26,6 +26,7 @@ For the interactive demo:
 
 ```bash
 npm install
+npx playwright install chromium
 npm run dev
 ```
 
@@ -44,6 +45,7 @@ Useful verification commands:
 npm run lint
 npm run typecheck
 npm run test:run
+npm run build && npm run test:smoke
 npm run db:migrate
 npm run test:database
 npm run build

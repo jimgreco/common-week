@@ -6,18 +6,20 @@ import { getDemoPlannerData } from "@/lib/demo-data";
 import { isDemoMode } from "@/lib/env";
 import { getUserContext } from "@/lib/server/auth";
 import { getPlannerData } from "@/lib/server/planner-data";
+import { plannerNotificationTarget } from "@/lib/notification-links";
 
 export const metadata: Metadata = { title: "Planner" };
 export const dynamic = "force-dynamic";
 
 export default async function PlannerPage({ searchParams }: PageProps<"/planner">) {
   const params = await searchParams;
-  const requested = typeof params.week === "string" && isDateOnly(params.week)
+  const notificationTarget = plannerNotificationTarget(params);
+  const requested = notificationTarget?.weekStart ?? (typeof params.week === "string" && isDateOnly(params.week)
     ? weekStartForDate(params.week)
-    : currentWeekStart();
+    : currentWeekStart());
 
   if (isDemoMode) {
-    return <WeeklyPlanner initialData={getDemoPlannerData(requested)} currentUserName="Jim" />;
+    return <WeeklyPlanner initialData={getDemoPlannerData(requested)} currentUserName="Jim" initialFocus={notificationTarget} />;
   }
 
   const context = await getUserContext();
@@ -28,5 +30,5 @@ export default async function PlannerPage({ searchParams }: PageProps<"/planner"
     requested,
     { includeExternal: false },
   );
-  return <WeeklyPlanner initialData={data} currentUserName={context.displayName} />;
+  return <WeeklyPlanner initialData={data} currentUserName={context.displayName} initialFocus={notificationTarget} />;
 }
