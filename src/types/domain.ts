@@ -192,8 +192,17 @@ export interface DayPlan {
   date: string;
   location: HouseholdLocation | null;
   weather: DailyWeather | null;
+  memberLocations: DayMemberLocation[];
   events: CalendarEvent[];
   items: PlanningItem[];
+}
+
+export interface DayMemberLocation {
+  memberId: string;
+  userId: string;
+  displayName: string;
+  location: HouseholdLocation | null;
+  weather: DailyWeather | null;
 }
 
 export interface PlannerSourceState {
@@ -215,7 +224,7 @@ export interface WeeklyPlannerData {
 }
 
 export interface PlannerSourcePayload {
-  days: Array<Pick<DayPlan, "date" | "events" | "weather">>;
+  days: Array<Pick<DayPlan, "date" | "events" | "location" | "weather" | "memberLocations">>;
   calendarState: PlannerSourceState;
   weatherState: PlannerSourceState;
 }

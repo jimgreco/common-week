@@ -121,8 +121,8 @@ export async function getPlannerData(
            from locations where household_id = $1 order by name`,
         [context.householdId],
       ),
-      query<{ date: string; location_id: string }>(
-        `select date::text, location_id from daily_settings
+      query<{ date: string; member_id: string; location_id: string }>(
+        `select date::text, member_id, location_id from daily_member_settings
           where household_id = $1 and date between $2::date and $3::date`,
         [context.householdId, dates[0], dates[6]],
       ),
@@ -187,12 +187,6 @@ export async function getPlannerData(
   const defaultLocation = household.default_location_id
     ? locationById.get(household.default_location_id) ?? null
     : null;
-  const overrides = new Map(settingsResult.rows.map((row) => [row.date, row.location_id]));
-  const assignments = dates.map((date) => ({
-    date,
-    location: locationById.get(overrides.get(date) ?? "") ?? defaultLocation,
-  }));
-
   const members: HouseholdMember[] = membersResult.rows.map((row) => ({
     id: row.id,
     userId: row.user_id,
@@ -200,6 +194,12 @@ export async function getPlannerData(
     email: row.email,
     role: row.role,
   }));
+  const overrides = new Map(settingsResult.rows.map((row) => [`${row.member_id}:${row.date}`, row.location_id]));
+  const assignments = dates.flatMap((date) => members.map((member) => ({
+    date,
+    member,
+    location: locationById.get(overrides.get(`${member.id}:${date}`) ?? "") ?? defaultLocation,
+  })));
   const loadingState: PlannerSourceState = { status: "loading" };
   const [calendarBundle, weatherBundle] = options.includeExternal === false
     ? [{ events: [], state: loadingState }, { forecasts: new Map(), state: loadingState }]
@@ -255,10 +255,21 @@ export async function getPlannerData(
     },
     members,
     weekStart,
-    days: assignments.map(({ date, location }) => ({
+    days: dates.map((date) => {
+      const memberLocations = assignments.filter((assignment) => assignment.date === date).map(({ member, location }) => ({
+        memberId: member.id,
+        userId: member.userId,
+        displayName: member.displayName,
+        location,
+        weather: location ? weatherBundle.forecasts.get(`${location.id}:${date}`) ?? null : null,
+      }));
+      const sharedLocationId = memberLocations[0]?.location?.id;
+      const hasSharedLocation = Boolean(sharedLocationId) && memberLocations.every((assignment) => assignment.location?.id === sharedLocationId);
+      return {
       date,
-      location,
-      weather: location ? weatherBundle.forecasts.get(`${location.id}:${date}`) ?? null : null,
+      location: hasSharedLocation ? memberLocations[0].location : null,
+      weather: hasSharedLocation ? memberLocations[0].weather : null,
+      memberLocations,
       events: markCalendarConflicts(
         sortCalendarEvents(
           calendarBundle.events.filter(
@@ -274,7 +285,7 @@ export async function getPlannerData(
         ),
       ),
       items: items.filter((item) => item.planningDate === date),
-    })),
+    }; }),
     weeklyItems: items.filter((item) => item.planningDate === null),
     locations,
     editableCalendars: accessibleCalendarsResult.rows

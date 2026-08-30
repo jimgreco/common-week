@@ -8,7 +8,7 @@ import { EventLocationAutocomplete } from "@/components/planner/event-location-a
 import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, HouseholdMember, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
 
 export type LocationSelection =
   | { kind: "saved"; location: HouseholdLocation }
@@ -312,6 +312,7 @@ export function CalendarEventEditorDialog({
 export function LocationDialog({
   date,
   locations,
+  members,
   currentLocationId,
   isDemo,
   onClose,
@@ -319,13 +320,15 @@ export function LocationDialog({
 }: {
   date: string;
   locations: HouseholdLocation[];
+  members: HouseholdMember[];
   currentLocationId: string | null;
   isDemo: boolean;
   onClose: () => void;
-  onSave: (selection: LocationSelection, scope: "day" | "through-sunday" | "week") => Promise<string | null>;
+  onSave: (selection: LocationSelection, memberIds: string[], scope: "day" | "through-sunday" | "week") => Promise<string | null>;
 }) {
   const [locationId, setLocationId] = useState(currentLocationId ?? locations[0]?.id ?? "");
   const [scope, setScope] = useState<"day" | "through-sunday" | "week">("day");
+  const [person, setPerson] = useState("everyone");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeocodingResult[]>([]);
   const [selectedResult, setSelectedResult] = useState<GeocodingResult | null>(null);
@@ -382,6 +385,11 @@ export function LocationDialog({
   return (
     <Modal title={`Set location · ${formatDayName(date, "long")}`} onClose={onClose}>
       <div className="modal-body">
+        <fieldset className="choice-list compact-choices">
+          <legend>Person</legend>
+          <label><input type="radio" name="person" checked={person === "everyone"} onChange={() => setPerson("everyone")} /><span>Everyone</span></label>
+          {members.map((member) => <label key={member.id}><input type="radio" name="person" checked={person === member.id} onChange={() => setPerson(member.id)} /><span>{member.displayName}</span></label>)}
+        </fieldset>
         <fieldset className="choice-list location-choice-list">
           <legend>Location</legend>
           <div className="location-autocomplete">
@@ -487,7 +495,8 @@ export function LocationDialog({
             if (!selection) return;
             setSaving(true);
             setSaveError(null);
-            const error = await onSave(selection, scope);
+            const memberIds = person === "everyone" ? members.map((member) => member.id) : [person];
+            const error = await onSave(selection, memberIds, scope);
             if (error) setSaveError(error);
             setSaving(false);
           }}

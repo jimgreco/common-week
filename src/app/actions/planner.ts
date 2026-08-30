@@ -97,7 +97,7 @@ export async function loadPlannerSourcesAction(weekStartDate: string): Promise<A
     return {
       ok: true,
       data: {
-        days: data.days.map(({ date, events, weather }) => ({ date, events, weather })),
+        days: data.days.map(({ date, events, location, weather, memberLocations }) => ({ date, events, location, weather, memberLocations })),
         calendarState: data.calendarState,
         weatherState: data.weatherState,
       },
@@ -369,12 +369,14 @@ export async function deletePlanningItemAction(id: string): Promise<ActionResult
 export async function setDailyLocationAction(input: {
   startDate: string;
   locationId: string;
+  memberIds?: string[];
   scope: "day" | "through-sunday" | "week";
 }): Promise<ActionResult> {
   try {
     const parsed = z.object({
       startDate: dateOnly,
       locationId: uuid,
+      memberIds: z.array(uuid).min(1).optional(),
       scope: z.enum(["day", "through-sunday", "week"]),
     }).parse(input);
     const context = await requireHouseholdContext();
@@ -383,13 +385,21 @@ export async function setDailyLocationAction(input: {
       [parsed.locationId, context.householdId],
     );
     if (!location.rowCount) throw new Error("That location is not available to this household.");
+    const members = await query<{ id: string }>(
+      `select id from household_members
+        where household_id = $1 and ($2::uuid[] is null or id = any($2::uuid[]))`,
+      [context.householdId, parsed.memberIds ?? null],
+    );
+    if (parsed.memberIds && members.rowCount !== new Set(parsed.memberIds).size) throw new Error("Choose valid household members.");
+    const memberIds = members.rows.map((member) => member.id);
 
     await query(
-      `insert into daily_settings (household_id, date, location_id)
-       select $1, assigned_date, $3
-         from unnest($2::date[]) as assigned_date
-       on conflict (household_id, date) do update set location_id = excluded.location_id`,
-      [context.householdId, datesForLocationScope(parsed.startDate, parsed.scope), parsed.locationId],
+      `insert into daily_member_settings (household_id, member_id, date, location_id)
+       select $1, member_id, assigned_date, $4
+         from unnest($2::uuid[]) as member_id
+         cross join unnest($3::date[]) as assigned_date
+       on conflict (household_id, member_id, date) do update set location_id = excluded.location_id`,
+      [context.householdId, memberIds, datesForLocationScope(parsed.startDate, parsed.scope), parsed.locationId],
     );
     revalidatePath("/planner");
     return { ok: true };
@@ -400,6 +410,7 @@ export async function setDailyLocationAction(input: {
 
 export async function setGeocodedLocationAction(input: {
   startDate: string;
+  memberIds?: string[];
   scope: "day" | "through-sunday" | "week";
   saveForReuse?: boolean;
   location: {
@@ -412,6 +423,7 @@ export async function setGeocodedLocationAction(input: {
   try {
     const parsed = z.object({
       startDate: dateOnly,
+      memberIds: z.array(uuid).min(1).optional(),
       scope: z.enum(["day", "through-sunday", "week"]),
       saveForReuse: z.boolean().default(true),
       location: z.object({
@@ -422,6 +434,13 @@ export async function setGeocodedLocationAction(input: {
       }),
     }).parse(input);
     const context = await requireHouseholdContext();
+    const members = await query<{ id: string }>(
+      `select id from household_members
+        where household_id = $1 and ($2::uuid[] is null or id = any($2::uuid[]))`,
+      [context.householdId, parsed.memberIds ?? null],
+    );
+    if (parsed.memberIds && members.rowCount !== new Set(parsed.memberIds).size) throw new Error("Choose valid household members.");
+    const memberIds = members.rows.map((member) => member.id);
     const location = await withTransaction(async (database) => {
       const locationResult = await database.query<{
         id: string;
@@ -452,12 +471,14 @@ export async function setGeocodedLocationAction(input: {
       if (!savedLocation) throw new Error("The location could not be set.");
 
       await database.query(
-        `insert into daily_settings (household_id, date, location_id)
-         select $1, assigned_date, $3
-           from unnest($2::date[]) as assigned_date
-         on conflict (household_id, date) do update set location_id = excluded.location_id`,
+        `insert into daily_member_settings (household_id, member_id, date, location_id)
+         select $1, member_id, assigned_date, $4
+           from unnest($2::uuid[]) as member_id
+           cross join unnest($3::date[]) as assigned_date
+         on conflict (household_id, member_id, date) do update set location_id = excluded.location_id`,
         [
           context.householdId,
+          memberIds,
           datesForLocationScope(parsed.startDate, parsed.scope),
           savedLocation.id,
         ],

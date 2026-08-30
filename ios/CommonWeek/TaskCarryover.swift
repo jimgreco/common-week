@@ -61,6 +61,7 @@ extension WeeklyPlannerData {
                     date: WeekDate.addDays(offset, to: targetWeek),
                     location: nil,
                     weather: nil,
+                    memberLocations: members.map { DayMemberLocation(memberId: $0.id, userId: $0.userId, displayName: $0.displayName, location: nil, weather: nil) },
                     events: [],
                     items: []
                 )

@@ -57,13 +57,14 @@ struct DayCardView: View {
                 }
             }
             VStack(alignment: .leading, spacing: 10) {
-                Button { sheet = .location(day) } label: {
-                    Label(day.location?.name ?? "Set location", systemImage: "location.fill")
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                if let weather = day.weather, weather.status == "available" {
+                if day.location != nil || day.memberLocations.count <= 1 {
+                    Button { sheet = .location(day) } label: {
+                        Label(day.location?.name ?? day.memberLocations.first?.location?.name ?? "Set location", systemImage: "location.fill")
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                if let weather = day.weather ?? day.memberLocations.first?.weather, weather.status == "available" {
                     Button { sheet = .weather(day) } label: {
                         HStack(spacing: 6) {
                             Image(systemName: weatherIcon(weather.conditionCode)).symbolRenderingMode(.multicolor)
@@ -82,6 +83,33 @@ struct DayCardView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("High \(temperature(weather.highF)) degrees, low \(temperature(weather.lowF)) degrees, \(weather.precipitationProbability) percent chance of rain")
+                }
+                } else {
+                    ForEach(day.memberLocations) { assignment in
+                        HStack(spacing: 8) {
+                            Button { sheet = .location(day) } label: {
+                                Label("\(assignment.displayName): \(assignment.location?.name ?? "Set location")", systemImage: "location.fill")
+                                    .lineLimit(1)
+                            }
+                            .buttonStyle(.plain)
+                            Spacer(minLength: 4)
+                            if let weather = assignment.weather, weather.status == "available" {
+                                Button {
+                                    var detailDay = day
+                                    detailDay.location = assignment.location
+                                    detailDay.weather = weather
+                                    sheet = .weather(detailDay)
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: weatherIcon(weather.conditionCode)).symbolRenderingMode(.multicolor)
+                                        Text("\(temperature(weather.highF))° / \(temperature(weather.lowF))°")
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(assignment.displayName), high \(temperature(weather.highF)) degrees, low \(temperature(weather.lowF)) degrees")
+                            }
+                        }
+                    }
                 }
             }
             .font(.subheadline.weight(.semibold))

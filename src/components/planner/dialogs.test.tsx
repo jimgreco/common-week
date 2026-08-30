@@ -10,6 +10,7 @@ vi.mock("@/app/actions/planner", () => ({
 }));
 
 describe("LocationDialog", () => {
+  const members = [{ id: "member-1", userId: "user-1", displayName: "Alex", email: "alex@example.com", role: "owner" as const }];
   beforeEach(() => {
     searchLocationsAction.mockReset();
   });
@@ -33,6 +34,7 @@ describe("LocationDialog", () => {
       <LocationDialog
         date="2026-08-10"
         locations={[]}
+        members={members}
         currentLocationId={null}
         isDemo={false}
         onClose={vi.fn()}
@@ -57,6 +59,7 @@ describe("LocationDialog", () => {
         name: "Paris, Île-de-France",
         result: expect.objectContaining({ id: "2988507", timezone: "Europe/Paris" }),
       },
+      ["member-1"],
       "through-sunday",
     ));
   });
@@ -75,6 +78,7 @@ describe("LocationDialog", () => {
           timezone: "America/New_York",
           isSaved: true,
         }]}
+        members={members}
         currentLocationId="location-1"
         isDemo={false}
         onClose={vi.fn()}

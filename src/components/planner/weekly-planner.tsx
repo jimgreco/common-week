@@ -69,7 +69,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
       const sources = new Map(result.data.days.map((day) => [day.date, day]));
       setDays((current) => current.map((day) => {
         const source = sources.get(day.date);
-        return source ? { ...day, events: source.events, weather: source.weather } : day;
+        return source ? { ...day, events: source.events, location: source.location, weather: source.weather, memberLocations: source.memberLocations } : day;
       }));
       setCalendarState(result.data.calendarState);
       setWeatherState(result.data.weatherState);
@@ -259,7 +259,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     const sources = new Map(result.data.days.map((day) => [day.date, day]));
     setDays((current) => current.map((day) => {
       const source = sources.get(day.date);
-      return source ? { ...day, events: source.events, weather: source.weather } : day;
+      return source ? { ...day, events: source.events, location: source.location, weather: source.weather, memberLocations: source.memberLocations } : day;
     }));
     setCalendarState(result.data.calendarState);
   }, [initialData.isDemo, initialData.weekStart]);
@@ -312,13 +312,13 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     return { error: null, reminder: result.data ?? null };
   }, [initialData.isDemo]);
 
-  const setLocation = useCallback(async (selection: LocationSelection, scope: "day" | "through-sunday" | "week"): Promise<string | null> => {
+  const setLocation = useCallback(async (selection: LocationSelection, memberIds: string[], scope: "day" | "through-sunday" | "week"): Promise<string | null> => {
     if (!locationDate) return "Choose a day before setting its location.";
     let location: HouseholdLocation;
     if (selection.kind === "saved") {
       location = selection.location;
       if (!initialData.isDemo) {
-        const result = await setDailyLocationAction({ startDate: locationDate, locationId: location.id, scope });
+        const result = await setDailyLocationAction({ startDate: locationDate, locationId: location.id, memberIds, scope });
         if (!result.ok) return result.error ?? "Location changes could not be saved.";
       }
     } else if (initialData.isDemo) {
@@ -333,6 +333,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     } else {
       const result = await setGeocodedLocationAction({
         startDate: locationDate,
+        memberIds,
         scope,
         location: {
           name: selection.name,
@@ -348,9 +349,15 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
     const monday = initialData.weekStart;
     const start = scope === "week" ? monday : locationDate;
     const end = scope === "day" ? start : addDateDays(monday, 6);
-    setDays((current) => current.map((day) => day.date >= start && day.date <= end
-      ? { ...day, location, weather: initialData.isDemo && day.weather ? { ...day.weather, locationId: location.id } : null }
-      : day));
+    setDays((current) => current.map((day) => {
+      if (day.date < start || day.date > end) return day;
+      const memberLocations = day.memberLocations.map((assignment) => memberIds.includes(assignment.memberId)
+        ? { ...assignment, location, weather: initialData.isDemo && assignment.weather ? { ...assignment.weather, locationId: location.id } : null }
+        : assignment);
+      const sharedId = memberLocations[0]?.location?.id;
+      const shared = Boolean(sharedId) && memberLocations.every((assignment) => assignment.location?.id === sharedId);
+      return { ...day, memberLocations, location: shared ? memberLocations[0].location : null, weather: shared ? memberLocations[0].weather : null };
+    }));
     setLocationDate(null);
     if (!initialData.isDemo) router.refresh();
     return null;
@@ -441,7 +448,7 @@ export function WeeklyPlanner({ initialData, currentUserName }: { initialData: W
         </section>
       </section>
 
-      {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
+      {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} members={initialData.members} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
       {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onDelete={deleteCalendarEvent} onRespond={respondToCalendarEvent} onReminder={setCalendarReminder} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
       {calendarEditor && <CalendarEventEditorDialog date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} locationBias={initialData.locations.find((location) => location.isDefault) ?? initialData.locations[0]} isDemo={initialData.isDemo} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
@@ -472,6 +479,7 @@ function mergeUnsavedDays(serverDays: DayPlan[], currentDays: DayPlan[], preserv
     ...day,
     events: preserveSources ? currentByDate.get(day.date)?.events ?? day.events : day.events,
     weather: preserveSources ? currentByDate.get(day.date)?.weather ?? day.weather : day.weather,
+    memberLocations: preserveSources ? currentByDate.get(day.date)?.memberLocations ?? day.memberLocations : day.memberLocations,
     items: mergeUnsavedItems(day.items, currentByDate.get(day.date)?.items ?? []),
   }));
 }

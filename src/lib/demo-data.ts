@@ -197,6 +197,10 @@ export function getDemoPlannerData(requestedWeek?: string): WeeklyPlannerData {
         date,
         location,
         weather: weatherFor(date, location.id, index),
+        memberLocations: [
+          { memberId: "m1", userId: "demo-jim", displayName: "Jim", location, weather: weatherFor(date, location.id, index) },
+          { memberId: "m2", userId: "demo-rachel", displayName: "Rachel", location, weather: weatherFor(date, location.id, index) },
+        ],
         events: calendarEvents[index],
         items: dailyItems[index],
       };

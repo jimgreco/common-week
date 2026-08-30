@@ -19,6 +19,7 @@ struct OfflineMutation: Codable, Identifiable, Equatable {
     let startDate: String?
     let scope: String?
     let locationId: String?
+    let memberIds: [String]?
     let location: GeocodingResult?
     let saveForReuse: Bool?
 
@@ -32,6 +33,7 @@ struct OfflineMutation: Codable, Identifiable, Equatable {
         startDate: String? = nil,
         scope: String? = nil,
         locationId: String? = nil,
+        memberIds: [String]? = nil,
         location: GeocodingResult? = nil,
         saveForReuse: Bool? = nil
     ) {
@@ -44,6 +46,7 @@ struct OfflineMutation: Codable, Identifiable, Equatable {
         self.startDate = startDate
         self.scope = scope
         self.locationId = locationId
+        self.memberIds = memberIds
         self.location = location
         self.saveForReuse = saveForReuse
     }

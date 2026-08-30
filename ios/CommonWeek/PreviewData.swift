@@ -37,7 +37,17 @@ enum PreviewData {
             if !tasks[index].isEmpty { items.append(PlanningItem(id: "task-\(index)", planningDate: date, weekStartDate: weekStart, type: .task, text: tasks[index], isCompleted: false, sortOrder: 1, createdBy: "demo-jim", createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved", reminder: nil)) }
             let rainChance = index == 3 ? 54 : index == 5 ? 72 : 8 + index * 3
             let weather = DailyWeather(date: date, locationId: location.id, conditionCode: index == 2 || index == 3 || index == 5 ? 61 : 0, highF: Double(82 - index), lowF: Double(66 + index % 3), precipitationProbability: rainChance, precipitationAmount: index == 3 ? 0.08 : index == 5 ? 0.18 : 0, windSpeedMph: 8, sunrise: WeekDate.iso8601.string(from: start), sunset: WeekDate.iso8601.string(from: start), hourly: [], status: "available", errorMessage: nil)
-            return DayPlan(date: date, location: location, weather: weather, events: index == 3 ? [event, supplementalEvent] : [event], items: items)
+            return DayPlan(
+                date: date,
+                location: location,
+                weather: weather,
+                memberLocations: [
+                    DayMemberLocation(memberId: "member-jim", userId: "demo-jim", displayName: "Jim", location: location, weather: weather),
+                    DayMemberLocation(memberId: "member-rachel", userId: "demo-rachel", displayName: "Rachel", location: location, weather: weather),
+                ],
+                events: index == 3 ? [event, supplementalEvent] : [event],
+                items: items
+            )
         }
         return WeeklyPlannerData(
             household: HouseholdSummary(id: "demo-household", name: "The Greco Family", timezone: "America/New_York", temperatureUnit: .fahrenheit),

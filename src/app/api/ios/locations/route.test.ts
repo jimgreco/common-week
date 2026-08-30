@@ -55,6 +55,7 @@ describe("iOS locations API", () => {
     const input = {
       startDate: "2026-08-14",
       locationId: "20000000-0000-4000-8000-000000000001",
+      memberIds: ["30000000-0000-4000-8000-000000000001"],
       scope: "through-sunday",
     };
 
@@ -72,6 +73,7 @@ describe("iOS locations API", () => {
   it("preserves the native choice not to save a searched place for reuse", async () => {
     const input = {
       startDate: "2026-08-14",
+      memberIds: ["30000000-0000-4000-8000-000000000001"],
       scope: "day",
       saveForReuse: false,
       location: {

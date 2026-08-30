@@ -110,16 +110,17 @@ final class APIClient {
         try await send(path: "/api/ios/planning-items", method: "DELETE", body: ["id": id])
     }
 
-    func setLocation(date: String, locationId: String, scope: String) async throws -> EmptyResponse {
-        try await send(path: "/api/ios/locations", method: "PATCH", body: ["startDate": date, "locationId": locationId, "scope": scope])
+    func setLocation(date: String, locationId: String, memberIds: [String], scope: String) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/locations", method: "PATCH", body: SavedLocationAssignmentRequest(startDate: date, locationId: locationId, memberIds: memberIds, scope: scope))
     }
 
-    func setLocation(date: String, result: GeocodingResult, saveForReuse: Bool, scope: String) async throws -> HouseholdLocation {
+    func setLocation(date: String, result: GeocodingResult, memberIds: [String], saveForReuse: Bool, scope: String) async throws -> HouseholdLocation {
         try await send(
             path: "/api/ios/locations",
             method: "PATCH",
             body: GeocodedLocationAssignmentRequest(
                 date: date,
+                memberIds: memberIds,
                 scope: scope,
                 result: result,
                 saveForReuse: saveForReuse

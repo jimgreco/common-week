@@ -234,24 +234,24 @@ final class PlannerViewModel: ObservableObject {
         return false
     }
 
-    func setLocation(_ location: HouseholdLocation, for date: String, scope: String) async -> Bool {
+    func setLocation(_ location: HouseholdLocation, for date: String, memberIds: [String], scope: String) async -> Bool {
         let previous = data
-        applyLocation(location, for: date, scope: scope)
+        applyLocation(location, for: date, memberIds: memberIds, scope: scope)
         persistCurrentPlanner()
         if isDemo { return true }
         do {
-            _ = try await api.setLocation(date: date, locationId: location.id, scope: scope)
+            _ = try await api.setLocation(date: date, locationId: location.id, memberIds: memberIds, scope: scope)
             await refreshAfterMutation(week: data?.weekStart)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
-            let mutation = OfflineMutation(kind: .assignSavedLocation, startDate: date, scope: scope, locationId: location.id)
+            let mutation = OfflineMutation(kind: .assignSavedLocation, startDate: date, scope: scope, locationId: location.id, memberIds: memberIds)
             if await enqueue(mutation) { markSavedOffline(); return true }
         } catch { show(error.localizedDescription) }
         data = previous
         return false
     }
 
-    func setLocation(_ result: GeocodingResult, for date: String, scope: String, saveForReuse: Bool) async -> Bool {
+    func setLocation(_ result: GeocodingResult, for date: String, memberIds: [String], scope: String, saveForReuse: Bool) async -> Bool {
         let previous = data
         let localLocation = HouseholdLocation(
             id: "offline-\(UUID().uuidString)",
@@ -262,15 +262,15 @@ final class PlannerViewModel: ObservableObject {
             isSaved: false,
             isDefault: false
         )
-        applyLocation(localLocation, for: date, scope: scope)
+        applyLocation(localLocation, for: date, memberIds: memberIds, scope: scope)
         persistCurrentPlanner()
         if isDemo { return true }
         do {
-            _ = try await api.setLocation(date: date, result: result, saveForReuse: saveForReuse, scope: scope)
+            _ = try await api.setLocation(date: date, result: result, memberIds: memberIds, saveForReuse: saveForReuse, scope: scope)
             await refreshAfterMutation(week: data?.weekStart)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
-            let mutation = OfflineMutation(kind: .assignGeocodedLocation, startDate: date, scope: scope, location: result, saveForReuse: saveForReuse)
+            let mutation = OfflineMutation(kind: .assignGeocodedLocation, startDate: date, scope: scope, memberIds: memberIds, location: result, saveForReuse: saveForReuse)
             if await enqueue(mutation) { markSavedOffline(); return true }
         } catch { show(error.localizedDescription) }
         data = previous
@@ -529,10 +529,12 @@ final class PlannerViewModel: ObservableObject {
             _ = try await api.deleteItem(id: id)
         case .assignSavedLocation:
             guard let date = mutation.startDate, let scope = mutation.scope, let id = mutation.locationId else { throw APIError.invalidResponse }
-            _ = try await api.setLocation(date: date, locationId: id, scope: scope)
+            let memberIds = mutation.memberIds ?? data?.members.map(\.id) ?? []
+            _ = try await api.setLocation(date: date, locationId: id, memberIds: memberIds, scope: scope)
         case .assignGeocodedLocation:
             guard let date = mutation.startDate, let scope = mutation.scope, let location = mutation.location else { throw APIError.invalidResponse }
-            _ = try await api.setLocation(date: date, result: location, saveForReuse: mutation.saveForReuse ?? true, scope: scope)
+            let memberIds = mutation.memberIds ?? data?.members.map(\.id) ?? []
+            _ = try await api.setLocation(date: date, result: location, memberIds: memberIds, saveForReuse: mutation.saveForReuse ?? true, scope: scope)
         }
     }
 
@@ -606,12 +608,20 @@ final class PlannerViewModel: ObservableObject {
         data = planner
     }
 
-    private func applyLocation(_ location: HouseholdLocation, for date: String, scope: String) {
+    private func applyLocation(_ location: HouseholdLocation, for date: String, memberIds: [String], scope: String) {
         guard var planner = data else { return }
         let end = scope == "day" ? date : WeekDate.addDays(6, to: planner.weekStart)
         let start = scope == "week" ? planner.weekStart : date
         for index in planner.days.indices where planner.days[index].date >= start && planner.days[index].date <= end {
-            planner.days[index].location = location
+            for assignmentIndex in planner.days[index].memberLocations.indices where memberIds.contains(planner.days[index].memberLocations[assignmentIndex].memberId) {
+                planner.days[index].memberLocations[assignmentIndex].location = location
+                planner.days[index].memberLocations[assignmentIndex].weather = nil
+            }
+            let assignments = planner.days[index].memberLocations
+            let sharedId = assignments.first?.location?.id
+            let shared = sharedId != nil && assignments.allSatisfy { $0.location?.id == sharedId }
+            planner.days[index].location = shared ? assignments.first?.location : nil
+            planner.days[index].weather = shared ? assignments.first?.weather : nil
         }
         data = planner
     }

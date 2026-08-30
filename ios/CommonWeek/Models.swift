@@ -163,9 +163,19 @@ struct DayPlan: Codable, Identifiable, Hashable {
     var id: String { date }
     let date: String
     var location: HouseholdLocation?
-    let weather: DailyWeather?
+    var weather: DailyWeather?
+    var memberLocations: [DayMemberLocation]
     var events: [CalendarEvent]
     var items: [PlanningItem]
+}
+
+struct DayMemberLocation: Codable, Hashable, Identifiable {
+    var id: String { memberId }
+    let memberId: String
+    let userId: String
+    let displayName: String
+    var location: HouseholdLocation?
+    var weather: DailyWeather?
 }
 
 struct DailyWeather: Codable, Hashable {
@@ -331,12 +341,14 @@ struct GeocodedLocationAssignmentRequest: Encodable {
     }
 
     let startDate: String
+    let memberIds: [String]
     let scope: String
     let saveForReuse: Bool
     let location: Location
 
-    init(date: String, scope: String, result: GeocodingResult, saveForReuse: Bool) {
+    init(date: String, memberIds: [String], scope: String, result: GeocodingResult, saveForReuse: Bool) {
         startDate = date
+        self.memberIds = memberIds
         self.scope = scope
         self.saveForReuse = saveForReuse
         location = Location(
@@ -346,6 +358,13 @@ struct GeocodedLocationAssignmentRequest: Encodable {
             timezone: result.timezone
         )
     }
+}
+
+struct SavedLocationAssignmentRequest: Encodable {
+    let startDate: String
+    let locationId: String
+    let memberIds: [String]
+    let scope: String
 }
 
 struct PlanningItemDraft: Codable, Equatable {

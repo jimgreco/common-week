@@ -17,6 +17,7 @@ export async function PATCH(request: NextRequest) {
     const savedLocation = z.object({
       startDate: z.string(),
       locationId: z.string().uuid(),
+      memberIds: z.array(z.string().uuid()).min(1).optional(),
       scope: z.enum(["day", "through-sunday", "week"]),
     }).safeParse(body);
     if (savedLocation.success) {
@@ -25,6 +26,7 @@ export async function PATCH(request: NextRequest) {
 
     const geocodedLocation = z.object({
       startDate: z.string(),
+      memberIds: z.array(z.string().uuid()).min(1).optional(),
       scope: z.enum(["day", "through-sunday", "week"]),
       saveForReuse: z.boolean(),
       location: z.object({

@@ -179,11 +179,12 @@ export function DayColumn({
           <strong>{formatMobileDate(day.date)}</strong>
           {today && <i>Today</i>}
         </div>
-        <button className="location-button" type="button" onClick={() => onLocation(day.date)}>
-          <MapPin size={12} aria-hidden="true" />
-          <span>{day.location?.name ?? "Set location"}</span>
-          <span aria-hidden="true">⌄</span>
-        </button>
+        {day.location || day.memberLocations.length <= 1 ? <>
+          <button className="location-button" type="button" onClick={() => onLocation(day.date)}>
+            <MapPin size={12} aria-hidden="true" />
+            <span>{day.location?.name ?? day.memberLocations[0]?.location?.name ?? "Set location"}</span>
+            <span aria-hidden="true">⌄</span>
+          </button>
         {weather?.status === "available" ? (
           <button
             className="weather-button"
@@ -209,7 +210,27 @@ export function DayColumn({
                   ? "Loading weather"
                   : "Set location for weather"}
           </div>
-        )}
+        )}</> : <div className="member-location-list">
+          {day.memberLocations.map((assignment) => (
+            <div className="member-location-row" key={assignment.memberId}>
+              <button className="location-button" type="button" onClick={() => onLocation(day.date)}>
+                <MapPin size={12} aria-hidden="true" />
+                <span><strong>{assignment.displayName}:</strong> {assignment.location?.name ?? "Set location"}</span>
+              </button>
+              {assignment.weather?.status === "available" ? <button
+                className="weather-button"
+                type="button"
+                onClick={() => onWeather({ ...day, location: assignment.location, weather: assignment.weather })}
+                aria-label={`${assignment.displayName}: ${weatherLabel(assignment.weather.conditionCode)}, high ${displayTemperature(assignment.weather.highF, temperatureUnit)}${unitLabel}, low ${displayTemperature(assignment.weather.lowF, temperatureUnit)}${unitLabel}. Open hourly forecast.`}
+              >
+                <span className="weather-symbol" aria-hidden="true">{weatherSymbol(assignment.weather.conditionCode)}</span>
+                <strong>{displayTemperature(assignment.weather.highF, temperatureUnit)}°</strong>
+                <span>/ {displayTemperature(assignment.weather.lowF, temperatureUnit)}°</span>
+                <span className={assignment.weather.precipitationProbability >= 40 ? "rain-risk" : ""}><Umbrella size={11} aria-hidden="true" /> {assignment.weather.precipitationProbability}%</span>
+              </button> : <span className="weather-unavailable"><CloudOff size={12} aria-hidden="true" />{assignment.location ? "Loading weather" : "Set location for weather"}</span>}
+            </div>
+          ))}
+        </div>}
       </header>
 
       <section className="day-section calendar-section" aria-label={`Calendar for ${formatMobileDate(day.date)}`}>

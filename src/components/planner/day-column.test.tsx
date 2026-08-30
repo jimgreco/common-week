@@ -4,6 +4,20 @@ import { DayColumn } from "@/components/planner/day-column";
 import { getDemoPlannerData } from "@/lib/demo-data";
 
 describe("DayColumn", () => {
+  it("labels each person with separate location and weather when they differ", () => {
+    const data = getDemoPlannerData();
+    const day = structuredClone(data.days[0]);
+    day.location = null;
+    day.weather = null;
+    day.memberLocations[1].location = { ...data.locations[0], name: "Manhattan" };
+    day.memberLocations[1].weather = { ...day.memberLocations[1].weather!, highF: 73, lowF: 61 };
+    render(<DayColumn day={day} timeZone={data.household.timezone} temperatureUnit={data.household.temperatureUnit} calendarState={data.calendarState} weatherState={data.weatherState} onAdd={vi.fn()} onToggle={vi.fn()} onEdit={vi.fn()} onRetry={vi.fn()} onLocation={vi.fn()} onWeather={vi.fn()} onEvent={vi.fn()} onAddEvent={vi.fn()} canAddEvent />);
+
+    expect(screen.getByRole("button", { name: /Jim:.*East Hampton/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Rachel:.*Manhattan/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Rachel:.*high 73/ })).toBeInTheDocument();
+  });
+
   it("keeps scheduled events, plans, and tasks semantically distinct", () => {
     const data = getDemoPlannerData();
     const onEvent = vi.fn();

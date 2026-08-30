@@ -235,6 +235,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .weather-button strong { color: var(--ink); font-size: 13px; }
 .weather-button span:last-child { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .weather-button .rain-risk { color: #356b83; font-weight: 700; }
+.member-location-list { display: grid; gap: 2px; }
+.member-location-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px; border-top: 1px solid var(--rule); }
+.member-location-row:first-child { border-top: 0; }
+.member-location-row .location-button { min-width: 0; }
+.member-location-row .weather-button { width: auto; }
+.member-location-row .weather-unavailable { font-size: 9px; white-space: nowrap; }
 .weather-symbol { color: #a7782c; font-family: Georgia, serif; font-size: 16px; line-height: 1; }
 .weather-unavailable { min-height: 27px; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10px; line-height: 1.25; }
 

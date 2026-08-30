@@ -316,6 +316,7 @@ struct LocationPickerView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var scope = "day"
+    @State private var person = "everyone"
     @State private var selectedId: String
     @State private var searchText = ""
     @State private var searchResults: [GeocodingResult] = []
@@ -352,6 +353,16 @@ struct LocationPickerView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Person") {
+                    Picker("Person", selection: $person) {
+                        Text("Everyone").tag("everyone")
+                        ForEach(day.memberLocations) { assignment in
+                            Text(assignment.displayName).tag(assignment.memberId)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                }
                 Section("Location") {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass")
@@ -460,6 +471,14 @@ struct LocationPickerView: View {
                     self.selectedResult = nil
                 }
             }
+            .onChange(of: person) { _, newValue in
+                let location = newValue == "everyone"
+                    ? day.location
+                    : day.memberLocations.first(where: { $0.memberId == newValue })?.location
+                selectedId = location?.id ?? locations.first?.id ?? ""
+                selectedResult = nil
+                searchText = ""
+            }
             .navigationTitle("Set location")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -473,11 +492,12 @@ struct LocationPickerView: View {
                                 succeeded = await viewModel.setLocation(
                                     selectedResult,
                                     for: day.date,
+                                    memberIds: selectedMemberIds,
                                     scope: scope,
                                     saveForReuse: saveForReuse
                                 )
                             } else if let location = locations.first(where: { $0.id == selectedId }) {
-                                succeeded = await viewModel.setLocation(location, for: day.date, scope: scope)
+                                succeeded = await viewModel.setLocation(location, for: day.date, memberIds: selectedMemberIds, scope: scope)
                             } else {
                                 succeeded = false
                             }
@@ -488,6 +508,10 @@ struct LocationPickerView: View {
                 }
             }
         }
+    }
+
+    private var selectedMemberIds: [String] {
+        person == "everyone" ? day.memberLocations.map(\.memberId) : [person]
     }
 
     private func choose(_ result: GeocodingResult) {
