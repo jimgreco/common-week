@@ -81,6 +81,7 @@ extension WeeklyPlannerData {
             days: retainedDays,
             weeklyItems: retainedWeekly,
             locations: locations,
+            visibleCalendars: visibleCalendars,
             editableCalendars: editableCalendars,
             calendarState: calendarState,
             weatherState: weatherState,

@@ -1071,6 +1071,9 @@ struct CalendarEventEditorView: View {
     @State private var isSaving = false
     @State private var confirmingDelete = false
     @State private var recurringScope = "occurrence"
+    @State private var recurrence: CalendarRecurrenceRule?
+    @State private var guestEmailInput = ""
+    @State private var authoringError: String?
 
     init(event: CalendarEvent?, date: String, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
         self.event = event; self.date = date; self.data = data; self.viewModel = viewModel
@@ -1101,6 +1104,66 @@ struct CalendarEventEditorView: View {
                 Section("When") {
                     DatePicker("Starts", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
                     DatePicker("Ends", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                }
+                if event == nil {
+                    Section("Repeats") {
+                        Picker("Repeats", selection: recurrenceFrequency) {
+                            Text("Does not repeat").tag("")
+                            ForEach(CalendarRecurrenceFrequency.allCases) { frequency in
+                                Text(frequency.title).tag(frequency.rawValue)
+                            }
+                        }
+                        if let recurrence {
+                            Stepper(
+                                "Every \(recurrence.interval) \(recurrence.frequency.unit(interval: recurrence.interval))",
+                                value: recurrenceInterval,
+                                in: 1...99
+                            )
+                            if recurrence.frequency == .weekly {
+                                VStack(alignment: .leading, spacing: 9) {
+                                    Text("Repeat on").font(.subheadline)
+                                    HStack(spacing: 7) {
+                                        ForEach(CalendarRecurrenceWeekday.allCases) { weekday in
+                                            let selected = recurrence.weekdays?.contains(weekday) == true
+                                            Button {
+                                                toggleRecurrenceWeekday(weekday)
+                                            } label: {
+                                                Text(weekday.shortTitle)
+                                                    .font(.caption.bold())
+                                                    .foregroundStyle(selected ? Color.white : CWTheme.secondaryInk)
+                                                    .frame(width: 30, height: 30)
+                                                    .background(selected ? CWTheme.accent : Color.secondary.opacity(0.12), in: Circle())
+                                            }
+                                            .buttonStyle(.plain)
+                                            .disabled(selected && recurrence.weekdays?.count == 1)
+                                            .accessibilityLabel(weekday.accessibilityTitle)
+                                            .accessibilityAddTraits(selected ? .isSelected : [])
+                                        }
+                                    }
+                                }
+                            }
+                            Picker("Repeat ends", selection: recurrenceEnd) {
+                                ForEach(CalendarRecurrenceEnd.allCases) { end in
+                                    Text(end.title).tag(end.rawValue)
+                                }
+                            }
+                            if recurrence.ends == .onDate {
+                                DatePicker("Last date", selection: recurrenceUntilDate, in: recurrenceStartDay..., displayedComponents: .date)
+                            } else if recurrence.ends == .afterCount {
+                                Stepper("\(recurrence.count ?? 10) events", value: recurrenceCount, in: 1...999)
+                            }
+                        }
+                    }
+                    Section("Guests") {
+                        TextField("alex@example.com, sam@example.com", text: $guestEmailInput, axis: .vertical)
+                            .lineLimit(1...4)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityLabel("Guest email addresses")
+                        Text("Separate email addresses with commas. Google Calendar will email invitations.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Section("Details") {
                     HStack(spacing: 10) {
@@ -1184,6 +1247,13 @@ struct CalendarEventEditorView: View {
                         }
                     }
                 }
+                if let authoringError {
+                    Section {
+                        Label(authoringError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
                 if let event {
                     Section { Button(event.recurringEventId == nil ? "Delete from Google Calendar" : "Delete this occurrence", role: .destructive) { confirmingDelete = true } }
                 }
@@ -1205,6 +1275,10 @@ struct CalendarEventEditorView: View {
                     if scope == "occurrence", let sourceCalendarId = event?.calendarPreferenceId {
                         calendarId = sourceCalendarId
                     }
+                }
+                .onChange(of: start) { oldStart, newStart in
+                    updateRecurrenceForStartChange(from: oldStart, to: newStart)
+                    if end < newStart { end = newStart }
                 }
                 .navigationTitle(event == nil ? "Add event" : "Edit event")
                 .navigationBarTitleDisplayMode(.inline)
@@ -1294,11 +1368,131 @@ struct CalendarEventEditorView: View {
     }
 
     private func save() async {
+        authoringError = nil
+        let guestEmails: [String]?
+        do {
+            guestEmails = event == nil ? try CalendarGuestEmails.normalize(guestEmailInput) : nil
+        } catch {
+            authoringError = error.localizedDescription
+            return
+        }
         isSaving = true
         let time = DateFormatter(); time.locale = Locale(identifier: "en_US_POSIX"); time.timeZone = TimeZone(identifier: data.household.timezone) ?? .current; time.dateFormat = "HH:mm"
-        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, sourceCalendarPreferenceId: event?.calendarPreferenceId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start, timeZoneIdentifier: data.household.timezone), endDate: WeekDate.string(end, timeZoneIdentifier: data.household.timezone), startTime: time.string(from: start), endTime: time.string(from: end), recurringEventId: event?.recurringEventId, recurringScope: event?.recurringEventId == nil ? nil : recurringScope)
+        let draft = CalendarEventDraft(requestId: UUID().uuidString, calendarPreferenceId: calendarId, sourceCalendarPreferenceId: event?.calendarPreferenceId, providerEventId: event?.providerEventId, etag: event?.etag, title: title.trimmingCharacters(in: .whitespacesAndNewlines), description: notes, location: location, allDay: allDay, startDate: WeekDate.string(start, timeZoneIdentifier: data.household.timezone), endDate: WeekDate.string(end, timeZoneIdentifier: data.household.timezone), startTime: time.string(from: start), endTime: time.string(from: end), recurringEventId: event?.recurringEventId, recurringScope: event?.recurringEventId == nil ? nil : recurringScope, recurrence: event == nil ? recurrence : nil, guestEmails: guestEmails)
         if await viewModel.saveEvent(draft, editing: event != nil) { dismiss() }
         isSaving = false
+    }
+
+    private var recurrenceFrequency: Binding<String> {
+        Binding(
+            get: { recurrence?.frequency.rawValue ?? "" },
+            set: { value in
+                guard let frequency = CalendarRecurrenceFrequency(rawValue: value) else {
+                    recurrence = nil
+                    return
+                }
+                recurrence = CalendarRecurrenceRule(
+                    frequency: frequency,
+                    interval: 1,
+                    weekdays: frequency == .weekly
+                        ? [CalendarRecurrenceWeekday.weekday(for: start, timeZoneIdentifier: data.household.timezone)]
+                        : nil,
+                    ends: .never,
+                    untilDate: nil,
+                    count: nil
+                )
+            }
+        )
+    }
+
+    private var recurrenceInterval: Binding<Int> {
+        Binding(
+            get: { recurrence?.interval ?? 1 },
+            set: { value in
+                guard var rule = recurrence else { return }
+                rule.interval = value
+                recurrence = rule
+            }
+        )
+    }
+
+    private var recurrenceEnd: Binding<String> {
+        Binding(
+            get: { recurrence?.ends.rawValue ?? CalendarRecurrenceEnd.never.rawValue },
+            set: { value in
+                guard var rule = recurrence, let end = CalendarRecurrenceEnd(rawValue: value) else { return }
+                rule.ends = end
+                rule.untilDate = end == .onDate
+                    ? rule.untilDate ?? WeekDate.string(start, timeZoneIdentifier: data.household.timezone)
+                    : nil
+                rule.count = end == .afterCount ? rule.count ?? 10 : nil
+                recurrence = rule
+            }
+        )
+    }
+
+    private var recurrenceUntilDate: Binding<Date> {
+        Binding(
+            get: {
+                WeekDate.calendarDate(
+                    recurrence?.untilDate ?? WeekDate.string(start, timeZoneIdentifier: data.household.timezone),
+                    hour: 12,
+                    timeZoneIdentifier: data.household.timezone
+                )
+            },
+            set: { value in
+                guard var rule = recurrence else { return }
+                rule.untilDate = WeekDate.string(value, timeZoneIdentifier: data.household.timezone)
+                recurrence = rule
+            }
+        )
+    }
+
+    private var recurrenceStartDay: Date {
+        WeekDate.calendarDate(
+            WeekDate.string(start, timeZoneIdentifier: data.household.timezone),
+            timeZoneIdentifier: data.household.timezone
+        )
+    }
+
+    private var recurrenceCount: Binding<Int> {
+        Binding(
+            get: { recurrence?.count ?? 10 },
+            set: { value in
+                guard var rule = recurrence else { return }
+                rule.count = value
+                recurrence = rule
+            }
+        )
+    }
+
+    private func toggleRecurrenceWeekday(_ weekday: CalendarRecurrenceWeekday) {
+        guard var rule = recurrence else { return }
+        var selected = Set(rule.weekdays ?? [])
+        if selected.contains(weekday) {
+            guard selected.count > 1 else { return }
+            selected.remove(weekday)
+        } else {
+            selected.insert(weekday)
+        }
+        rule.weekdays = CalendarRecurrenceWeekday.allCases.filter(selected.contains)
+        recurrence = rule
+    }
+
+    private func updateRecurrenceForStartChange(from oldStart: Date, to newStart: Date) {
+        guard var rule = recurrence else { return }
+        let oldDate = WeekDate.string(oldStart, timeZoneIdentifier: data.household.timezone)
+        let newDate = WeekDate.string(newStart, timeZoneIdentifier: data.household.timezone)
+        guard oldDate != newDate else { return }
+
+        let oldWeekday = CalendarRecurrenceWeekday.weekday(for: oldStart, timeZoneIdentifier: data.household.timezone)
+        if rule.frequency == .weekly, rule.weekdays == [oldWeekday] {
+            rule.weekdays = [CalendarRecurrenceWeekday.weekday(for: newStart, timeZoneIdentifier: data.household.timezone)]
+        }
+        if rule.ends == .onDate, let untilDate = rule.untilDate, untilDate < newDate {
+            rule.untilDate = newDate
+        }
+        recurrence = rule
     }
 
     private var calendarChoices: [EditableCalendar] {

@@ -38,6 +38,7 @@ struct WeeklyPlannerData: Codable {
     var days: [DayPlan]
     var weeklyItems: [PlanningItem]
     var locations: [HouseholdLocation]
+    let visibleCalendars: [EditableCalendar]?
     let editableCalendars: [EditableCalendar]
     let calendarState: PlannerSourceState
     let weatherState: PlannerSourceState
@@ -359,6 +360,173 @@ struct CalendarEventDraft: Encodable {
     let endTime: String
     let recurringEventId: String?
     let recurringScope: String?
+    let recurrence: CalendarRecurrenceRule?
+    let guestEmails: [String]?
+}
+
+enum CalendarRecurrenceFrequency: String, Codable, CaseIterable, Identifiable {
+    case daily
+    case weekly
+    case monthly
+    case yearly
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .daily: "Daily"
+        case .weekly: "Weekly"
+        case .monthly: "Monthly"
+        case .yearly: "Yearly"
+        }
+    }
+
+    func unit(interval: Int) -> String {
+        let singular = switch self {
+        case .daily: "day"
+        case .weekly: "week"
+        case .monthly: "month"
+        case .yearly: "year"
+        }
+        return interval == 1 ? singular : "\(singular)s"
+    }
+}
+
+enum CalendarRecurrenceWeekday: String, Codable, CaseIterable, Identifiable {
+    case monday = "MO"
+    case tuesday = "TU"
+    case wednesday = "WE"
+    case thursday = "TH"
+    case friday = "FR"
+    case saturday = "SA"
+    case sunday = "SU"
+
+    var id: String { rawValue }
+
+    var shortTitle: String {
+        switch self {
+        case .monday: "M"
+        case .tuesday: "T"
+        case .wednesday: "W"
+        case .thursday: "T"
+        case .friday: "F"
+        case .saturday: "S"
+        case .sunday: "S"
+        }
+    }
+
+    var accessibilityTitle: String {
+        switch self {
+        case .monday: "Monday"
+        case .tuesday: "Tuesday"
+        case .wednesday: "Wednesday"
+        case .thursday: "Thursday"
+        case .friday: "Friday"
+        case .saturday: "Saturday"
+        case .sunday: "Sunday"
+        }
+    }
+
+    static func weekday(for date: Date, timeZoneIdentifier: String) -> CalendarRecurrenceWeekday {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
+        return switch calendar.component(.weekday, from: date) {
+        case 1: .sunday
+        case 2: .monday
+        case 3: .tuesday
+        case 4: .wednesday
+        case 5: .thursday
+        case 6: .friday
+        default: .saturday
+        }
+    }
+}
+
+enum CalendarRecurrenceEnd: String, Codable, CaseIterable, Identifiable {
+    case never
+    case onDate
+    case afterCount
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .never: "Never"
+        case .onDate: "On date"
+        case .afterCount: "After number of events"
+        }
+    }
+}
+
+struct CalendarRecurrenceRule: Codable, Equatable {
+    var frequency: CalendarRecurrenceFrequency
+    var interval: Int
+    var weekdays: [CalendarRecurrenceWeekday]?
+    var ends: CalendarRecurrenceEnd
+    var untilDate: String?
+    var count: Int?
+}
+
+enum CalendarGuestEmailError: LocalizedError, Equatable {
+    case invalid(String)
+    case tooMany
+
+    var errorDescription: String? {
+        switch self {
+        case .invalid(let email): "Check the guest email address: \(email)"
+        case .tooMany: "Invite no more than 200 guests at a time."
+        }
+    }
+}
+
+enum CalendarGuestEmails {
+    static func normalize(_ value: String) throws -> [String] {
+        var result: [String] = []
+        var seen = Set<String>()
+        for part in value.split(separator: ",") {
+            let email = part.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !email.isEmpty else { continue }
+            guard email.range(
+                of: #"^[^\s@,]+@[^\s@,]+\.[^\s@,]+$"#,
+                options: .regularExpression
+            ) != nil else {
+                throw CalendarGuestEmailError.invalid(email)
+            }
+            if seen.insert(email).inserted { result.append(email) }
+        }
+        guard result.count <= 200 else { throw CalendarGuestEmailError.tooMany }
+        return result
+    }
+}
+
+enum CalendarEventFilter {
+    static let allCalendars = "all-calendars"
+    static let allPeople = "all-people"
+
+    static func matches(_ event: CalendarEvent, calendarId: String, personId: String) -> Bool {
+        let eventCalendarId = event.calendarPreferenceId ?? event.calendarId
+        return (calendarId == allCalendars || eventCalendarId == calendarId)
+            && (personId == allPeople || event.sourceUserId == personId)
+    }
+
+    static func calendars(in data: WeeklyPlannerData) -> [EditableCalendar] {
+        if let visibleCalendars = data.visibleCalendars { return visibleCalendars }
+
+        var calendars = data.editableCalendars
+        var seen = Set(calendars.map(\.id))
+        for event in data.days.flatMap(\.events) {
+            let id = event.calendarPreferenceId ?? event.calendarId
+            guard seen.insert(id).inserted else { continue }
+            calendars.append(EditableCalendar(
+                id: id,
+                sourceUserId: event.sourceUserId,
+                name: event.calendarAlias,
+                color: event.calendarColor,
+                sectionGroup: event.sectionGroup
+            ))
+        }
+        return calendars
+    }
 }
 
 struct CalendarPreferenceUpdate: Encodable {

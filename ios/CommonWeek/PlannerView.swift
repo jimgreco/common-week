@@ -70,6 +70,8 @@ struct PlannerView: View {
     @State private var selectedDayDate = ""
     @State private var dayMoveDirection = 1
     @State private var selectedDestination: PlannerDestination = .calendar
+    @State private var calendarFilterId = CalendarEventFilter.allCalendars
+    @State private var personFilterId = CalendarEventFilter.allPeople
     @GestureState private var dayDragOffset: CGFloat = 0
     @StateObject private var appleReminders = AppleRemindersStore.shared
     @ObservedObject private var notifications = NotificationCoordinator.shared
@@ -250,6 +252,7 @@ struct PlannerView: View {
             }
             .onAppear { synchronizeSelectedDay(with: data) }
             .onChange(of: data.weekStart) { _, _ in synchronizeSelectedDay(with: data) }
+            .task(id: filterRevision(data)) { normalizeFilters(in: data) }
             .animation(.easeInOut(duration: 0.2), value: selectedDestination)
         }
     }
@@ -258,9 +261,20 @@ struct PlannerView: View {
     private func destinationContent(_ data: WeeklyPlannerData) -> some View {
         switch selectedDestination {
         case .calendar:
-            dayPager(data)
+            VStack(spacing: 12) {
+                calendarFilters(data)
+                dayPager(data)
+            }
         case .events:
-            WeeklyEventsList(data: data, sheet: $sheet)
+            VStack(spacing: 12) {
+                calendarFilters(data)
+                WeeklyEventsList(
+                    data: data,
+                    calendarFilterId: calendarFilterId,
+                    personFilterId: personFilterId,
+                    sheet: $sheet
+                )
+            }
         case .plans:
             WeeklyItemsList(type: .note, data: data, viewModel: viewModel, appleReminders: appleReminders, sheet: $sheet)
         case .tasks:
@@ -294,7 +308,15 @@ struct PlannerView: View {
 
             ZStack(alignment: .top) {
                 let day = selectedDay(in: data)
-                DayCardView(day: day, data: data, viewModel: viewModel, appleReminders: appleReminders, sheet: $sheet)
+                DayCardView(
+                    day: day,
+                    data: data,
+                    viewModel: viewModel,
+                    appleReminders: appleReminders,
+                    sheet: $sheet,
+                    calendarFilterId: calendarFilterId,
+                    personFilterId: personFilterId
+                )
                     .id(day.date)
                     .offset(x: dayDragOffset)
                     .transition(dayTransition)
@@ -315,6 +337,33 @@ struct PlannerView: View {
         guard !data.days.isEmpty else { return }
         if !data.days.contains(where: { $0.date == selectedDayDate }) {
             selectedDayDate = selectedDay(in: data).date
+        }
+    }
+
+    private func calendarFilters(_ data: WeeklyPlannerData) -> some View {
+        CalendarFilterControls(
+            calendars: CalendarEventFilter.calendars(in: data),
+            members: data.members,
+            calendarId: $calendarFilterId,
+            personId: $personFilterId
+        )
+        .padding(.horizontal, 2)
+    }
+
+    private func filterRevision(_ data: WeeklyPlannerData) -> String {
+        let calendarIds = CalendarEventFilter.calendars(in: data).map(\.id).joined(separator: ",")
+        let memberIds = data.members.map(\.userId).joined(separator: ",")
+        return "\(calendarIds)|\(memberIds)"
+    }
+
+    private func normalizeFilters(in data: WeeklyPlannerData) {
+        if calendarFilterId != CalendarEventFilter.allCalendars,
+           !CalendarEventFilter.calendars(in: data).contains(where: { $0.id == calendarFilterId }) {
+            calendarFilterId = CalendarEventFilter.allCalendars
+        }
+        if personFilterId != CalendarEventFilter.allPeople,
+           !data.members.contains(where: { $0.userId == personFilterId }) {
+            personFilterId = CalendarEventFilter.allPeople
         }
     }
 
@@ -613,6 +662,8 @@ private struct LoadingWeekView: View {
 
 private struct WeeklyEventsList: View {
     let data: WeeklyPlannerData
+    let calendarFilterId: String
+    let personFilterId: String
     @Binding var sheet: PlannerSheet?
 
     var body: some View {
@@ -635,6 +686,8 @@ private struct WeeklyEventsList: View {
                     day: day,
                     timeZoneIdentifier: data.household.timezone,
                     canAddEvent: !data.editableCalendars.isEmpty,
+                    calendarFilterId: calendarFilterId,
+                    personFilterId: personFilterId,
                     sheet: $sheet
                 )
             }
@@ -646,19 +699,27 @@ private struct DailyEventsCard: View {
     let day: DayPlan
     let timeZoneIdentifier: String
     let canAddEvent: Bool
+    let calendarFilterId: String
+    let personFilterId: String
     @Binding var sheet: PlannerSheet?
+
+    private var events: [CalendarEvent] {
+        day.events.filter {
+            CalendarEventFilter.matches($0, calendarId: calendarFilterId, personId: personFilterId)
+        }
+    }
 
     var body: some View {
         CardSurface {
             VStack(alignment: .leading, spacing: 13) {
                 dayHeading(day.date, timeZoneIdentifier: timeZoneIdentifier)
-                if day.events.isEmpty {
-                    Text("No events")
+                if events.isEmpty {
+                    Text(day.events.isEmpty ? "No events" : "No events match these filters")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .italic()
                 } else {
-                    ForEach(day.events) { event in
+                    ForEach(events) { event in
                         CalendarEventRow(event: event, isSupplemental: event.sectionGroup == "supplemental") {
                             sheet = .event(event)
                         }

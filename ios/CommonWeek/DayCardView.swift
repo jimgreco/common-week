@@ -6,13 +6,20 @@ struct DayCardView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var appleReminders: AppleRemindersStore
     @Binding var sheet: PlannerSheet?
+    let calendarFilterId: String
+    let personFilterId: String
 
     private var isToday: Bool { WeekDate.isToday(day.date, timeZoneIdentifier: data.household.timezone) }
     private var plans: [PlanningItem] { day.items.filter { $0.type == .note } }
     private var tasks: [PlanningItem] { day.items.filter { $0.type == .task } }
     private var reminderTasks: [AppleReminderTask] { appleReminders.tasks(for: day.date) }
-    private var criticalEvents: [CalendarEvent] { day.events.filter { $0.sectionGroup != "supplemental" } }
-    private var supplementalEvents: [CalendarEvent] { day.events.filter { $0.sectionGroup == "supplemental" } }
+    private var visibleEvents: [CalendarEvent] {
+        day.events.filter {
+            CalendarEventFilter.matches($0, calendarId: calendarFilterId, personId: personFilterId)
+        }
+    }
+    private var criticalEvents: [CalendarEvent] { visibleEvents.filter { $0.sectionGroup != "supplemental" } }
+    private var supplementalEvents: [CalendarEvent] { visibleEvents.filter { $0.sectionGroup == "supplemental" } }
 
     var body: some View {
         CardSurface {
@@ -121,9 +128,11 @@ struct DayCardView: View {
 
     private var calendarSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            if day.events.isEmpty {
+            if visibleEvents.isEmpty {
                 Eyebrow(text: "Calendar")
-                Text(data.calendarState.status == "loading" ? "Loading calendar…" : "No events")
+                Text(data.calendarState.status == "loading"
+                     ? "Loading calendar…"
+                     : day.events.isEmpty ? "No events" : "No events match these filters")
                     .font(.subheadline).foregroundStyle(.secondary).italic()
             } else {
                 if !criticalEvents.isEmpty {
@@ -177,6 +186,89 @@ struct DayCardView: View {
 
     private func temperature(_ fahrenheit: Double) -> Int {
         data.household.temperatureUnit == .fahrenheit ? Int(fahrenheit.rounded()) : Int(((fahrenheit - 32) * 5 / 9).rounded())
+    }
+}
+
+struct CalendarFilterControls: View {
+    let calendars: [EditableCalendar]
+    let members: [HouseholdMember]
+    @Binding var calendarId: String
+    @Binding var personId: String
+
+    private var isActive: Bool {
+        calendarId != CalendarEventFilter.allCalendars || personId != CalendarEventFilter.allPeople
+    }
+
+    private var selectedCalendarTitle: String {
+        guard calendarId != CalendarEventFilter.allCalendars,
+              let calendar = calendars.first(where: { $0.id == calendarId }) else { return "All calendars" }
+        return calendar.name
+    }
+
+    private var selectedPersonTitle: String {
+        guard personId != CalendarEventFilter.allPeople,
+              let member = members.first(where: { $0.userId == personId }) else { return "Everyone" }
+        return member.displayName
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Button("All calendars") { calendarId = CalendarEventFilter.allCalendars }
+                Divider()
+                ForEach(calendars) { calendar in
+                    Button {
+                        calendarId = calendar.id
+                    } label: {
+                        Label(calendarTitle(calendar), systemImage: calendarId == calendar.id ? "checkmark" : "calendar")
+                    }
+                }
+            } label: {
+                Label(selectedCalendarTitle, systemImage: "calendar")
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Calendar filter, \(selectedCalendarTitle)")
+            .accessibilityIdentifier("calendar-filter")
+
+            Menu {
+                Button("Everyone") { personId = CalendarEventFilter.allPeople }
+                Divider()
+                ForEach(members) { member in
+                    Button {
+                        personId = member.userId
+                    } label: {
+                        Label(member.displayName, systemImage: personId == member.userId ? "checkmark" : "person")
+                    }
+                }
+            } label: {
+                Label(selectedPersonTitle, systemImage: "person")
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Person filter, \(selectedPersonTitle)")
+            .accessibilityIdentifier("person-filter")
+
+            if isActive {
+                Button {
+                    calendarId = CalendarEventFilter.allCalendars
+                    personId = CalendarEventFilter.allPeople
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Clear calendar filters")
+            }
+        }
+        .font(.caption.weight(.semibold))
+    }
+
+    private func calendarTitle(_ calendar: EditableCalendar) -> String {
+        guard let ownerId = calendar.sourceUserId,
+              let owner = members.first(where: { $0.userId == ownerId }) else { return calendar.name }
+        return "\(calendar.name) · \(owner.displayName)"
     }
 }
 

@@ -108,6 +108,98 @@ final class WeekDateTests: XCTestCase {
         XCTAssertEqual(payload["sectionGroup"], "supplemental")
     }
 
+    func testCalendarEventDraftEncodesRecurrenceAndGuests() throws {
+        let draft = CalendarEventDraft(
+            requestId: "123e4567-e89b-12d3-a456-426614174000",
+            calendarPreferenceId: "223e4567-e89b-12d3-a456-426614174000",
+            sourceCalendarPreferenceId: nil,
+            providerEventId: nil,
+            etag: nil,
+            title: "Family dinner",
+            description: "",
+            location: "",
+            allDay: false,
+            startDate: "2026-09-07",
+            endDate: "2026-09-07",
+            startTime: "18:00",
+            endTime: "19:00",
+            recurringEventId: nil,
+            recurringScope: nil,
+            recurrence: CalendarRecurrenceRule(
+                frequency: .weekly,
+                interval: 2,
+                weekdays: [.monday, .wednesday],
+                ends: .afterCount,
+                untilDate: nil,
+                count: 5
+            ),
+            guestEmails: ["alex@example.com", "sam@example.com"]
+        )
+
+        let encoded = try JSONEncoder().encode(draft)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let recurrence = try XCTUnwrap(payload["recurrence"] as? [String: Any])
+
+        XCTAssertEqual(recurrence["frequency"] as? String, "weekly")
+        XCTAssertEqual(recurrence["interval"] as? Int, 2)
+        XCTAssertEqual(recurrence["weekdays"] as? [String], ["MO", "WE"])
+        XCTAssertEqual(recurrence["ends"] as? String, "afterCount")
+        XCTAssertEqual(recurrence["count"] as? Int, 5)
+        XCTAssertEqual(payload["guestEmails"] as? [String], ["alex@example.com", "sam@example.com"])
+    }
+
+    func testGuestEmailsAreNormalizedAndDeduplicated() throws {
+        XCTAssertEqual(
+            try CalendarGuestEmails.normalize(" Alex@Example.com, sam@example.com, alex@example.com "),
+            ["alex@example.com", "sam@example.com"]
+        )
+        XCTAssertThrowsError(try CalendarGuestEmails.normalize("not-an-email")) { error in
+            XCTAssertEqual(error as? CalendarGuestEmailError, .invalid("not-an-email"))
+        }
+    }
+
+    func testCalendarFiltersMatchCalendarAndSourcePerson() throws {
+        let data = PreviewData.planner
+        let family = try XCTUnwrap(data.days.first?.events.first)
+        let personal = try XCTUnwrap(data.days.flatMap(\.events).first(where: { $0.calendarPreferenceId == "calendar-personal" }))
+
+        XCTAssertTrue(CalendarEventFilter.matches(
+            family,
+            calendarId: "calendar-family",
+            personId: "demo-jim"
+        ))
+        XCTAssertFalse(CalendarEventFilter.matches(
+            family,
+            calendarId: "calendar-personal",
+            personId: CalendarEventFilter.allPeople
+        ))
+        XCTAssertFalse(CalendarEventFilter.matches(
+            family,
+            calendarId: CalendarEventFilter.allCalendars,
+            personId: "demo-rachel"
+        ))
+        XCTAssertTrue(CalendarEventFilter.matches(
+            personal,
+            calendarId: "calendar-personal",
+            personId: CalendarEventFilter.allPeople
+        ))
+    }
+
+    func testOlderPlannerSnapshotsDeriveFilterCalendars() throws {
+        let encoded = try JSONEncoder().encode(PreviewData.planner)
+        var payload = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        payload.removeValue(forKey: "visibleCalendars")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: payload)
+        let planner = try JSONDecoder().decode(WeeklyPlannerData.self, from: legacyData)
+
+        XCTAssertNil(planner.visibleCalendars)
+        XCTAssertEqual(
+            Set(CalendarEventFilter.calendars(in: planner).map(\.id)),
+            ["calendar-family", "calendar-personal"]
+        )
+    }
+
     func testGeocodingResultBuildsAReadableAssignmentName() throws {
         let payload = Data(#"{"id":"2988507","name":"Paris","admin1":"Île-de-France","country":"France","latitude":48.8566,"longitude":2.3522,"timezone":"Europe/Paris"}"#.utf8)
         let result = try JSONDecoder().decode(GeocodingResult.self, from: payload)

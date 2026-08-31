@@ -134,6 +134,8 @@ struct MacPlannerView: View {
     @FocusState private var searchFocused: Bool
     @Environment(\.openWindow) private var openWindow
     @SceneStorage("mac-planner-column-visibility") private var columnVisibilityValue = "all"
+    @SceneStorage("mac-calendar-filter") private var calendarFilterId = CalendarEventFilter.allCalendars
+    @SceneStorage("mac-person-filter") private var personFilterId = CalendarEventFilter.allPeople
 
     init(viewModel: PlannerViewModel, auth: AuthStore, user: SessionIdentity) {
         self.viewModel = viewModel
@@ -242,6 +244,7 @@ struct MacPlannerView: View {
                     timeZoneIdentifier: data.household.timezone
                 )
             }
+            .task(id: filterRevision(data)) { normalizeFilters(in: data) }
             .onChange(of: data.weekStart) { _, _ in
                 synchronizeDay(with: data)
                 navigation.clearSelection()
@@ -333,6 +336,19 @@ struct MacPlannerView: View {
                     create: { commandRouter.perform(.newItem) },
                     dropOnDay: reschedule(_:to:)
                 )
+                if navigation.section == .week || navigation.section == .events {
+                    CalendarFilterControls(
+                        calendars: CalendarEventFilter.calendars(in: data),
+                        members: data.members,
+                        calendarId: $calendarFilterId,
+                        personId: $personFilterId
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.thinMaterial)
+                    .overlay(alignment: .bottom) { Divider() }
+                }
                 if navigation.section == .week,
                    let day = data.days.first(where: { $0.date == navigation.selectedDay }) {
                     MacDayContextBar(
@@ -361,6 +377,8 @@ struct MacPlannerView: View {
                         set: { request(.selections($0)) }
                     ),
                     searchText: searchText,
+                    calendarFilterId: calendarFilterId,
+                    personFilterId: personFilterId,
                     viewModel: viewModel,
                     reminders: appleReminders,
                     selectItem: { request(.selection(.planningItem($0))) },
@@ -616,6 +634,23 @@ struct MacPlannerView: View {
         }
     }
 
+    private func filterRevision(_ data: WeeklyPlannerData) -> String {
+        let calendarIds = CalendarEventFilter.calendars(in: data).map(\.id).joined(separator: ",")
+        let memberIds = data.members.map(\.userId).joined(separator: ",")
+        return "\(calendarIds)|\(memberIds)"
+    }
+
+    private func normalizeFilters(in data: WeeklyPlannerData) {
+        if calendarFilterId != CalendarEventFilter.allCalendars,
+           !CalendarEventFilter.calendars(in: data).contains(where: { $0.id == calendarFilterId }) {
+            calendarFilterId = CalendarEventFilter.allCalendars
+        }
+        if personFilterId != CalendarEventFilter.allPeople,
+           !data.members.contains(where: { $0.userId == personFilterId }) {
+            personFilterId = CalendarEventFilter.allPeople
+        }
+    }
+
     private var columnVisibility: Binding<NavigationSplitViewVisibility> {
         Binding(
             get: {
@@ -751,7 +786,9 @@ struct MacPlannerView: View {
                 startTime: formatter.string(from: newStart),
                 endTime: formatter.string(from: newEnd),
                 recurringEventId: event.recurringEventId,
-                recurringScope: event.recurringEventId == nil ? nil : "occurrence"
+                recurringScope: event.recurringEventId == nil ? nil : "occurrence",
+                recurrence: nil,
+                guestEmails: nil
             )
             Task { _ = await viewModel.saveEvent(draft, editing: true) }
         }
@@ -1001,6 +1038,8 @@ private struct MacPlannerListPane: View {
     let selectedDay: String
     @Binding var selections: Set<MacPlannerSelection>
     let searchText: String
+    let calendarFilterId: String
+    let personFilterId: String
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var reminders: AppleRemindersStore
     let selectItem: (String) -> Void
@@ -1054,7 +1093,7 @@ private struct MacPlannerListPane: View {
                 ContentUnavailableView(
                     "Nothing here yet",
                     systemImage: section.icon,
-                    description: Text(searchText.isEmpty ? "Use Command-N to add an item." : "No items match your search.")
+                    description: Text(emptyDescription)
                 )
             }
         }
@@ -1185,6 +1224,15 @@ private struct MacPlannerListPane: View {
 
     private var filteredReminders: [AppleReminderTask] { reminders.tasks.filter(matches) }
 
+    private var emptyDescription: String {
+        if !searchText.isEmpty { return "No items match your search." }
+        if section == .events,
+           calendarFilterId != CalendarEventFilter.allCalendars || personFilterId != CalendarEventFilter.allPeople {
+            return "No events match the selected calendar and person filters."
+        }
+        return "Use Command-N to add an item."
+    }
+
     private var isPlannerSectionEmpty: Bool {
         switch section {
         case .week:
@@ -1204,9 +1252,10 @@ private struct MacPlannerListPane: View {
     }
 
     private func matches(_ event: CalendarEvent) -> Bool {
-        searchText.isEmpty
-            || event.title.localizedCaseInsensitiveContains(searchText)
-            || event.calendarAlias.localizedCaseInsensitiveContains(searchText)
+        CalendarEventFilter.matches(event, calendarId: calendarFilterId, personId: personFilterId)
+            && (searchText.isEmpty
+                || event.title.localizedCaseInsensitiveContains(searchText)
+                || event.calendarAlias.localizedCaseInsensitiveContains(searchText))
     }
 
     private func matches(_ task: AppleReminderTask) -> Bool {
@@ -1619,7 +1668,9 @@ private struct MacEventInspector: View {
             startTime: formatter.string(from: start),
             endTime: formatter.string(from: end),
             recurringEventId: event.recurringEventId,
-            recurringScope: event.recurringEventId == nil ? nil : recurringScope
+            recurringScope: event.recurringEventId == nil ? nil : recurringScope,
+            recurrence: nil,
+            guestEmails: nil
         )
         if await viewModel.saveEvent(draft, editing: true) {
             baseline = editorState
