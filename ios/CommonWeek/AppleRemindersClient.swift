@@ -25,6 +25,7 @@ struct AppleReminderMutation: Equatable {
     let dueDate: Date
     let includesTime: Bool
     let timeZoneIdentifier: String
+    let recurrence: AppleReminderRecurrence?
 }
 
 @MainActor
@@ -35,7 +36,7 @@ protocol AppleRemindersClient: AnyObject {
     func requestAccess() async throws -> Bool
     func reminderLists() -> [AppleReminderList]
     func reminders(in listIds: Set<String>) async -> [AppleReminderRecord]
-    func create(mutation: AppleReminderMutation) throws
+    func create(mutation: AppleReminderMutation) throws -> String
     func update(id: String, mutation: AppleReminderMutation) throws
     func setCompleted(id: String, completed: Bool) throws
     func delete(id: String) throws
@@ -106,7 +107,7 @@ final class EventKitAppleRemindersClient: AppleRemindersClient {
         }
     }
 
-    func create(mutation: AppleReminderMutation) throws {
+    func create(mutation: AppleReminderMutation) throws -> String {
         guard let calendar = eventStore.calendar(withIdentifier: mutation.listId) else {
             throw AppleRemindersError.listUnavailable
         }
@@ -124,7 +125,11 @@ final class EventKitAppleRemindersClient: AppleRemindersClient {
         )
         reminder.startDateComponents = components
         reminder.dueDateComponents = components
+        if let recurrence = mutation.recurrence {
+            reminder.addRecurrenceRule(Self.recurrenceRule(from: recurrence))
+        }
         try eventStore.save(reminder, commit: true)
+        return reminder.calendarItemIdentifier
     }
 
     func update(id: String, mutation: AppleReminderMutation) throws {
@@ -189,5 +194,43 @@ final class EventKitAppleRemindersClient: AppleRemindersClient {
         components.calendar = calendar
         components.timeZone = calendar.timeZone
         return components
+    }
+
+    static func recurrenceRule(from recurrence: AppleReminderRecurrence) -> EKRecurrenceRule {
+        let end: EKRecurrenceEnd? = switch recurrence.end {
+        case .never:
+            nil
+        case .onDate(let date):
+            EKRecurrenceEnd(end: date)
+        case .afterOccurrences(let count):
+            EKRecurrenceEnd(occurrenceCount: count)
+        }
+        let frequency: EKRecurrenceFrequency = switch recurrence.frequency {
+        case .daily: .daily
+        case .weekly: .weekly
+        case .monthly: .monthly
+        case .yearly: .yearly
+        }
+        guard recurrence.frequency == .weekly else {
+            return EKRecurrenceRule(
+                recurrenceWith: frequency,
+                interval: recurrence.interval,
+                end: end
+            )
+        }
+        let days = recurrence.weekdays.sorted { $0.rawValue < $1.rawValue }.map {
+            EKRecurrenceDayOfWeek(EKWeekday(rawValue: $0.rawValue)!)
+        }
+        return EKRecurrenceRule(
+            recurrenceWith: frequency,
+            interval: recurrence.interval,
+            daysOfTheWeek: days,
+            daysOfTheMonth: nil,
+            monthsOfTheYear: nil,
+            weeksOfTheYear: nil,
+            daysOfTheYear: nil,
+            setPositions: nil,
+            end: end
+        )
     }
 }

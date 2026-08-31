@@ -49,10 +49,11 @@ struct CommonWeekApp: App {
         case .active:
             planner.applicationDidBecomeActive()
             AppleRemindersStore.shared.applicationDidBecomeActive()
+            BackgroundRefreshCoordinator.shared.applicationDidBecomeActive()
             Task { await NotificationCoordinator.shared.applicationDidBecomeActive() }
         case .background:
             planner.applicationDidEnterBackground()
-            BackgroundRefreshCoordinator.shared.schedule()
+            BackgroundRefreshCoordinator.shared.applicationDidEnterBackground()
         case .inactive:
             break
         @unknown default:

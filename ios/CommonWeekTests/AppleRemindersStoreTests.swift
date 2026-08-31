@@ -1,4 +1,5 @@
 import Foundation
+import EventKit
 import XCTest
 @testable import CommonWeek
 
@@ -154,6 +155,187 @@ final class AppleRemindersStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testNewReminderRecurrenceIsForwardedWhileExistingRecurrenceIsPreserved() async throws {
+        let timeZone = "America/New_York"
+        let today = WeekDate.today(timeZoneIdentifier: timeZone)
+        let list = AppleReminderList(id: "family", title: "Family", sourceTitle: "iCloud", canModify: true)
+        let client = FakeAppleRemindersClient(
+            lists: [list],
+            records: [record(id: "existing", list: list, dueDate: today, isRecurring: true)]
+        )
+        let store = makeStore(client: client)
+        await store.activate(
+            userId: "user",
+            weekStart: WeekDate.currentWeekStart(timeZoneIdentifier: timeZone),
+            timeZoneIdentifier: timeZone
+        )
+        await store.setList(list.id, selected: true)
+        let dueDate = WeekDate.calendarDate(today, hour: 9, timeZoneIdentifier: timeZone)
+        let recurrence = AppleReminderRecurrence(
+            frequency: .weekly,
+            interval: 2,
+            weekdays: [.monday, .wednesday, .friday],
+            end: .afterOccurrences(12)
+        )
+
+        try await store.createReminder(
+            title: "Recurring",
+            listId: list.id,
+            dueDate: dueDate,
+            includesTime: true,
+            timeZoneIdentifier: timeZone,
+            recurrence: recurrence
+        )
+
+        XCTAssertEqual(client.lastCreatedMutation?.recurrence, recurrence)
+        XCTAssertTrue(try XCTUnwrap(client.records.first(where: { $0.title == "Recurring" })).isRecurring)
+
+        let existing = try XCTUnwrap(store.tasks.first(where: { $0.id == "existing" }))
+        try await store.update(
+            existing,
+            title: "Still recurring",
+            notes: "",
+            url: nil,
+            priority: .none,
+            listId: list.id,
+            dueDate: dueDate,
+            includesTime: true,
+            timeZoneIdentifier: timeZone
+        )
+        XCTAssertNil(client.lastUpdatedMutation?.recurrence)
+        XCTAssertTrue(try XCTUnwrap(client.records.first(where: { $0.id == "existing" })).isRecurring)
+    }
+
+    func testRecurrenceDraftDefaultsWeeklyCreationToDueWeekday() throws {
+        var draft = AppleReminderRecurrenceDraft()
+        draft.isEnabled = true
+        draft.frequency = .weekly
+        draft.weekdays = []
+        let timeZone = "America/New_York"
+        let monday = WeekDate.calendarDate("2026-08-31", hour: 9, timeZoneIdentifier: timeZone)
+
+        let recurrence = try XCTUnwrap(draft.recurrence(starting: monday, timeZoneIdentifier: timeZone))
+
+        XCTAssertEqual(recurrence.weekdays, [.monday])
+        XCTAssertNoThrow(try recurrence.validate(starting: monday, timeZoneIdentifier: timeZone))
+    }
+
+    @MainActor
+    func testEventKitRecurrenceRuleMapsFrequencyWeekdaysIntervalAndEnd() throws {
+        let recurrence = AppleReminderRecurrence(
+            frequency: .weekly,
+            interval: 3,
+            weekdays: [.tuesday, .thursday],
+            end: .afterOccurrences(8)
+        )
+
+        let rule = EventKitAppleRemindersClient.recurrenceRule(from: recurrence)
+
+        XCTAssertEqual(rule.frequency, EKRecurrenceFrequency.weekly)
+        XCTAssertEqual(rule.interval, 3)
+        XCTAssertEqual(rule.daysOfTheWeek?.map(\.dayOfTheWeek), [.tuesday, .thursday])
+        XCTAssertEqual(rule.recurrenceEnd?.occurrenceCount, 8)
+    }
+
+    @MainActor
+    func testEventKitRecurrenceRuleMapsDailyMonthlyAndYearlySchedules() {
+        let expected: [(AppleReminderRecurrenceFrequency, EKRecurrenceFrequency)] = [
+            (.daily, .daily),
+            (.monthly, .monthly),
+            (.yearly, .yearly),
+        ]
+        let endDate = Date(timeIntervalSince1970: 2_000_000)
+
+        for (frequency, eventKitFrequency) in expected {
+            let recurrence = AppleReminderRecurrence(
+                frequency: frequency,
+                interval: 2,
+                weekdays: [],
+                end: .onDate(endDate)
+            )
+            let rule = EventKitAppleRemindersClient.recurrenceRule(from: recurrence)
+            XCTAssertEqual(rule.frequency, eventKitFrequency)
+            XCTAssertEqual(rule.interval, 2)
+            XCTAssertEqual(rule.recurrenceEnd?.endDate, endDate)
+        }
+    }
+
+    func testRecurrenceRejectsEndDateBeforeDueDate() {
+        let dueDate = Date(timeIntervalSince1970: 2_000_000)
+        let recurrence = AppleReminderRecurrence(
+            frequency: .daily,
+            interval: 1,
+            weekdays: [],
+            end: .onDate(Date(timeIntervalSince1970: 1_000_000))
+        )
+
+        XCTAssertThrowsError(try recurrence.validate(starting: dueDate, timeZoneIdentifier: "UTC"))
+    }
+
+    @MainActor
+    func testCustomTaskMigrationCreatesDueDatedReminderBeforeRetiringSource() async throws {
+        let timeZone = "America/New_York"
+        let today = WeekDate.today(timeZoneIdentifier: timeZone)
+        let list = AppleReminderList(id: "family", title: "Family", sourceTitle: "iCloud", canModify: true)
+        let client = FakeAppleRemindersClient(lists: [list], records: [])
+        let store = makeStore(client: client)
+        await store.activate(
+            userId: "user",
+            weekStart: WeekDate.currentWeekStart(timeZoneIdentifier: timeZone),
+            timeZoneIdentifier: timeZone
+        )
+        await store.setList(list.id, selected: true)
+        var task = planningItem(id: "task", type: .task, date: today)
+        task.isCompleted = true
+        var retirementObservedCreatedReminder = false
+
+        let result = try await store.migrateTask(
+            task,
+            listId: list.id,
+            dueDate: WeekDate.calendarDate(today, hour: 9, timeZoneIdentifier: timeZone),
+            includesTime: false,
+            timeZoneIdentifier: timeZone,
+            retireSource: {
+                retirementObservedCreatedReminder = client.records.contains(where: { $0.title == task.text })
+                return true
+            }
+        )
+
+        XCTAssertEqual(result, .moved)
+        XCTAssertTrue(retirementObservedCreatedReminder)
+        XCTAssertNotNil(client.records.first?.dueDateComponents)
+        XCTAssertTrue(try XCTUnwrap(client.records.first).isCompleted)
+        XCTAssertNil(client.lastCreatedMutation?.recurrence)
+    }
+
+    @MainActor
+    func testCustomTaskMigrationKeepsSourceWhenRetirementFails() async throws {
+        let timeZone = "America/New_York"
+        let today = WeekDate.today(timeZoneIdentifier: timeZone)
+        let list = AppleReminderList(id: "family", title: "Family", sourceTitle: "iCloud", canModify: true)
+        let client = FakeAppleRemindersClient(lists: [list], records: [])
+        let store = makeStore(client: client)
+        await store.activate(
+            userId: "user",
+            weekStart: WeekDate.currentWeekStart(timeZoneIdentifier: timeZone),
+            timeZoneIdentifier: timeZone
+        )
+        await store.setList(list.id, selected: true)
+
+        let result = try await store.migrateTask(
+            planningItem(id: "task", type: .task, date: today),
+            listId: list.id,
+            dueDate: WeekDate.calendarDate(today, hour: 9, timeZoneIdentifier: timeZone),
+            includesTime: false,
+            timeZoneIdentifier: timeZone,
+            retireSource: { false }
+        )
+
+        XCTAssertEqual(result, .reminderCreatedSourceRetained)
+        XCTAssertEqual(client.records.count, 1)
+    }
+
+    @MainActor
     func testReadOnlyListsRejectMutations() async throws {
         let timeZone = "America/New_York"
         let today = WeekDate.today(timeZoneIdentifier: timeZone)
@@ -216,6 +398,11 @@ final class AppleRemindersStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testMacActiveRefreshUsesAConservativeCadence() {
+        XCTAssertEqual(BackgroundRefreshCoordinator.activeRefreshInterval, 15 * 60)
+    }
+
+    @MainActor
     private func makeStore(client: FakeAppleRemindersClient) -> AppleRemindersStore {
         let suite = "week-of-us-reminders-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -249,6 +436,23 @@ final class AppleRemindersStoreTests: XCTestCase {
         let pieces = date.split(separator: "-").compactMap { Int($0) }
         return DateComponents(year: pieces[0], month: pieces[1], day: pieces[2])
     }
+
+    private func planningItem(id: String, type: PlanningItemType, date: String?) -> PlanningItem {
+        PlanningItem(
+            id: id,
+            planningDate: date,
+            weekStartDate: date.map(WeekDate.weekStart) ?? WeekDate.currentWeekStart(timeZoneIdentifier: "UTC"),
+            type: type,
+            text: "Move me",
+            isCompleted: false,
+            sortOrder: 0,
+            createdBy: "user",
+            createdByName: "User",
+            updatedAt: WeekDate.iso8601.string(from: Date()),
+            saveState: "saved",
+            reminder: nil
+        )
+    }
 }
 
 @MainActor
@@ -259,6 +463,8 @@ private final class FakeAppleRemindersClient: AppleRemindersClient {
     var records: [AppleReminderRecord]
     var lastRequestedListIds: Set<String> = []
     var createdTitles: [String] = []
+    var lastCreatedMutation: AppleReminderMutation?
+    var lastUpdatedMutation: AppleReminderMutation?
 
     init(lists: [AppleReminderList], records: [AppleReminderRecord]) {
         self.lists = lists
@@ -277,16 +483,18 @@ private final class FakeAppleRemindersClient: AppleRemindersClient {
         return records.filter { listIds.contains($0.listId) }
     }
 
-    func create(mutation: AppleReminderMutation) throws {
+    func create(mutation: AppleReminderMutation) throws -> String {
         let list = try writableList(id: mutation.listId)
         createdTitles.append(mutation.title)
+        lastCreatedMutation = mutation
         let components = Self.components(
             from: mutation.dueDate,
             includesTime: mutation.includesTime,
             timeZoneIdentifier: mutation.timeZoneIdentifier
         )
+        let id = "created-\(records.count)"
         records.append(AppleReminderRecord(
-            id: "created-\(records.count)",
+            id: id,
             title: mutation.title,
             notes: mutation.notes,
             url: mutation.url,
@@ -297,11 +505,13 @@ private final class FakeAppleRemindersClient: AppleRemindersClient {
             completionDate: nil,
             isCompleted: false,
             canModify: true,
-            isRecurring: false
+            isRecurring: mutation.recurrence != nil
         ))
+        return id
     }
 
     func update(id: String, mutation: AppleReminderMutation) throws {
+        lastUpdatedMutation = mutation
         let index = try recordIndex(id: id)
         guard records[index].canModify else { throw AppleRemindersError.readOnly }
         let list = try writableList(id: mutation.listId)

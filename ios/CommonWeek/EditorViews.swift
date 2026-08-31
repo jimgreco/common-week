@@ -15,8 +15,10 @@ struct ItemEditorView: View {
     @State private var scheduledDate: Date
     @State private var destination: TaskCreationDestination
     @State private var appleDueTimeEnabled = false
+    @State private var appleRecurrence = AppleReminderRecurrenceDraft()
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var showingTaskMigration = false
 
     init(
         item: PlanningItem?,
@@ -92,11 +94,23 @@ struct ItemEditorView: View {
                         }
                     }
                 }
+                if case .appleReminders = destination {
+                    AppleReminderRecurrenceEditor(
+                        draft: $appleRecurrence,
+                        dueDate: scheduledDate,
+                        timeZoneIdentifier: data.household.timezone
+                    )
+                }
                 if let saveError {
                     Section { Text(saveError).font(.footnote).foregroundStyle(.red) }
                 }
                 if let item {
-                    Section { Button("Delete item", role: .destructive) { Task { if await viewModel.deleteItem(item) { dismiss() } } } }
+                    Section {
+                        if item.type == .task, !appleReminders.writableSelectedLists.isEmpty {
+                            Button("Move to Apple Reminders…") { showingTaskMigration = true }
+                        }
+                        Button("Delete item", role: .destructive) { Task { if await viewModel.deleteItem(item) { dismiss() } } }
+                    }
                 }
             }
             .navigationTitle(item == nil ? "Add \(type.title.lowercased())" : "Edit item")
@@ -113,6 +127,17 @@ struct ItemEditorView: View {
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
         .onChange(of: type) { _, nextType in
             if nextType != .task { destination = .weekOfUs }
+        }
+        .sheet(isPresented: $showingTaskMigration) {
+            if let item {
+                CustomTaskMigrationView(
+                    item: item,
+                    data: data,
+                    store: appleReminders,
+                    viewModel: viewModel,
+                    onMoved: { dismiss() }
+                )
+            }
         }
     }
 
@@ -139,7 +164,11 @@ struct ItemEditorView: View {
                     listId: listId,
                     dueDate: scheduledDate,
                     includesTime: appleDueTimeEnabled,
-                    timeZoneIdentifier: data.household.timezone
+                    timeZoneIdentifier: data.household.timezone,
+                    recurrence: appleRecurrence.recurrence(
+                        starting: scheduledDate,
+                        timeZoneIdentifier: data.household.timezone
+                    )
                 )
                 dismiss()
             } catch {
@@ -159,6 +188,235 @@ struct ItemEditorView: View {
             remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil
         )
         if await viewModel.saveItem(draft) { dismiss() }
+    }
+}
+
+struct CustomTaskMigrationView: View {
+    let item: PlanningItem
+    let data: WeeklyPlannerData
+    @ObservedObject var store: AppleRemindersStore
+    @ObservedObject var viewModel: PlannerViewModel
+    let onMoved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var listId: String
+    @State private var dueDate: Date
+    @State private var includesTime = false
+    @State private var confirmingMove = false
+    @State private var isMoving = false
+    @State private var errorMessage: String?
+
+    init(
+        item: PlanningItem,
+        data: WeeklyPlannerData,
+        store: AppleRemindersStore,
+        viewModel: PlannerViewModel,
+        onMoved: @escaping () -> Void
+    ) {
+        self.item = item
+        self.data = data
+        self.store = store
+        self.viewModel = viewModel
+        self.onMoved = onMoved
+        let preferredListId: String? = if case .appleReminders(let id) = store.defaultDestination,
+                                          store.writableSelectedLists.contains(where: { $0.id == id }) {
+            id
+        } else {
+            store.writableSelectedLists.first?.id
+        }
+        _listId = State(initialValue: preferredListId ?? "")
+        let today = WeekDate.today(timeZoneIdentifier: data.household.timezone)
+        let defaultDate = item.planningDate ?? max(today, item.weekStartDate)
+        _dueDate = State(initialValue: WeekDate.calendarDate(
+            defaultDate,
+            hour: 9,
+            timeZoneIdentifier: data.household.timezone
+        ))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Task") {
+                    Text(item.text)
+                    Text("The Apple Reminder stays on this device and in the selected Apple list. Its contents and identifier are never uploaded to Week of Us.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Destination") {
+                    Picker("List", selection: $listId) {
+                        ForEach(store.writableSelectedLists) { list in
+                            Text(list.title).tag(list.id)
+                        }
+                    }
+                    DatePicker("Due date", selection: $dueDate, displayedComponents: .date)
+                    Toggle("Include due time", isOn: $includesTime)
+                    if includesTime {
+                        DatePicker("Due time", selection: $dueDate, displayedComponents: .hourAndMinute)
+                    }
+                }
+                Section {
+                    Label(
+                        "After the Reminder is created, the shared Week of Us task will be deleted for the household.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    if let errorMessage {
+                        Text(errorMessage).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Move Task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isMoving ? "Moving…" : "Move") { confirmingMove = true }
+                        .disabled(listId.isEmpty || isMoving)
+                }
+            }
+            .confirmationDialog(
+                "Move this shared task?",
+                isPresented: $confirmingMove,
+                titleVisibility: .visible
+            ) {
+                Button("Create Reminder and Delete Shared Task", role: .destructive) {
+                    Task { await move() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The new Reminder is device-local. Deleting the Week of Us task removes it from the shared household planner and cannot be undone.")
+            }
+        }
+        .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+    }
+
+    private func move() async {
+        guard !isMoving else { return }
+        isMoving = true
+        errorMessage = nil
+        defer { isMoving = false }
+        do {
+            let result = try await store.migrateTask(
+                item,
+                listId: listId,
+                dueDate: dueDate,
+                includesTime: includesTime,
+                timeZoneIdentifier: data.household.timezone,
+                retireSource: { await viewModel.deleteItem(item) }
+            )
+            switch result {
+            case .moved:
+                onMoved()
+                dismiss()
+            case .reminderCreatedSourceRetained:
+                errorMessage = "The Apple Reminder was created, but the shared task could not be deleted. The task was kept so no data was lost."
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct AppleReminderRecurrenceEditor: View {
+    @Binding var draft: AppleReminderRecurrenceDraft
+    let dueDate: Date
+    let timeZoneIdentifier: String
+
+    var body: some View {
+        Section("Repeat") {
+            Toggle("Repeat reminder", isOn: $draft.isEnabled)
+            if draft.isEnabled {
+                Picker("Frequency", selection: $draft.frequency) {
+                    ForEach(AppleReminderRecurrenceFrequency.allCases) { frequency in
+                        Text(frequency.title).tag(frequency)
+                    }
+                }
+                Stepper(value: $draft.interval, in: 1...999) {
+                    LabeledContent(
+                        "Interval",
+                        value: "Every \(draft.interval) \(intervalUnit)"
+                    )
+                }
+                if draft.frequency == .weekly {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Days").font(.subheadline)
+                        HStack(spacing: 7) {
+                            ForEach(AppleReminderWeekday.allCases) { weekday in
+                                Button {
+                                    toggle(weekday)
+                                } label: {
+                                    Text(weekday.shortTitle)
+                                        .font(.caption.weight(.semibold))
+                                        .frame(width: 28, height: 28)
+                                        .foregroundStyle(draft.weekdays.contains(weekday) ? Color.white : CWTheme.secondaryInk)
+                                        .background(
+                                            draft.weekdays.contains(weekday) ? CWTheme.brand : Color.secondary.opacity(0.12),
+                                            in: Circle()
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(weekday.accessibilityTitle)
+                                .accessibilityValue(draft.weekdays.contains(weekday) ? "Selected" : "Not selected")
+                            }
+                        }
+                    }
+                }
+                Picker("Ends", selection: $draft.endMode) {
+                    ForEach(AppleReminderRecurrenceEndMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                switch draft.endMode {
+                case .never:
+                    EmptyView()
+                case .onDate:
+                    DatePicker(
+                        "End date",
+                        selection: $draft.endDate,
+                        in: dueDate...,
+                        displayedComponents: .date
+                    )
+                case .afterOccurrences:
+                    Stepper(value: $draft.occurrenceCount, in: 1...999) {
+                        LabeledContent("Occurrences", value: "\(draft.occurrenceCount)")
+                    }
+                }
+            }
+        }
+        .onChange(of: draft.isEnabled) { _, enabled in
+            if enabled { selectDueWeekdayIfNeeded() }
+        }
+        .onChange(of: draft.frequency) { _, frequency in
+            if frequency == .weekly { selectDueWeekdayIfNeeded() }
+        }
+        .onChange(of: dueDate) { _, _ in
+            if draft.isEnabled, draft.frequency == .weekly, draft.weekdays.isEmpty {
+                selectDueWeekdayIfNeeded()
+            }
+            if draft.endDate < dueDate { draft.endDate = dueDate }
+        }
+    }
+
+    private var intervalUnit: String {
+        let unit = draft.frequency.intervalUnit
+        return draft.interval == 1 ? unit : "\(unit)s"
+    }
+
+    private func toggle(_ weekday: AppleReminderWeekday) {
+        if draft.weekdays.contains(weekday) {
+            guard draft.weekdays.count > 1 else { return }
+            draft.weekdays.remove(weekday)
+        } else {
+            draft.weekdays.insert(weekday)
+        }
+    }
+
+    private func selectDueWeekdayIfNeeded() {
+        guard draft.weekdays.isEmpty else { return }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
+        guard let weekday = AppleReminderWeekday(rawValue: calendar.component(.weekday, from: dueDate)) else { return }
+        draft.weekdays = [weekday]
     }
 }
 

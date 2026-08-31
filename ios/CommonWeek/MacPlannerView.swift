@@ -92,6 +92,8 @@ private enum MacPlannerSheet: Identifiable {
     case reminder(date: String)
     case event(date: String)
     case search
+    case weather(DayPlan)
+    case location(DayPlan)
 
     var id: String {
         switch self {
@@ -99,6 +101,8 @@ private enum MacPlannerSheet: Identifiable {
         case .reminder(let date): "reminder-\(date)"
         case .event(let date): "event-\(date)"
         case .search: "search"
+        case .weather(let day): "weather-\(day.date)-\(day.location?.id ?? "household")"
+        case .location(let day): "location-\(day.date)"
         }
     }
 }
@@ -329,6 +333,16 @@ struct MacPlannerView: View {
                     create: { commandRouter.perform(.newItem) },
                     dropOnDay: reschedule(_:to:)
                 )
+                if navigation.section == .week,
+                   let day = data.days.first(where: { $0.date == navigation.selectedDay }) {
+                    MacDayContextBar(
+                        day: day,
+                        unit: data.household.temperatureUnit,
+                        weatherState: data.weatherState,
+                        openLocation: { sheet = .location(day) },
+                        openWeather: { sheet = .weather($0) }
+                    )
+                }
                 if let syncStatus = viewModel.syncStatusText {
                     Label(syncStatus, systemImage: viewModel.isOffline ? "wifi.slash" : "arrow.triangle.2.circlepath")
                         .font(.caption.weight(.semibold))
@@ -370,6 +384,7 @@ struct MacPlannerView: View {
                     item: item,
                     data: data,
                     viewModel: viewModel,
+                    appleReminders: appleReminders,
                     commandRouter: commandRouter,
                     requestDelete: { deletionTarget = .planningItem(item) },
                     dirtyChanged: { unsavedChanges.setDirty($0) }
@@ -453,6 +468,10 @@ struct MacPlannerView: View {
                 MacPlannerSearchView(viewModel: viewModel) { result in
                     openSearchResult(result)
                 }
+            case .weather(let day):
+                WeatherDetailView(day: day, unit: data.household.temperatureUnit)
+            case .location(let day):
+                LocationPickerView(day: day, locations: data.locations, viewModel: viewModel)
             }
         }
     }
@@ -879,6 +898,100 @@ private struct MacWeekHeader: View {
         .padding(.vertical, 14)
         .background(.regularMaterial)
         .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+private struct MacDayContextBar: View {
+    let day: DayPlan
+    let unit: TemperatureUnit
+    let weatherState: PlannerSourceState
+    let openLocation: () -> Void
+    let openWeather: (DayPlan) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                if day.location != nil || day.memberLocations.count <= 1 {
+                    Button(action: openLocation) {
+                        Label(
+                            day.location?.name ?? day.memberLocations.first?.location?.name ?? "Set location",
+                            systemImage: "location.fill"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    if let weather = day.weather ?? day.memberLocations.first?.weather,
+                       weather.status == "available" {
+                        Button { openWeather(weatherDay(location: day.location ?? day.memberLocations.first?.location, weather: weather)) } label: {
+                            weatherLabel(weather)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                } else {
+                    ForEach(day.memberLocations) { assignment in
+                        Button(action: openLocation) {
+                            Label(
+                                "\(assignment.displayName): \(assignment.location?.name ?? "Set location")",
+                                systemImage: "location.fill"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        if let weather = assignment.weather, weather.status == "available" {
+                            Button { openWeather(weatherDay(location: assignment.location, weather: weather)) } label: {
+                                HStack(spacing: 6) {
+                                    Text(assignment.displayName).fontWeight(.semibold)
+                                    weatherLabel(weather)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                if day.location == nil && day.memberLocations.isEmpty {
+                    Text("Set a location to add a forecast for this day.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if day.weather == nil && day.memberLocations.allSatisfy({ $0.weather == nil }) {
+                    if weatherState.status == "loading" {
+                        Label("Updating forecast…", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Label(weatherState.message ?? "Forecast unavailable", systemImage: "cloud.slash")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 9)
+        }
+        .background(.thinMaterial)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityIdentifier("mac-day-context-\(day.date)")
+    }
+
+    private func weatherLabel(_ weather: DailyWeather) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: weatherIcon(weather.conditionCode)).symbolRenderingMode(.multicolor)
+            Text("\(temperature(weather.highF))° / \(temperature(weather.lowF))°")
+            if weather.precipitationProbability >= 35 {
+                Label("\(weather.precipitationProbability)%", systemImage: "umbrella.fill")
+                    .foregroundStyle(.blue)
+            }
+        }
+    }
+
+    private func weatherDay(location: HouseholdLocation?, weather: DailyWeather) -> DayPlan {
+        var detail = day
+        detail.location = location
+        detail.weather = weather
+        return detail
+    }
+
+    private func temperature(_ fahrenheit: Double) -> Int {
+        unit == .fahrenheit
+            ? Int(fahrenheit.rounded())
+            : Int(((fahrenheit - 32) * 5 / 9).rounded())
     }
 }
 
@@ -1561,6 +1674,7 @@ private struct MacPlanningItemInspector: View {
     let item: PlanningItem
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
+    @ObservedObject var appleReminders: AppleRemindersStore
     @ObservedObject var commandRouter: MacPlannerCommandRouter
     let requestDelete: () -> Void
     let dirtyChanged: (Bool) -> Void
@@ -1571,11 +1685,13 @@ private struct MacPlanningItemInspector: View {
     @State private var reminderDate: Date
     @State private var isSaving = false
     @State private var baseline: MacPlanningItemEditorState
+    @State private var showingTaskMigration = false
 
     init(
         item: PlanningItem,
         data: WeeklyPlannerData,
         viewModel: PlannerViewModel,
+        appleReminders: AppleRemindersStore,
         commandRouter: MacPlannerCommandRouter,
         requestDelete: @escaping () -> Void,
         dirtyChanged: @escaping (Bool) -> Void
@@ -1583,6 +1699,7 @@ private struct MacPlanningItemInspector: View {
         self.item = item
         self.data = data
         self.viewModel = viewModel
+        self.appleReminders = appleReminders
         self.commandRouter = commandRouter
         self.requestDelete = requestDelete
         self.dirtyChanged = dirtyChanged
@@ -1631,6 +1748,10 @@ private struct MacPlanningItemInspector: View {
                     Button(item.isCompleted ? "Reopen Task" : "Complete Task") {
                         Task { await viewModel.toggle(item) }
                     }
+                    if !appleReminders.writableSelectedLists.isEmpty {
+                        Button("Move to Apple Reminders…") { showingTaskMigration = true }
+                            .disabled(isDirty)
+                    }
                 }
                 Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
                     .buttonStyle(.borderedProminent)
@@ -1645,6 +1766,16 @@ private struct MacPlanningItemInspector: View {
         .onChange(of: editorState) { _, _ in dirtyChanged(isDirty) }
         .onChange(of: commandRouter.revision) { _, _ in
             if commandRouter.command == .save { Task { await save() } }
+        }
+        .sheet(isPresented: $showingTaskMigration) {
+            CustomTaskMigrationView(
+                item: item,
+                data: data,
+                store: appleReminders,
+                viewModel: viewModel,
+                onMoved: { dirtyChanged(false) }
+            )
+            .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 650)
         }
     }
 
@@ -1881,6 +2012,7 @@ private struct MacNewAppleReminderView: View {
     @State private var notes = ""
     @State private var urlText = ""
     @State private var priority = AppleReminderPriority.none
+    @State private var recurrence = AppleReminderRecurrenceDraft()
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -1911,6 +2043,11 @@ private struct MacNewAppleReminderView: View {
                         DatePicker("Time", selection: $dueDate, displayedComponents: .hourAndMinute)
                     }
                 }
+                AppleReminderRecurrenceEditor(
+                    draft: $recurrence,
+                    dueDate: dueDate,
+                    timeZoneIdentifier: data.household.timezone
+                )
                 Section("Details") {
                     TextField("Notes", text: $notes, axis: .vertical)
                         .lineLimit(3...8)
@@ -1959,7 +2096,11 @@ private struct MacNewAppleReminderView: View {
                 timeZoneIdentifier: data.household.timezone,
                 notes: notes,
                 url: url,
-                priority: priority
+                priority: priority,
+                recurrence: recurrence.recurrence(
+                    starting: dueDate,
+                    timeZoneIdentifier: data.household.timezone
+                )
             )
             dismiss()
         } catch {

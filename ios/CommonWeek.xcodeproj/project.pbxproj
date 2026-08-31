@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0611124087A98B1F05B7B212 /* AppleReminderRecurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8971F5CDE9538481710D1578 /* AppleReminderRecurrence.swift */; };
 		1EDD71A17A2152BF1D37220A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FE9DB5960BC4265E4C44FBEA /* PrivacyInfo.xcprivacy */; };
 		2FCBB27160146FD1A0B6838B /* MacPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC7E5930C3EF8266880B1A6 /* MacPlannerView.swift */; };
 		33D0F8A5E3F3A191AB66C3A4 /* PlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 540DB50FE63FB747D5B0822A /* PlannerView.swift */; };
@@ -73,6 +74,7 @@
 		73103BD7E542B3780C527683 /* CommonWeekScreenshots.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CommonWeekScreenshots.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		78E742DE5970A5A51F2F8406 /* EditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViews.swift; sourceTree = "<group>"; };
 		83231BA8632DDC33D6A60E5A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		8971F5CDE9538481710D1578 /* AppleReminderRecurrence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleReminderRecurrence.swift; sourceTree = "<group>"; };
 		91AA3F476AC821FEC7698CC3 /* CommonWeekTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CommonWeekTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		966E7B5827AF770CFD268416 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefresh.swift; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 			isa = PBXGroup;
 			children = (
 				194B7E6770649ECF980A47F1 /* APIClient.swift */,
+				8971F5CDE9538481710D1578 /* AppleReminderRecurrence.swift */,
 				43F4FB653815BBA68CECAE9B /* AppleReminders.swift */,
 				4460E961C4CD945D28F9DA2B /* AppleRemindersClient.swift */,
 				66D3F14C98728A22A430B035 /* Assets.xcassets */,
@@ -285,6 +288,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B5B29713E342A3F05A6FF98F /* APIClient.swift in Sources */,
+				0611124087A98B1F05B7B212 /* AppleReminderRecurrence.swift in Sources */,
 				60E1726747051AA65C8BBD33 /* AppleReminders.swift in Sources */,
 				C9AA2CB9167CE6EFAE2D52C5 /* AppleRemindersClient.swift in Sources */,
 				3902C8073C4B9AD59BF3AF8B /* AuthStore.swift in Sources */,

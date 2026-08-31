@@ -5,8 +5,10 @@ import Foundation
 final class BackgroundRefreshCoordinator {
     static let shared = BackgroundRefreshCoordinator()
     static let identifier = "com.jimgreco.commonweek.refresh"
+    static let activeRefreshInterval: TimeInterval = 15 * 60
 
     private weak var planner: PlannerViewModel?
+    private var activeRefreshTask: Task<Void, Never>?
 
     private init() {}
 
@@ -30,5 +32,24 @@ final class BackgroundRefreshCoordinator {
         let request = BGAppRefreshTaskRequest(identifier: Self.identifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         try? BGTaskScheduler.shared.submit(request)
+    }
+
+    func applicationDidBecomeActive() {
+        #if targetEnvironment(macCatalyst)
+        guard activeRefreshTask == nil else { return }
+        activeRefreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.activeRefreshInterval))
+                guard !Task.isCancelled, let planner = self?.planner else { return }
+                _ = await planner.performBackgroundRefresh()
+            }
+        }
+        #endif
+    }
+
+    func applicationDidEnterBackground() {
+        activeRefreshTask?.cancel()
+        activeRefreshTask = nil
+        schedule()
     }
 }

@@ -131,6 +131,8 @@ enum AppleRemindersError: LocalizedError {
     case listUnavailable
     case reminderUnavailable
     case readOnly
+    case invalidRecurrence(String)
+    case onlyTasksCanMigrate
 
     var errorDescription: String? {
         switch self {
@@ -138,8 +140,15 @@ enum AppleRemindersError: LocalizedError {
         case .listUnavailable: "That Reminders list is no longer available."
         case .reminderUnavailable: "That reminder changed or is no longer available."
         case .readOnly: "That Reminders list is read-only."
+        case .invalidRecurrence(let message): message
+        case .onlyTasksCanMigrate: "Only Week of Us tasks can move to Apple Reminders."
         }
     }
+}
+
+enum CustomTaskMigrationResult: Equatable {
+    case moved
+    case reminderCreatedSourceRetained
 }
 
 @MainActor
@@ -279,6 +288,7 @@ final class AppleRemindersStore: ObservableObject {
         tasks.filter { $0.displayDate == date }
     }
 
+    @discardableResult
     func createReminder(
         title: String,
         listId: String,
@@ -287,11 +297,13 @@ final class AppleRemindersStore: ObservableObject {
         timeZoneIdentifier: String,
         notes: String = "",
         url: URL? = nil,
-        priority: AppleReminderPriority = .none
-    ) async throws {
+        priority: AppleReminderPriority = .none,
+        recurrence: AppleReminderRecurrence? = nil
+    ) async throws -> String {
         try requireAccess()
+        try recurrence?.validate(starting: dueDate, timeZoneIdentifier: timeZoneIdentifier)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        try client.create(mutation: AppleReminderMutation(
+        let reminderId = try client.create(mutation: AppleReminderMutation(
             title: title,
             notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
             url: url,
@@ -299,10 +311,45 @@ final class AppleRemindersStore: ObservableObject {
             listId: listId,
             dueDate: dueDate,
             includesTime: includesTime,
-            timeZoneIdentifier: timeZoneIdentifier
+            timeZoneIdentifier: timeZoneIdentifier,
+            recurrence: recurrence
         ))
         await reloadVisibleWeek()
         show("Reminder saved")
+        return reminderId
+    }
+
+    func migrateTask(
+        _ item: PlanningItem,
+        listId: String,
+        dueDate: Date,
+        includesTime: Bool,
+        timeZoneIdentifier: String,
+        retireSource: () async -> Bool
+    ) async throws -> CustomTaskMigrationResult {
+        guard item.type == .task else { throw AppleRemindersError.onlyTasksCanMigrate }
+        let reminderId = try await createReminder(
+            title: item.text,
+            listId: listId,
+            dueDate: dueDate,
+            includesTime: includesTime,
+            timeZoneIdentifier: timeZoneIdentifier
+        )
+        if item.isCompleted {
+            do {
+                try client.setCompleted(id: reminderId, completed: true)
+                await reloadVisibleWeek()
+            } catch {
+                show("Reminder created, but the completed state and Week of Us task were kept")
+                return .reminderCreatedSourceRetained
+            }
+        }
+        guard await retireSource() else {
+            show("Reminder created, but the Week of Us task was kept")
+            return .reminderCreatedSourceRetained
+        }
+        show("Task moved to Apple Reminders")
+        return .moved
     }
 
     func toggle(_ task: AppleReminderTask) async {
@@ -340,7 +387,8 @@ final class AppleRemindersStore: ObservableObject {
                 listId: listId,
                 dueDate: dueDate,
                 includesTime: includesTime,
-                timeZoneIdentifier: timeZoneIdentifier
+                timeZoneIdentifier: timeZoneIdentifier,
+                recurrence: nil
             )
         )
         await reloadVisibleWeek()
