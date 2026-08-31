@@ -154,10 +154,12 @@ jobs:
           security import "$RUNNER_TEMP/mac-installer-cert.p12" -k "$KEYCHAIN" -P "$INSTALLER_CERT_PWD" -T /usr/bin/productsign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PWD" "$KEYCHAIN"
 
-          if ! security find-identity -v "$KEYCHAIN" | grep -Eq 'Mac Installer Distribution|3rd Party Mac Developer Installer'; then
+          INSTALLER_CERT_SHA1="$(security find-identity -v "$KEYCHAIN" | awk '/"Mac Installer Distribution:|"3rd Party Mac Developer Installer:/ { print $2; exit }')"
+          if ! [[ "$INSTALLER_CERT_SHA1" =~ ^[0-9A-Fa-f]{40}$ ]]; then
             echo "The imported installer p12 does not contain a Mac Installer Distribution identity."
             exit 1
           fi
+          echo "INSTALLER_CERT_SHA1=$INSTALLER_CERT_SHA1" >> "$GITHUB_ENV"
 
           security find-certificate -c "Apple Distribution: James Greco" -p "$KEYCHAIN" > "$RUNNER_TEMP/distribution.pem"
           openssl x509 -in "$RUNNER_TEMP/distribution.pem" -outform DER -out "$RUNNER_TEMP/distribution.der"
@@ -366,7 +368,7 @@ jobs:
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>installerSigningCertificate</key><string>Mac Installer Distribution</string>
+            <key>installerSigningCertificate</key><string>${INSTALLER_CERT_SHA1}</string>
             <key>manageAppVersionAndBuildNumber</key><false/>
             <key>provisioningProfiles</key>
             <dict>
