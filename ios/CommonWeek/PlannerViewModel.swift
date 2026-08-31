@@ -120,7 +120,7 @@ final class PlannerViewModel: ObservableObject {
 
         guard await flushPendingChanges() else {
             isOffline = true
-            if data == nil { errorMessage = "You’re offline and this week has not been saved on this iPhone yet." }
+            if data == nil { errorMessage = PlatformCopy.offlinePlannerUnavailable }
             return
         }
         do {

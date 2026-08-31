@@ -134,7 +134,7 @@ enum AppleRemindersError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .accessDenied: "Allow Reminders access in iPhone Settings to use this feature."
+        case .accessDenied: PlatformCopy.remindersAccessDenied
         case .listUnavailable: "That Reminders list is no longer available."
         case .reminderUnavailable: "That reminder changed or is no longer available."
         case .readOnly: "That Reminders list is read-only."
@@ -154,7 +154,7 @@ final class AppleRemindersStore: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var notice: String?
 
-    private let eventStore: EKEventStore
+    private let client: AppleRemindersClient
     private let defaults: UserDefaults
     private var activeUserId: String?
     private var visibleWeekStart: String?
@@ -162,18 +162,21 @@ final class AppleRemindersStore: ObservableObject {
     private var storeChangeObserver: NSObjectProtocol?
     private var noticeTask: Task<Void, Never>?
 
-    init(eventStore: EKEventStore = EKEventStore(), defaults: UserDefaults = .standard) {
-        self.eventStore = eventStore
+    init(client: AppleRemindersClient? = nil, defaults: UserDefaults = .standard) {
+        let client = client ?? EventKitAppleRemindersClient()
+        self.client = client
         self.defaults = defaults
         refreshAuthorizationStatus()
-        storeChangeObserver = NotificationCenter.default.addObserver(
-            forName: .EKEventStoreChanged,
-            object: eventStore,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.reloadVisibleWeek()
+        if let changeNotificationObject = client.changeNotificationObject {
+            storeChangeObserver = NotificationCenter.default.addObserver(
+                forName: .EKEventStoreChanged,
+                object: changeNotificationObject,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.reloadVisibleWeek()
+                }
             }
         }
     }
@@ -217,7 +220,7 @@ final class AppleRemindersStore: ObservableObject {
 
     func requestAccess() async {
         do {
-            guard try await eventStore.requestFullAccessToReminders() else {
+            guard try await client.requestAccess() else {
                 refreshAuthorizationStatus()
                 throw AppleRemindersError.accessDenied
             }
@@ -281,27 +284,23 @@ final class AppleRemindersStore: ObservableObject {
         listId: String,
         dueDate: Date,
         includesTime: Bool,
-        timeZoneIdentifier: String
+        timeZoneIdentifier: String,
+        notes: String = "",
+        url: URL? = nil,
+        priority: AppleReminderPriority = .none
     ) async throws {
         try requireAccess()
-        guard let calendar = eventStore.calendar(withIdentifier: listId) else {
-            throw AppleRemindersError.listUnavailable
-        }
-        guard calendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
-
-        let reminder = EKReminder(eventStore: eventStore)
-        reminder.calendar = calendar
-        reminder.title = title
-        let components = dueComponents(
-            from: dueDate,
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        try client.create(mutation: AppleReminderMutation(
+            title: title,
+            notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
+            url: url,
+            priority: priority.rawValue,
+            listId: listId,
+            dueDate: dueDate,
             includesTime: includesTime,
             timeZoneIdentifier: timeZoneIdentifier
-        )
-        if reminder.startDateComponents == nil {
-            reminder.startDateComponents = components
-        }
-        reminder.dueDateComponents = components
-        try eventStore.save(reminder, commit: true)
+        ))
         await reloadVisibleWeek()
         show("Reminder saved")
     }
@@ -309,10 +308,7 @@ final class AppleRemindersStore: ObservableObject {
     func toggle(_ task: AppleReminderTask) async {
         do {
             try requireAccess()
-            let reminder = try reminder(for: task)
-            guard reminder.calendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
-            reminder.isCompleted = !task.isCompleted
-            try eventStore.save(reminder, commit: true)
+            try client.setCompleted(id: task.id, completed: !task.isCompleted)
             await reloadVisibleWeek()
             show(task.isCompleted ? "Reminder reopened" : "Reminder completed")
         } catch {
@@ -333,39 +329,27 @@ final class AppleRemindersStore: ObservableObject {
         timeZoneIdentifier: String
     ) async throws {
         try requireAccess()
-        let reminder = try reminder(for: task)
-        guard reminder.calendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
-        guard let targetCalendar = eventStore.calendar(withIdentifier: listId) else {
-            throw AppleRemindersError.listUnavailable
-        }
-        guard targetCalendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
-        reminder.title = title
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        reminder.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-        reminder.url = url
-        reminder.priority = priority.rawValue
-        reminder.calendar = targetCalendar
-        // Recurrence rules intentionally remain untouched; these edits apply to the reminder series metadata.
-        let components = dueComponents(
-            from: dueDate,
-            includesTime: includesTime,
-            timeZoneIdentifier: timeZoneIdentifier
+        try client.update(
+            id: task.id,
+            mutation: AppleReminderMutation(
+                title: title,
+                notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
+                url: url,
+                priority: priority.rawValue,
+                listId: listId,
+                dueDate: dueDate,
+                includesTime: includesTime,
+                timeZoneIdentifier: timeZoneIdentifier
+            )
         )
-        if reminder.startDateComponents == nil {
-            reminder.startDateComponents = components
-        }
-        reminder.dueDateComponents = components
-        try eventStore.save(reminder, commit: true)
         await reloadVisibleWeek()
         show("Reminder saved")
     }
 
     func delete(_ task: AppleReminderTask) async throws {
         try requireAccess()
-        let reminder = try reminder(for: task)
-        guard reminder.calendar.allowsContentModifications else { throw AppleRemindersError.readOnly }
-        // EventKit has no occurrence-span overload for reminders, so removing a recurring reminder removes its series.
-        try eventStore.remove(reminder, commit: true)
+        try client.delete(id: task.id)
         await reloadVisibleWeek()
         show("Reminder deleted")
     }
@@ -377,10 +361,7 @@ final class AppleRemindersStore: ObservableObject {
             tasks = []
             return
         }
-        let calendars = eventStore.calendars(for: .reminder).filter {
-            selectedListIds.contains($0.calendarIdentifier)
-        }
-        guard !calendars.isEmpty else {
+        guard !selectedListIds.isEmpty else {
             tasks = []
             validateDefaultDestination()
             return
@@ -388,12 +369,7 @@ final class AppleRemindersStore: ObservableObject {
 
         isLoading = true
         defer { isLoading = false }
-        let predicate = eventStore.predicateForReminders(in: calendars)
-        let reminders = await withCheckedContinuation { continuation in
-            eventStore.fetchReminders(matching: predicate) { reminders in
-                continuation.resume(returning: reminders ?? [])
-            }
-        }
+        let reminders = await client.reminders(in: selectedListIds)
         tasks = reminders.compactMap {
             mapReminder($0, visibleWeekStart: visibleWeekStart, timeZoneIdentifier: householdTimeZone)
         }.sorted {
@@ -405,14 +381,7 @@ final class AppleRemindersStore: ObservableObject {
     }
 
     private func loadLists() {
-        lists = eventStore.calendars(for: .reminder).map {
-            AppleReminderList(
-                id: $0.calendarIdentifier,
-                title: $0.title,
-                sourceTitle: $0.source.title,
-                canModify: $0.allowsContentModifications
-            )
-        }.sorted {
+        lists = client.reminderLists().sorted {
             if $0.sourceTitle != $1.sourceTitle { return $0.sourceTitle < $1.sourceTitle }
             return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
         }
@@ -420,7 +389,7 @@ final class AppleRemindersStore: ObservableObject {
     }
 
     private func mapReminder(
-        _ reminder: EKReminder,
+        _ reminder: AppleReminderRecord,
         visibleWeekStart: String,
         timeZoneIdentifier: String
     ) -> AppleReminderTask? {
@@ -441,30 +410,23 @@ final class AppleRemindersStore: ObservableObject {
 
         let includesTime = due.hour != nil || due.minute != nil || due.second != nil
         return AppleReminderTask(
-            id: reminder.calendarItemIdentifier,
-            title: reminder.title ?? "Untitled reminder",
+            id: reminder.id,
+            title: reminder.title,
             notes: reminder.notes,
             url: reminder.url?.absoluteString,
             priority: AppleReminderPriority(eventKitValue: reminder.priority),
-            listId: reminder.calendar.calendarIdentifier,
-            listTitle: reminder.calendar.title,
+            listId: reminder.listId,
+            listTitle: reminder.listTitle,
             dueDate: dueDate,
             displayDate: placement.displayDate,
             dueAt: includesTime ? absoluteDate(from: due, fallbackTimeZoneIdentifier: timeZoneIdentifier) : nil,
             dueTimeLabel: includesTime ? timeLabel(from: due, fallbackTimeZoneIdentifier: timeZoneIdentifier) : nil,
             isAllDay: !includesTime,
             isCompleted: reminder.isCompleted,
-            canModify: reminder.calendar.allowsContentModifications,
-            isRecurring: reminder.hasRecurrenceRules,
+            canModify: reminder.canModify,
+            isRecurring: reminder.isRecurring,
             carryoverCount: placement.carryoverCount
         )
-    }
-
-    private func reminder(for task: AppleReminderTask) throws -> EKReminder {
-        guard let reminder = eventStore.calendarItem(withIdentifier: task.id) as? EKReminder else {
-            throw AppleRemindersError.reminderUnavailable
-        }
-        return reminder
     }
 
     private func requireAccess() throws {
@@ -473,13 +435,7 @@ final class AppleRemindersStore: ObservableObject {
     }
 
     private func refreshAuthorizationStatus() {
-        switch EKEventStore.authorizationStatus(for: .reminder) {
-        case .fullAccess, .authorized: access = .fullAccess
-        case .denied: access = .denied
-        case .restricted: access = .restricted
-        case .notDetermined, .writeOnly: access = .notDetermined
-        @unknown default: access = .denied
-        }
+        access = client.access
     }
 
     private func validateDefaultDestination() {
@@ -528,22 +484,6 @@ final class AppleRemindersStore: ObservableObject {
             ?? TimeZone(identifier: fallbackTimeZoneIdentifier)
             ?? .current
         return formatter.string(from: date)
-    }
-
-    private func dueComponents(
-        from date: Date,
-        includesTime: Bool,
-        timeZoneIdentifier: String
-    ) -> DateComponents {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
-        var components = calendar.dateComponents(
-            includesTime ? [.year, .month, .day, .hour, .minute] : [.year, .month, .day],
-            from: date
-        )
-        components.calendar = calendar
-        components.timeZone = calendar.timeZone
-        return components
     }
 
     private func show(_ message: String) {

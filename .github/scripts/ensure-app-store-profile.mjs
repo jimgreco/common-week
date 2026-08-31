@@ -116,74 +116,48 @@ async function main() {
   const authToken = token();
   const bundleIdentifier = argument('bundle-id');
   const profileName = argument('profile-name');
+  const profileType = argument('profile-type');
   const certificatePath = argument('certificate-der');
   const output = argument('output');
+  const supportedProfileTypes = new Set(['IOS_APP_STORE', 'MAC_CATALYST_APP_STORE']);
+  if (!supportedProfileTypes.has(profileType)) {
+    throw new Error(`Unsupported App Store profile type ${profileType}.`);
+  }
   const bundle = await ensureBundle(authToken, bundleIdentifier);
   await ensureAppleSignIn(authToken, bundle.id);
   await ensurePushNotifications(authToken, bundle.id);
   const certificate = await matchingCertificate(authToken, certificatePath);
   const existingProfiles = await pages(
     authToken,
-    `/profiles?filter[name]=${encodeURIComponent(profileName)}&fields[profiles]=name,uuid,profileContent&limit=200`,
+    `/profiles?filter[name]=${encodeURIComponent(profileName)}&fields[profiles]=name,uuid,profileType,profileState,profileContent&limit=200`,
   );
   const existingProfile = existingProfiles.find((profile) => profile.attributes?.name === profileName);
   if (existingProfile?.attributes?.profileContent) {
+    if (existingProfile.attributes.profileType !== profileType) {
+      throw new Error(`${profileName} is ${existingProfile.attributes.profileType}, not ${profileType}.`);
+    }
+    if (existingProfile.attributes.profileState !== 'ACTIVE') {
+      throw new Error(`${profileName} is not active; create a new profile name before releasing.`);
+    }
     writeFileSync(output, Buffer.from(existingProfile.attributes.profileContent, 'base64'));
-    console.log(`Downloaded existing ${profileName} for ${bundleIdentifier}.`);
+    console.log(`Downloaded existing ${profileName} (${profileType}) for ${bundleIdentifier}.`);
     return;
   }
-  let certificateId = certificate.id;
-  try {
-    const created = await request(authToken, 'POST', '/profiles', {
-      data: {
-        type: 'profiles',
-        attributes: { name: profileName, profileType: 'IOS_APP_STORE' },
-        relationships: {
-          bundleId: { data: { type: 'bundleIds', id: bundle.id } },
-          certificates: { data: [{ type: 'certificates', id: certificateId }] },
-        },
+  const created = await request(authToken, 'POST', '/profiles', {
+    data: {
+      type: 'profiles',
+      attributes: { name: profileName, profileType },
+      relationships: {
+        bundleId: { data: { type: 'bundleIds', id: bundle.id } },
+        certificates: { data: [{ type: 'certificates', id: certificate.id }] },
       },
-    });
-    const profile = await request(authToken, 'GET', `/profiles/${created.data.id}?fields[profiles]=name,uuid,profileContent`);
-    const content = profile.data.attributes?.profileContent;
-    if (!content) throw new Error('App Store Connect did not return provisioning profile content.');
-    writeFileSync(output, Buffer.from(content, 'base64'));
-    console.log(`Created ${profileName} for ${bundleIdentifier}.`);
-  } catch (error) {
-    if (error.message.includes('maximum number of certificates') || error.message.includes('certificate')) {
-      console.log('Certificate limit reached, finding an existing certificate...');
-      const allCertificates = await pages(authToken, '/certificates?fields[certificates]=certificateType,displayName,certificateContent,activated,expirationDate&limit=200');
-      const activeCerts = allCertificates.filter(c => c.attributes?.activated !== false && ['DISTRIBUTION', 'IOS_DISTRIBUTION'].includes(c.attributes?.certificateType));
-      
-      if (activeCerts.length === 0) {
-        throw new Error('No active distribution certificates found.');
-      }
-      
-      console.log(`Found ${activeCerts.length} active certificate(s). Using the most recent...`);
-      const sortedCerts = activeCerts.sort((a, b) => new Date(b.attributes?.expirationDate || 0) - new Date(a.attributes?.expirationDate || 0));
-      
-      certificateId = sortedCerts[0].id;
-      console.log(`Using certificate: ${sortedCerts[0].attributes?.displayName}`);
-      
-      const created = await request(authToken, 'POST', '/profiles', {
-        data: {
-          type: 'profiles',
-          attributes: { name: profileName, profileType: 'IOS_APP_STORE' },
-          relationships: {
-            bundleId: { data: { type: 'bundleIds', id: bundle.id } },
-            certificates: { data: [{ type: 'certificates', id: certificateId }] },
-          },
-        },
-      });
-      const profile = await request(authToken, 'GET', `/profiles/${created.data.id}?fields[profiles]=name,uuid,profileContent`);
-      const content = profile.data.attributes?.profileContent;
-      if (!content) throw new Error('App Store Connect did not return provisioning profile content.');
-      writeFileSync(output, Buffer.from(content, 'base64'));
-      console.log(`Created ${profileName} for ${bundleIdentifier} with existing certificate.`);
-    } else {
-      throw error;
-    }
-  }
+    },
+  });
+  const profile = await request(authToken, 'GET', `/profiles/${created.data.id}?fields[profiles]=name,uuid,profileContent`);
+  const content = profile.data.attributes?.profileContent;
+  if (!content) throw new Error('App Store Connect did not return provisioning profile content.');
+  writeFileSync(output, Buffer.from(content, 'base64'));
+  console.log(`Created ${profileName} (${profileType}) for ${bundleIdentifier}.`);
 }
 
 main().catch((error) => {

@@ -71,6 +71,8 @@ struct SignInView: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 18)
             }
+            .frame(maxWidth: 620)
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 24)
             .padding(.top, 34)
             .padding(.bottom, 40)

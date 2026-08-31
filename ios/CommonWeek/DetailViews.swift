@@ -136,6 +136,7 @@ struct SettingsView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var auth: AuthStore
     @ObservedObject var appleReminders: AppleRemindersStore
+    let showsDoneButton: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var timezone: String
@@ -160,8 +161,15 @@ struct SettingsView: View {
         .init(id: "Europe/London", name: "London"), .init(id: "Europe/Paris", name: "Central European Time"),
     ]
 
-    init(data: WeeklyPlannerData, viewModel: PlannerViewModel, auth: AuthStore, appleReminders: AppleRemindersStore) {
+    init(
+        data: WeeklyPlannerData,
+        viewModel: PlannerViewModel,
+        auth: AuthStore,
+        appleReminders: AppleRemindersStore,
+        showsDoneButton: Bool = true
+    ) {
         self.data = data; self.viewModel = viewModel; self.auth = auth; self.appleReminders = appleReminders
+        self.showsDoneButton = showsDoneButton
         _name = State(initialValue: data.household.name)
         _timezone = State(initialValue: data.household.timezone)
         _temperature = State(initialValue: data.household.temperatureUnit)
@@ -175,7 +183,7 @@ struct SettingsView: View {
                     HStack(spacing: 14) {
                         BrandMark(compact: true)
                         Spacer()
-                        Text("iPhone").font(.caption.bold()).foregroundStyle(CWTheme.accent).padding(.horizontal, 10).padding(.vertical, 5).background(CWTheme.mint, in: Capsule())
+                        Text("This device").font(.caption.bold()).foregroundStyle(CWTheme.accent).padding(.horizontal, 10).padding(.vertical, 5).background(CWTheme.mint, in: Capsule())
                     }.padding(.vertical, 5)
                 }
                 Section("Household") {
@@ -235,7 +243,11 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar {
+                if showsDoneButton {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
+            }
             .task {
                 async let calendars: Void = loadCalendarSettings()
                 async let notifications: Void = loadNotificationPreferences()
@@ -263,7 +275,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var appleRemindersManagement: some View {
         if data.isDemo {
-            Label("Apple Reminders are available in the signed-in iPhone app.", systemImage: "checklist")
+            Label("Apple Reminders are available in the signed-in Week of Us app.", systemImage: "checklist")
                 .foregroundStyle(.secondary)
         } else {
             switch appleReminders.access {
@@ -277,15 +289,15 @@ struct SettingsView: View {
             case .denied, .restricted:
                 Label("Reminders access is blocked.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Text("Allow full Reminders access in iPhone Settings to show and update selected lists.")
+                Text("Allow full Reminders access in System Settings to show and update selected lists.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Button("Open iPhone Settings") {
+                Button("Open System Settings") {
                     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     UIApplication.shared.open(url)
                 }
             case .fullAccess:
-                Text("Only lists selected below appear in the iPhone app. They are not uploaded to Week of Us or shown on the web.")
+                Text("Only lists selected below appear on this device. They are not uploaded to Week of Us or shown on the web.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if appleReminders.lists.isEmpty {
@@ -407,7 +419,7 @@ struct SettingsView: View {
                     Task {
                         if !(await notificationCoordinator.enablePush()) {
                             notificationPreferences?.pushEnabled = false
-                            notificationMessage = "Push permission wasn’t enabled. You can allow notifications in iPhone Settings."
+                            notificationMessage = "Push permission wasn’t enabled. You can allow notifications in System Settings."
                         }
                     }
                 }
@@ -417,7 +429,7 @@ struct SettingsView: View {
                 Text(notificationMessage).font(.caption).foregroundStyle(notificationMessage.hasPrefix("Couldn’t") ? .red : .secondary)
             }
             if preferences.pushEnabled, notificationCoordinator.authorizationStatus == .denied {
-                Text("Push notifications are blocked in iPhone Settings.").font(.caption).foregroundStyle(.orange)
+                Text("Push notifications are blocked in System Settings.").font(.caption).foregroundStyle(.orange)
             }
         } else {
             HStack { ProgressView(); Text("Loading notification settings…").foregroundStyle(.secondary) }

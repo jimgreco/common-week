@@ -29,7 +29,13 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"
-        SUPPORTS_MACCATALYST: NO
+        "TARGETED_DEVICE_FAMILY[sdk=macosx*]": "6"
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        "ENABLE_APP_SANDBOX[sdk=macosx*]": YES
+        "ENABLE_OUTGOING_NETWORK_CONNECTIONS[sdk=macosx*]": YES
+        "ENABLE_RESOURCE_ACCESS_CALENDARS[sdk=macosx*]": YES
         ENABLE_USER_SCRIPT_SANDBOXING: YES
       configs:
         Debug:
@@ -52,6 +58,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jimgreco.commonweek.tests
         GENERATE_INFOPLIST_FILE: YES
+        SUPPORTS_MACCATALYST: YES
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Week of Us.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Week of Us"
         BUNDLE_LOADER: "$(TEST_HOST)"
 
@@ -67,6 +75,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.jimgreco.commonweek.screenshots
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: CommonWeek
+        SUPPORTS_MACCATALYST: YES
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
     scheme:
       testTargets:
         - CommonWeekScreenshots

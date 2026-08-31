@@ -200,9 +200,62 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  maccatalyst:
+    name: Mac Catalyst build and unit tests
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode 26
+        run: |
+          set -euo pipefail
+          for path in /Applications/Xcode_26.4.app /Applications/Xcode_26.3.app /Applications/Xcode_26.2.app /Applications/Xcode_26.1.app /Applications/Xcode_26.0.app /Applications/Xcode_26.app /Applications/Xcode-26.app /Applications/Xcode.app; do
+            if [ -d "$path" ]; then
+              sudo xcode-select -s "$path/Contents/Developer"
+              echo "Selected: $path"
+              break
+            fi
+          done
+          xcodebuild -version
+
+      - name: Run Mac Catalyst tests
+        run: |
+          set -euo pipefail
+          mkdir -p output/ci output/xcode
+          xcodebuild test \
+            -project ios/CommonWeek.xcodeproj \
+            -scheme CommonWeek \
+            -destination 'platform=macOS,variant=Mac Catalyst' \
+            -resultBundlePath output/xcode/CommonWeekMacCatalystTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee output/ci/maccatalyst-tests.log
+
+      - name: Build Mac Catalyst UI smoke tests
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -project ios/CommonWeek.xcodeproj \
+            -scheme CommonWeekScreenshots \
+            -destination 'platform=macOS,variant=Mac Catalyst' \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee output/ci/maccatalyst-ui-build.log
+
+      - name: Upload Mac Catalyst diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: maccatalyst-diagnostics
+          path: |
+            output/ci/maccatalyst-tests.log
+            output/ci/maccatalyst-ui-build.log
+            output/xcode/CommonWeekMacCatalystTests.xcresult
+          if-no-files-found: warn
+          retention-days: 14
+
   testflight:
     name: TestFlight
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: [verify, ios]
+    needs: [verify, ios, maccatalyst]
     uses: ./.github/workflows/testflight.yml
     secrets: inherit

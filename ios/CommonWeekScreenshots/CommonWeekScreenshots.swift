@@ -142,6 +142,39 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(when.isEnabled)
     }
 
+    #if targetEnvironment(macCatalyst)
+    func testMacPlannerShellNavigationAndUnsavedEditProtection() throws {
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
+        app.launch()
+
+        let tasksSection = app.buttons["mac-sidebar-weekOfUsTasks"]
+        XCTAssertTrue(tasksSection.waitForExistence(timeout: 15))
+        tasksSection.tap()
+
+        let task = app.descendants(matching: .any)["mac-planning-item-weekly-task-1"]
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        task.tap()
+
+        let editor = app.textFields["What needs doing?"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.tap()
+        editor.typeText(" updated")
+
+        app.buttons["mac-sidebar-events"].tap()
+        XCTAssertTrue(app.staticTexts["Discard unsaved changes?"].waitForExistence(timeout: 5))
+        app.buttons["Keep Editing"].tap()
+        XCTAssertTrue(editor.exists)
+
+        app.buttons["mac-sidebar-events"].tap()
+        app.buttons["Discard Changes"].tap()
+        XCTAssertTrue(app.navigationBars["Events"].waitForExistence(timeout: 5))
+
+        app.typeKey("f", modifierFlags: .command)
+        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
+    }
+    #endif
+
     private func launchDemo() {
         setupSnapshot(app)
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]

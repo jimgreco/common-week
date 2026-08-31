@@ -4,6 +4,7 @@ struct ItemEditorView: View {
     let item: PlanningItem?
     let planningDate: String?
     let data: WeeklyPlannerData
+    let allowsAppleReminderDestination: Bool
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var appleReminders: AppleRemindersStore
     @Environment(\.dismiss) private var dismiss
@@ -17,12 +18,21 @@ struct ItemEditorView: View {
     @State private var saveError: String?
     @State private var isSaving = false
 
-    init(item: PlanningItem?, planningDate: String?, defaultType: PlanningItemType, data: WeeklyPlannerData, viewModel: PlannerViewModel, appleReminders: AppleRemindersStore) {
+    init(
+        item: PlanningItem?,
+        planningDate: String?,
+        defaultType: PlanningItemType,
+        data: WeeklyPlannerData,
+        viewModel: PlannerViewModel,
+        appleReminders: AppleRemindersStore,
+        allowsAppleReminderDestination: Bool = true
+    ) {
         self.item = item
         self.planningDate = planningDate
         self.data = data
         self.viewModel = viewModel
         self.appleReminders = appleReminders
+        self.allowsAppleReminderDestination = allowsAppleReminderDestination
         _text = State(initialValue: item?.text ?? "")
         _type = State(initialValue: item?.type ?? defaultType)
         let existingReminder = item?.reminder.flatMap { WeekDate.iso8601.date(from: $0.remindAt) }
@@ -31,7 +41,7 @@ struct ItemEditorView: View {
         _scheduledDate = State(initialValue: (item?.planningDate ?? planningDate).map {
             WeekDate.calendarDate($0, hour: 9, timeZoneIdentifier: data.household.timezone)
         } ?? Date())
-        let canUseAppleDefault = item == nil && planningDate != nil && defaultType == .task
+        let canUseAppleDefault = allowsAppleReminderDestination && item == nil && planningDate != nil && defaultType == .task
             && appleReminders.writableSelectedLists.contains {
                 appleReminders.defaultDestination == .appleReminders($0.id)
             }
@@ -58,7 +68,7 @@ struct ItemEditorView: View {
                         }
                         Text(destination == .weekOfUs
                              ? "This task is shared with your Week of Us household and appears on the web."
-                             : "This task is saved in Apple Reminders and appears only in the iPhone app.")
+                             : PlatformCopy.appleReminderDeviceOnly)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -107,7 +117,7 @@ struct ItemEditorView: View {
     }
 
     private var canChooseDestination: Bool {
-        item == nil && planningDate != nil && type == .task && !appleReminders.writableSelectedLists.isEmpty
+        allowsAppleReminderDestination && item == nil && planningDate != nil && type == .task && !appleReminders.writableSelectedLists.isEmpty
     }
 
     private var isDailyItem: Bool {

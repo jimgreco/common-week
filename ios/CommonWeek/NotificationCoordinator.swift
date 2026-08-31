@@ -31,6 +31,12 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
         authorizationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
+    func applicationDidBecomeActive() async {
+        await refreshAuthorizationStatus()
+        await syncStoredToken()
+        await refreshInbox()
+    }
+
     func refreshInbox() async {
         guard APIClient.shared.token != nil else {
             inbox = NotificationInbox(items: [], unreadCount: 0)

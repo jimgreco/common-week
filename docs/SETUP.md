@@ -88,7 +88,7 @@ The server verifies Apple signatures, issuer, audience, expiry, verified email, 
 
 Verify a sending domain in Resend and set `RESEND_API_KEY`, `INVITATION_EMAIL_FROM`, and `NOTIFICATION_EMAIL_FROM`. Invitation delivery uses a unique idempotency key, and every resend rotates the 256-bit private link and resets its 14-day expiry. Notification email also uses idempotency keys so a delivery cycle cannot intentionally send the same message twice.
 
-Enable Push Notifications for the App ID `com.jimgreco.commonweek`, create an Apple Push Notifications authentication key, and configure `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY_BASE64`, and `APNS_BUNDLE_ID`. The APNs key is distinct from the Sign in with Apple key. The TestFlight workflow enables the bundle capability and verifies that the signed archive contains `aps-environment=production`.
+Enable Push Notifications for the App ID `com.jimgreco.commonweek`, create an Apple Push Notifications authentication key, and configure `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY_BASE64`, and `APNS_BUNDLE_ID`. The APNs key is distinct from the Sign in with Apple key. The TestFlight workflow enables the bundle capability and verifies that both the signed iPhone and Mac Catalyst archives contain the production APNs entitlement.
 
 The notification scheduler runs inside the production Node process once per minute. PostgreSQL deduplicates reminders and digests, and records delivery attempts. Morning and Sunday times are interpreted in the household timezone. Users opt into agenda, planning, and change alerts in Settings; an explicit item or event reminder is delivered using their enabled email and/or push channels.
 

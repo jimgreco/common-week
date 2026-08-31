@@ -18,6 +18,7 @@ jobs:
     env:
       IOS_BUNDLE_ID: com.jimgreco.commonweek
       IOS_PROFILE_NAME: Week of Us App Store Notifications 20260826
+      MACCATALYST_PROFILE_NAME: Week of Us Mac Catalyst App Store 20260830
       IOS_API_BASE_URL: ${{ vars.IOS_API_BASE_URL || 'https://weekofus.com' }}
 
     steps:
@@ -42,6 +43,8 @@ jobs:
         env:
           CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
           CERT_PWD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          INSTALLER_CERT_P12: ${{ secrets.MAC_INSTALLER_CERT_P12 }}
+          INSTALLER_CERT_PWD: ${{ secrets.MAC_INSTALLER_CERT_PASSWORD }}
           KC_PWD: ${{ secrets.KEYCHAIN_PASSWORD }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -50,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in CERT_P12 CERT_PWD KC_PWD TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY IOS_API_BASE_URL; do
+          for name in CERT_P12 CERT_PWD INSTALLER_CERT_P12 INSTALLER_CERT_PWD KC_PWD TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY IOS_API_BASE_URL; do
             if [ -z "${!name}" ]; then
               echo "Missing required secret or variable: $name"
               missing=1
@@ -110,6 +113,8 @@ jobs:
         env:
           CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
           CERT_PWD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          INSTALLER_CERT_P12: ${{ secrets.MAC_INSTALLER_CERT_P12 }}
+          INSTALLER_CERT_PWD: ${{ secrets.MAC_INSTALLER_CERT_PASSWORD }}
           KC_PWD: ${{ secrets.KEYCHAIN_PASSWORD }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -135,28 +140,72 @@ jobs:
           fi
 
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PWD" -T /usr/bin/codesign -T /usr/bin/security
+
+          printf '%s' "$INSTALLER_CERT_P12" | base64 -d > "$RUNNER_TEMP/mac-installer-cert.p12"
+          echo "Mac installer p12 size: $(stat -f%z "$RUNNER_TEMP/mac-installer-cert.p12") bytes"
+          if openssl pkcs12 -in "$RUNNER_TEMP/mac-installer-cert.p12" -noout -passin pass:"$INSTALLER_CERT_PWD"; then
+            echo "Mac installer pkcs12 verification: OK"
+          elif openssl pkcs12 -legacy -in "$RUNNER_TEMP/mac-installer-cert.p12" -noout -passin pass:"$INSTALLER_CERT_PWD"; then
+            echo "Mac installer pkcs12 verification: OK (legacy provider)"
+          else
+            echo "Mac installer pkcs12 verification: FAILED"
+            exit 1
+          fi
+          security import "$RUNNER_TEMP/mac-installer-cert.p12" -k "$KEYCHAIN" -P "$INSTALLER_CERT_PWD" -T /usr/bin/productsign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PWD" "$KEYCHAIN"
+
+          if ! security find-identity -v "$KEYCHAIN" | grep -Eq 'Mac Installer Distribution|3rd Party Mac Developer Installer'; then
+            echo "The imported installer p12 does not contain a Mac Installer Distribution identity."
+            exit 1
+          fi
 
           security find-certificate -c "Apple Distribution: James Greco" -p "$KEYCHAIN" > "$RUNNER_TEMP/distribution.pem"
           openssl x509 -in "$RUNNER_TEMP/distribution.pem" -outform DER -out "$RUNNER_TEMP/distribution.der"
 
-          PROFILE_PATH="$RUNNER_TEMP/common-week-app-store.mobileprovision"
+          IOS_PROFILE_PATH="$RUNNER_TEMP/common-week-app-store.mobileprovision"
           node .github/scripts/ensure-app-store-profile.mjs \
             --bundle-id "$IOS_BUNDLE_ID" \
             --profile-name "$IOS_PROFILE_NAME" \
+            --profile-type IOS_APP_STORE \
             --certificate-der "$RUNNER_TEMP/distribution.der" \
-            --output "$PROFILE_PATH"
+            --output "$IOS_PROFILE_PATH"
 
-          PROFILE_PLIST="$RUNNER_TEMP/profile.plist"
-          security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
-          apple_sign_in="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin:0' "$PROFILE_PLIST")"
-          test "$apple_sign_in" = "Default"
-          push_environment="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$PROFILE_PLIST")"
-          test "$push_environment" = "production"
-          PROFILE_UUID="$(plutil -extract UUID raw -o - "$PROFILE_PLIST")"
+          MACCATALYST_PROFILE_PATH="$RUNNER_TEMP/common-week-maccatalyst-app-store.provisionprofile"
+          node .github/scripts/ensure-app-store-profile.mjs \
+            --bundle-id "$IOS_BUNDLE_ID" \
+            --profile-name "$MACCATALYST_PROFILE_NAME" \
+            --profile-type MAC_CATALYST_APP_STORE \
+            --certificate-der "$RUNNER_TEMP/distribution.der" \
+            --output "$MACCATALYST_PROFILE_PATH"
+
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
-          echo "Installed $IOS_PROFILE_NAME with Sign in with Apple: $apple_sign_in and APNs: $push_environment"
+          install_profile() {
+            local profile_path="$1"
+            local profile_name="$2"
+            local extension="$3"
+            local profile_plist="$RUNNER_TEMP/${extension}-profile.plist"
+            security cms -D -i "$profile_path" > "$profile_plist"
+
+            local apple_sign_in
+            apple_sign_in="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin:0' "$profile_plist")"
+            test "$apple_sign_in" = "Default"
+
+            local push_environment
+            push_environment="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$profile_plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.aps-environment' "$profile_plist")"
+            test "$push_environment" = "production"
+
+            local application_identifier
+            application_identifier="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$profile_plist" 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist")"
+            [[ "$application_identifier" == *."$IOS_BUNDLE_ID" ]]
+
+            local profile_uuid
+            profile_uuid="$(plutil -extract UUID raw -o - "$profile_plist")"
+            cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.$extension"
+            echo "Installed $profile_name with application identifier $application_identifier, Sign in with Apple: $apple_sign_in, and APNs: $push_environment"
+          }
+
+          install_profile "$IOS_PROFILE_PATH" "$IOS_PROFILE_NAME" mobileprovision
+          install_profile "$MACCATALYST_PROFILE_PATH" "$MACCATALYST_PROFILE_NAME" provisionprofile
 
 
       - name: Compute build metadata
@@ -167,11 +216,11 @@ jobs:
             echo "Computed invalid build number '$BUILD_NUMBER'."
             exit 1
           fi
-          echo "IOS_BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
           echo "Build number: $BUILD_NUMBER"
           echo "Commit: $(git rev-parse HEAD)"
 
-      - name: Archive
+      - name: Archive iPhone
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           PROFILE_NAME: ${{ env.IOS_PROFILE_NAME }}
@@ -181,32 +230,76 @@ jobs:
             -project ios/CommonWeek.xcodeproj \
             -scheme CommonWeek \
             -configuration Release \
-            -archivePath "$RUNNER_TEMP/CommonWeek.xcarchive" \
+            -archivePath "$RUNNER_TEMP/CommonWeek-iOS.xcarchive" \
             -destination 'generic/platform=iOS' \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            CURRENT_PROJECT_VERSION="$IOS_BUILD_NUMBER" \
+            CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER" \
+            archive
+
+      - name: Archive Mac Catalyst
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ env.MACCATALYST_PROFILE_NAME }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios/CommonWeek.xcodeproj \
+            -scheme CommonWeek \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/CommonWeek-Mac-Catalyst.xcarchive" \
+            -destination 'generic/platform=macOS,variant=Mac Catalyst' \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER" \
             archive
 
       - name: Validate signed Apple entitlements
         run: |
           set -euo pipefail
-          APP_PATH="$(find "$RUNNER_TEMP/CommonWeek.xcarchive/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
-          test -n "$APP_PATH"
-          SIGNED_ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>&1)"
-          echo "$SIGNED_ENTITLEMENTS"
-          if ! grep -Fq "com.apple.developer.applesignin" <<< "$SIGNED_ENTITLEMENTS" || ! grep -Fq "Default" <<< "$SIGNED_ENTITLEMENTS"; then
-            echo "The signed archive does not include the Sign in with Apple entitlement."
-            exit 1
-          fi
-          if ! grep -Fq "aps-environment" <<< "$SIGNED_ENTITLEMENTS" || ! grep -Fq "production" <<< "$SIGNED_ENTITLEMENTS"; then
-            echo "The signed archive does not include the production APNs entitlement."
-            exit 1
-          fi
-          echo "Signed archive includes Sign in with Apple: Default"
-          echo "Signed archive includes APNs: production"
+          validate_archive() {
+            local archive_path="$1"
+            local platform="$2"
+            local app_path
+            app_path="$(find "$archive_path/Products/Applications" -maxdepth 1 -name '*.app' -print -quit)"
+            test -n "$app_path"
+
+            local signed_entitlements
+            signed_entitlements="$(codesign -d --entitlements :- "$app_path" 2>&1)"
+            echo "$signed_entitlements"
+            if ! grep -Fq "com.apple.developer.applesignin" <<< "$signed_entitlements" || ! grep -Fq "Default" <<< "$signed_entitlements"; then
+              echo "The signed $platform archive does not include the Sign in with Apple entitlement."
+              exit 1
+            fi
+            if ! grep -Fq "aps-environment" <<< "$signed_entitlements" || ! grep -Fq "production" <<< "$signed_entitlements"; then
+              echo "The signed $platform archive does not include the production APNs entitlement."
+              exit 1
+            fi
+            echo "Signed $platform archive includes Sign in with Apple and production APNs."
+
+            if [ "$platform" = "Mac Catalyst" ]; then
+              for entitlement in \
+                com.apple.security.app-sandbox \
+                com.apple.security.network.client \
+                com.apple.security.personal-information.calendars; do
+                if ! grep -Fq "$entitlement" <<< "$signed_entitlements"; then
+                  echo "The signed Mac Catalyst archive does not include $entitlement."
+                  exit 1
+                fi
+              done
+              local info_plist="$app_path/Contents/Info.plist"
+              test "$(plutil -extract LSApplicationCategoryType raw -o - "$info_plist")" = "public.app-category.productivity"
+              test -n "$(plutil -extract NSRemindersFullAccessUsageDescription raw -o - "$info_plist")"
+              echo "Signed Mac Catalyst archive includes App Sandbox, outbound networking, and calendar/reminder access."
+            fi
+          }
+
+          validate_archive "$RUNNER_TEMP/CommonWeek-iOS.xcarchive" iOS
+          validate_archive "$RUNNER_TEMP/CommonWeek-Mac-Catalyst.xcarchive" "Mac Catalyst"
 
       - name: Export IPA
         env:
@@ -216,14 +309,16 @@ jobs:
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          cat > "$RUNNER_TEMP/ExportOptions-iOS.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
             <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
             <key>provisioningProfiles</key>
             <dict>
               <key>${IOS_BUNDLE_ID}</key>
@@ -236,9 +331,9 @@ jobs:
 
           EXPORT_LOG="$RUNNER_TEMP/export.log"
           if ! xcodebuild -exportArchive \
-              -archivePath "$RUNNER_TEMP/CommonWeek.xcarchive" \
-              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-              -exportPath "$RUNNER_TEMP/export" \
+              -archivePath "$RUNNER_TEMP/CommonWeek-iOS.xcarchive" \
+              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-iOS.plist" \
+              -exportPath "$RUNNER_TEMP/export-ios" \
               -allowProvisioningUpdates \
               -authenticationKeyPath "$API_KEY_PATH" \
               -authenticationKeyID "$KEY_ID" \
@@ -250,32 +345,113 @@ jobs:
             echo "App Store Connect export reported an authentication or validation failure."
             exit 1
           fi
-          IPA_PATH="$(find "$RUNNER_TEMP/export" -name '*.ipa' -print -quit)"
+          IPA_PATH="$(find "$RUNNER_TEMP/export-ios" -name '*.ipa' -print -quit)"
           test -n "$IPA_PATH" || { echo "No IPA was exported."; exit 1; }
           echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
 
-      - name: Upload to TestFlight
+      - name: Export Mac Catalyst package
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ env.MACCATALYST_PROFILE_NAME }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ExportOptions-Mac-Catalyst.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>installerSigningCertificate</key><string>Mac Installer Distribution</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${IOS_BUNDLE_ID}</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
+            <key>stripSwiftSymbols</key><true/>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          EOF
+
+          EXPORT_LOG="$RUNNER_TEMP/export-maccatalyst.log"
+          if ! xcodebuild -exportArchive \
+              -archivePath "$RUNNER_TEMP/CommonWeek-Mac-Catalyst.xcarchive" \
+              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-Mac-Catalyst.plist" \
+              -exportPath "$RUNNER_TEMP/export-maccatalyst" \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "$API_KEY_PATH" \
+              -authenticationKeyID "$KEY_ID" \
+              -authenticationKeyIssuerID "$ISSUER_ID" 2>&1 | tee "$EXPORT_LOG"; then
+            exit 1
+          fi
+
+          if grep -Eiq "NOT_AUTHORIZED|failed to authenticate|Communication with Apple failed|Validation failed" "$EXPORT_LOG"; then
+            echo "Mac Catalyst App Store Connect export reported an authentication or validation failure."
+            exit 1
+          fi
+          MACOS_PACKAGE_PATH="$(find "$RUNNER_TEMP/export-maccatalyst" -name '*.pkg' -print -quit)"
+          test -n "$MACOS_PACKAGE_PATH" || { echo "No Mac Catalyst package was exported."; exit 1; }
+          echo "MACOS_PACKAGE_PATH=$MACOS_PACKAGE_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate TestFlight packages
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           set -euo pipefail
-          UPLOAD_LOG="$RUNNER_TEMP/altool-upload.log"
-          if ! xcrun altool --upload-app \
-              --type ios \
-              --file "$IPA_PATH" \
-              --apiKey "$KEY_ID" \
-              --apiIssuer "$ISSUER_ID" 2>&1 | tee "$UPLOAD_LOG"; then
-            exit 1
-          fi
-          if grep -Eiq "NOT_AUTHORIZED|failed to authenticate|received status code 401|UPLOAD FAILED|Validation failed|Failed to upload package|Failed to determine the Apple ID" "$UPLOAD_LOG"; then
-            echo "App Store Connect upload reported a failure."
-            exit 1
-          fi
-          if ! grep -Eiq "UPLOAD SUCCEEDED|successfully uploaded" "$UPLOAD_LOG"; then
-            echo "The upload command exited successfully but did not report an upload success marker."
-            exit 1
-          fi
+          validate_package() {
+            local package_path="$1"
+            local platform="$2"
+            local validation_log="$RUNNER_TEMP/altool-validate-${platform}.log"
+            if ! xcrun altool --validate-app \
+                --file "$package_path" \
+                --apiKey "$KEY_ID" \
+                --apiIssuer "$ISSUER_ID" 2>&1 | tee "$validation_log"; then
+              exit 1
+            fi
+            if grep -Eiq "NOT_AUTHORIZED|failed to authenticate|received status code 401|VALIDATION FAILED|Failed to determine the Apple ID" "$validation_log"; then
+              echo "App Store Connect validation failed for $platform."
+              exit 1
+            fi
+          }
+
+          validate_package "$IPA_PATH" ios
+          validate_package "$MACOS_PACKAGE_PATH" macos
+
+      - name: Upload iPhone and Mac Catalyst to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          upload_package() {
+            local package_path="$1"
+            local platform="$2"
+            local upload_log="$RUNNER_TEMP/altool-upload-${platform}.log"
+            if ! xcrun altool --upload-app \
+                --type "$platform" \
+                --file "$package_path" \
+                --apiKey "$KEY_ID" \
+                --apiIssuer "$ISSUER_ID" 2>&1 | tee "$upload_log"; then
+              exit 1
+            fi
+            if grep -Eiq "NOT_AUTHORIZED|failed to authenticate|received status code 401|UPLOAD FAILED|Validation failed|Failed to upload package|Failed to determine the Apple ID" "$upload_log"; then
+              echo "App Store Connect upload reported a failure for $platform."
+              exit 1
+            fi
+            if ! grep -Eiq "UPLOAD SUCCEEDED|successfully uploaded" "$upload_log"; then
+              echo "The $platform upload exited successfully but did not report an upload success marker."
+              exit 1
+            fi
+          }
+
+          upload_package "$IPA_PATH" ios
+          upload_package "$MACOS_PACKAGE_PATH" macos
 
       - name: Publish release summary
         run: |
@@ -284,7 +460,8 @@ jobs:
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Bundle: \`${IOS_BUNDLE_ID}\`"
-            echo "- Version: \`1.1 (${IOS_BUILD_NUMBER})\`"
+            echo "- Platforms: iPhone and Mac Catalyst"
+            echo "- Version: \`1.1 (${APP_BUILD_NUMBER})\`"
             echo "- API: \`${IOS_API_BASE_URL}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -294,4 +471,9 @@ jobs:
           if [ -n "${KEYCHAIN_PATH:-}" ]; then
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
-          rm -f "${API_KEY_PATH:-}" "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/profile.plist"
+          rm -f \
+            "${API_KEY_PATH:-}" \
+            "$RUNNER_TEMP/cert.p12" \
+            "$RUNNER_TEMP/mac-installer-cert.p12" \
+            "$RUNNER_TEMP/mobileprovision-profile.plist" \
+            "$RUNNER_TEMP/provisionprofile-profile.plist"
