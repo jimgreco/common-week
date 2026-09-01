@@ -1,5 +1,6 @@
-import Foundation
+import Combine
 import EventKit
+import Foundation
 import XCTest
 @testable import CommonWeek
 
@@ -19,6 +20,27 @@ final class AppleRemindersStoreTests: XCTestCase {
         XCTAssertEqual(navigation.section, .week)
         XCTAssertEqual(navigation.selectedDay, "2026-08-31")
         XCTAssertNil(navigation.selection)
+    }
+
+    @MainActor
+    func testMacNavigationPublishesOncePerDistinctUserAction() {
+        let navigation = MacPlannerNavigation(selectedDay: "2026-08-30")
+        var updates = 0
+        let cancellable = navigation.objectWillChange.sink { updates += 1 }
+
+        navigation.selectPlanningItem("task-1")
+        XCTAssertEqual(updates, 1)
+
+        navigation.select(.week)
+        XCTAssertEqual(updates, 1, "Selecting the current sidebar section should be a no-op")
+        XCTAssertEqual(navigation.selection, .planningItem("task-1"))
+
+        navigation.selectPlanningItem("task-1")
+        XCTAssertEqual(updates, 1, "Selecting the current row should be a no-op")
+
+        navigation.selectDay("2026-08-31")
+        XCTAssertEqual(updates, 2, "Day, section, and inspector changes should publish together")
+        withExtendedLifetime(cancellable) {}
     }
 
     @MainActor

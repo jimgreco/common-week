@@ -143,14 +143,25 @@ final class MacUnsavedChangesCoordinator: ObservableObject {
 
 @MainActor
 final class MacPlannerNavigation: ObservableObject {
-    @Published private(set) var section: MacPlannerSection { didSet { persist() } }
-    @Published var selectedDay: String { didSet { persist() } }
-    @Published var selection: MacPlannerSelection? { didSet { persist() } }
-    @Published private(set) var selections: Set<MacPlannerSelection>
+    private struct State: Equatable {
+        var section: MacPlannerSection
+        var selectedDay: String
+        var selection: MacPlannerSelection?
+        var selections: Set<MacPlannerSelection>
+    }
+
+    @Published private var state: State
+
+    var section: MacPlannerSection { state.section }
+    var selectedDay: String {
+        get { state.selectedDay }
+        set { update { $0.selectedDay = newValue } }
+    }
+    var selection: MacPlannerSelection? { state.selection }
+    var selections: Set<MacPlannerSelection> { state.selections }
 
     private let defaults: UserDefaults?
     private let persistenceKey: String?
-    private var hasFinishedInitializing = false
 
     init(
         section: MacPlannerSection = .week,
@@ -165,67 +176,88 @@ final class MacPlannerNavigation: ObservableObject {
            let persistenceKey,
            let data = defaults.data(forKey: persistenceKey),
            let snapshot = try? JSONDecoder().decode(MacPlannerNavigationSnapshot.self, from: data) {
-            self.section = snapshot.restoredSection
-            self.selectedDay = snapshot.selectedDay
-            self.selection = snapshot.restoredSelection
-            self.selections = Set(snapshot.restoredSelection.map { [$0] } ?? [])
+            state = State(
+                section: snapshot.restoredSection,
+                selectedDay: snapshot.selectedDay,
+                selection: snapshot.restoredSelection,
+                selections: Set(snapshot.restoredSelection.map { [$0] } ?? [])
+            )
         } else {
-            self.section = section
-            self.selectedDay = selectedDay
-            self.selection = selection
-            self.selections = Set(selection.map { [$0] } ?? [])
+            state = State(
+                section: section,
+                selectedDay: selectedDay,
+                selection: selection,
+                selections: Set(selection.map { [$0] } ?? [])
+            )
         }
-        hasFinishedInitializing = true
     }
 
     func select(_ section: MacPlannerSection) {
-        guard self.section != section else { return }
-        self.section = section
-        selection = nil
-        selections = []
+        guard state.section != section else { return }
+        update {
+            $0.section = section
+            $0.selection = nil
+            $0.selections = []
+        }
     }
 
     func selectDay(_ date: String) {
-        selectedDay = date
-        if section != .week {
-            section = .week
+        update {
+            $0.selectedDay = date
+            $0.section = .week
+            $0.selection = nil
+            $0.selections = []
         }
-        selection = nil
-        selections = []
     }
 
     func selectPlanningItem(_ id: String) {
-        selection = .planningItem(id)
-        selections = [.planningItem(id)]
+        selectOne(.planningItem(id))
     }
 
     func selectEvent(_ id: String) {
-        selection = .event(id)
-        selections = [.event(id)]
+        selectOne(.event(id))
     }
 
     func selectAppleReminder(_ id: String) {
-        selection = .appleReminder(id)
-        selections = [.appleReminder(id)]
+        selectOne(.appleReminder(id))
     }
 
     func selectMany(_ newSelections: Set<MacPlannerSelection>) {
-        let newlySelected = newSelections.subtracting(selections).first
-        selections = newSelections
-        selection = newlySelected ?? newSelections.first
+        update {
+            let newlySelected = newSelections.subtracting($0.selections).first
+            $0.selections = newSelections
+            $0.selection = newlySelected ?? newSelections.first
+        }
     }
 
     func clearSelection() {
-        selection = nil
-        selections = []
+        update {
+            $0.selection = nil
+            $0.selections = []
+        }
     }
 
-    private func persist() {
-        guard hasFinishedInitializing, let defaults, let persistenceKey else { return }
+    private func selectOne(_ selection: MacPlannerSelection) {
+        update {
+            $0.selection = selection
+            $0.selections = [selection]
+        }
+    }
+
+    private func update(_ mutation: (inout State) -> Void) {
+        var next = state
+        mutation(&next)
+        guard next != state else { return }
+        state = next
+        persist(next)
+    }
+
+    private func persist(_ state: State) {
+        guard let defaults, let persistenceKey else { return }
         let snapshot = MacPlannerNavigationSnapshot(
-            section: section,
-            selectedDay: selectedDay,
-            selection: selection
+            section: state.section,
+            selectedDay: state.selectedDay,
+            selection: state.selection
         )
         if let data = try? JSONEncoder().encode(snapshot) {
             defaults.set(data, forKey: persistenceKey)

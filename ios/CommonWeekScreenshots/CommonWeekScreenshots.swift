@@ -148,7 +148,13 @@ final class CommonWeekScreenshots: XCTestCase {
         app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
         app.launch()
 
-        let tasksSection = app.buttons["mac-sidebar-weekOfUsTasks"]
+        XCTAssertTrue(app.buttons["Previous Week"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["Today"].exists)
+        XCTAssertTrue(app.buttons["Next Week"].exists)
+        XCTAssertTrue(app.buttons["Refresh"].exists)
+        XCTAssertTrue(app.buttons["New Item"].exists)
+
+        let tasksSection = app.descendants(matching: .any)["mac-sidebar-weekOfUsTasks"]
         XCTAssertTrue(tasksSection.waitForExistence(timeout: 15))
         tasksSection.tap()
 
@@ -161,12 +167,12 @@ final class CommonWeekScreenshots: XCTestCase {
         editor.tap()
         editor.typeText(" updated")
 
-        app.buttons["mac-sidebar-events"].tap()
+        app.descendants(matching: .any)["mac-sidebar-events"].tap()
         XCTAssertTrue(app.staticTexts["Discard unsaved changes?"].waitForExistence(timeout: 5))
         app.buttons["Keep Editing"].tap()
         XCTAssertTrue(editor.exists)
 
-        app.buttons["mac-sidebar-events"].tap()
+        app.descendants(matching: .any)["mac-sidebar-events"].tap()
         app.buttons["Discard Changes"].tap()
         XCTAssertTrue(app.navigationBars["Events"].waitForExistence(timeout: 5))
 
