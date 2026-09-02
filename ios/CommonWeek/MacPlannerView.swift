@@ -138,6 +138,7 @@ struct MacPlannerView: View {
     @State private var sheet: MacPlannerSheet?
     @State private var deletionTarget: MacDeletionTarget?
     @State private var searchText = ""
+    @State private var hasCapturedAppStoreScreenshot = false
     @FocusState private var searchFocused: Bool
     @Environment(\.openWindow) private var openWindow
     @SceneStorage("mac-planner-column-visibility") private var columnVisibilityValue = "all"
@@ -148,9 +149,12 @@ struct MacPlannerView: View {
         self.viewModel = viewModel
         self.auth = auth
         self.user = user
+        let screenshot = MacAppStoreScreenshot.current
         _navigation = StateObject(wrappedValue: MacPlannerNavigation(
-            defaults: .standard,
-            persistenceKey: "mac-planner-navigation.\(user.userId)"
+            section: screenshot?.section ?? .week,
+            selection: screenshot?.selection,
+            defaults: screenshot == nil ? .standard : nil,
+            persistenceKey: screenshot == nil ? "mac-planner-navigation.\(user.userId)" : nil
         ))
     }
 
@@ -213,6 +217,43 @@ struct MacPlannerView: View {
         .onChange(of: unsavedChanges.isDirty) { _, _ in updateCommandAvailability() }
         .task { updateCommandAvailability() }
         .task(id: notifications.pendingDestination) { await openPendingNotification() }
+        .task(id: appStoreScreenshotRevision) { await captureAppStoreScreenshotIfNeeded() }
+    }
+
+    private var appStoreScreenshotRevision: String {
+        guard let screenshot = MacAppStoreScreenshot.current else { return "disabled" }
+        return "\(screenshot.rawValue):\(viewModel.data?.weekStart ?? "loading")"
+    }
+
+    private func captureAppStoreScreenshotIfNeeded() async {
+        guard !hasCapturedAppStoreScreenshot,
+              viewModel.data != nil,
+              let screenshot = MacAppStoreScreenshot.current,
+              let outputPath = ProcessInfo.processInfo.environment["APP_STORE_MAC_SCREENSHOT_OUTPUT"] else { return }
+
+        hasCapturedAppStoreScreenshot = true
+        try? await Task.sleep(for: .seconds(2))
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.windows.first(where: \.isKeyWindow) ?? scene.windows.first else {
+            fputs("Unable to find the Week of Us window for \(screenshot.rawValue).\n", stderr)
+            exit(2)
+        }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = window.screen.scale
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
+        let image = renderer.image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+
+        do {
+            guard let data = image.pngData() else { throw CocoaError(.fileWriteUnknown) }
+            try data.write(to: URL(fileURLWithPath: outputPath), options: .atomic)
+            exit(0)
+        } catch {
+            fputs("Unable to write the \(screenshot.rawValue) screenshot: \(error)\n", stderr)
+            exit(3)
+        }
     }
 
     @ViewBuilder

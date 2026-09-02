@@ -72,6 +72,22 @@ xcodebuild -project CommonWeek.xcodeproj \
 
 The app targets iOS 26 and the bundle identifier is `com.jimgreco.commonweek` on both iPhone and Mac Catalyst.
 
+## App Store screenshots
+
+The manually dispatched **App Store Screenshots** workflow captures three deterministic screenshots for both the iPhone simulator and the Mac Catalyst app. It publishes both sets as one workflow artifact and, when `upload` is enabled, replaces the screenshots on the editable iOS and macOS App Store versions.
+
+The same capture and upload lanes can be run separately on a Mac:
+
+```bash
+bundle exec fastlane ios screenshots
+bundle exec fastlane mac screenshots
+
+bundle exec fastlane ios upload_screenshots
+bundle exec fastlane mac upload_screenshots
+```
+
+iPhone output is written to `fastlane/screenshots`; Mac output is written to `fastlane/screenshots-macos`. The Mac lane launches a profile-free Debug build in deterministic demo scenes, renders the app window without the desktop, and crops it to an App Store-supported 16:10 size.
+
 ## Signed Mac acceptance checklist
 
 EventKit and system permission behavior must be checked with a development-signed Catalyst build on a real Mac:

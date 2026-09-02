@@ -4,17 +4,45 @@ ENV["DELIVER_NUMBER_OF_THREADS"] ||= "1"
 ENV["FL_MAX_NUMBER_OF_THREADS"] ||= "1"
 
 require "base64"
+require "fileutils"
+require "open3"
 
 default_platform(:ios)
 opt_out_usage
 
+REPO_ROOT = File.expand_path("..", __dir__)
 APP_IDENTIFIER = "com.jimgreco.commonweek"
-PROJECT_PATH = "ios/CommonWeek.xcodeproj"
+PROJECT_PATH = File.join(REPO_ROOT, "ios/CommonWeek.xcodeproj")
 SCREENSHOT_SCHEME = "CommonWeekScreenshots"
-SCREENSHOT_OUTPUT = "fastlane/screenshots"
+IOS_SCREENSHOT_OUTPUT = File.join(REPO_ROOT, "fastlane/screenshots")
+MACOS_SCREENSHOT_OUTPUT = File.join(REPO_ROOT, "fastlane/screenshots-macos")
+MACOS_SCREENSHOT_DERIVED_DATA = File.join(REPO_ROOT, "fastlane/test_output/MacScreenshotsDerivedData")
+MACOS_SCREENSHOT_RAW_OUTPUT = File.join(REPO_ROOT, "fastlane/test_output/MacScreenshotsRaw")
+MACOS_SCREENSHOTS = {
+  "01-Shared-Week" => "week",
+  "02-Weekly-Events" => "events",
+  "03-Weekly-Tasks" => "tasks"
+}.freeze
 
 def screenshot_devices
   (ENV["SCREENSHOT_DEVICES"] || "iPhone 17 Pro Max").split(",").map(&:strip).reject(&:empty?)
+end
+
+private_lane :app_store_api_key do
+  content = ENV.fetch("APP_STORE_CONNECT_API_KEY").to_s.strip
+  content = content.gsub("\\n", "\n") if content.include?("\\n") && !content.include?("\n")
+  unless content.include?("BEGIN PRIVATE KEY")
+    decoded = Base64.decode64(content)
+    content = decoded if decoded.include?("BEGIN PRIVATE KEY")
+  end
+  app_store_connect_api_key(
+    key_id: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
+    issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+    key_content: content,
+    is_key_content_base64: false,
+    duration: 1200,
+    in_house: false
+  )
 end
 
 platform :ios do
@@ -27,7 +55,7 @@ platform :ios do
       configuration: "Debug",
       devices: screenshot_devices,
       languages: ["en-US"],
-      output_directory: SCREENSHOT_OUTPUT,
+      output_directory: IOS_SCREENSHOT_OUTPUT,
       clear_previous_screenshots: true,
       reinstall_app: true,
       clean: true,
@@ -42,7 +70,8 @@ platform :ios do
       api_key: app_store_api_key,
       app_identifier: APP_IDENTIFIER,
       app_version: ENV.fetch("APP_STORE_VERSION", "1.1"),
-      screenshots_path: SCREENSHOT_OUTPUT,
+      screenshots_path: IOS_SCREENSHOT_OUTPUT,
+      platform: "ios",
       skip_binary_upload: true,
       skip_metadata: true,
       sync_screenshots: true,
@@ -52,20 +81,124 @@ platform :ios do
     )
   end
 
-  private_lane :app_store_api_key do
-    content = ENV.fetch("APP_STORE_CONNECT_API_KEY").to_s.strip
-    content = content.gsub("\\n", "\n") if content.include?("\\n") && !content.include?("\n")
-    unless content.include?("BEGIN PRIVATE KEY")
-      decoded = Base64.decode64(content)
-      content = decoded if decoded.include?("BEGIN PRIVATE KEY")
+end
+
+platform :mac do
+  desc "Capture three deterministic Week of Us Mac App Store screenshots"
+  lane :screenshots do
+    FileUtils.rm_rf(MACOS_SCREENSHOT_DERIVED_DATA)
+    FileUtils.rm_rf(MACOS_SCREENSHOT_RAW_OUTPUT)
+    FileUtils.rm_rf(MACOS_SCREENSHOT_OUTPUT)
+    FileUtils.mkdir_p(MACOS_SCREENSHOT_RAW_OUTPUT)
+    FileUtils.mkdir_p(File.join(MACOS_SCREENSHOT_OUTPUT, "en-US"))
+
+    sh(
+      "xcodebuild",
+      "-project", PROJECT_PATH,
+      "-scheme", "CommonWeek",
+      "-configuration", "Debug",
+      "-destination", "platform=macOS,variant=Mac Catalyst",
+      "-derivedDataPath", MACOS_SCREENSHOT_DERIVED_DATA,
+      "CODE_SIGNING_ALLOWED=NO",
+      "CODE_SIGN_ENTITLEMENTS=",
+      "ENABLE_APP_SANDBOX=NO",
+      "PRODUCT_BUNDLE_IDENTIFIER=com.jimgreco.commonweek.screenshots.mac",
+      "build"
+    )
+
+    app_bundle = File.join(
+      MACOS_SCREENSHOT_DERIVED_DATA,
+      "Build/Products/Debug-maccatalyst/Week of Us.app"
+    )
+    binary = File.join(app_bundle, "Contents/MacOS/Week of Us")
+    UI.user_error!("Mac screenshot app was not built") unless File.executable?(binary)
+
+    MACOS_SCREENSHOTS.each do |name, scene|
+      raw_output = File.join(MACOS_SCREENSHOT_RAW_OUTPUT, "#{name}.png")
+      log_output = File.join(MACOS_SCREENSHOT_RAW_OUTPUT, "#{name}.log")
+      capture_macos_screenshot(app_bundle, scene, raw_output, log_output)
+      prepare_macos_screenshot(name, raw_output)
     end
-    app_store_connect_api_key(
-      key_id: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
-      issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
-      key_content: content,
-      is_key_content_base64: false,
-      duration: 1200,
-      in_house: false
+  end
+
+  desc "Replace screenshots on the editable Mac App Store version 1.1"
+  lane :upload_screenshots do
+    upload_to_app_store(
+      api_key: app_store_api_key,
+      app_identifier: APP_IDENTIFIER,
+      app_version: ENV.fetch("APP_STORE_VERSION", "1.1"),
+      screenshots_path: MACOS_SCREENSHOT_OUTPUT,
+      platform: "osx",
+      skip_binary_upload: true,
+      skip_metadata: true,
+      sync_screenshots: true,
+      force: true,
+      run_precheck_before_submit: false,
+      submit_for_review: false
     )
   end
+end
+
+def capture_macos_screenshot(app_bundle, scene, output, log_output)
+  command = [
+    "/usr/bin/open", "-n", "-W",
+    "--stderr", log_output,
+    "--env", "COMMON_WEEK_DEMO=1",
+    "--env", "APP_STORE_SCREENSHOTS=1",
+    "--env", "APP_STORE_MAC_SCREENSHOT_SCENE=#{scene}",
+    "--env", "APP_STORE_MAC_SCREENSHOT_OUTPUT=#{output}",
+    "--env", "AppleLanguages=(en)",
+    "--env", "AppleLocale=en_US",
+    app_bundle
+  ]
+  pid = Process.spawn(*command, chdir: REPO_ROOT, out: File::NULL, err: [:child, :out])
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30
+
+  until File.exist?(output)
+    completed = Process.waitpid2(pid, Process::WNOHANG)
+    if completed
+      details = File.exist?(log_output) ? File.read(log_output) : "No app output was captured."
+      UI.user_error!("Mac screenshot app exited before capturing #{scene}:\n#{details}")
+    end
+    if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      Process.kill("TERM", pid)
+      Process.waitpid(pid)
+      details = File.exist?(log_output) ? File.read(log_output) : "No app output was captured."
+      UI.user_error!("Timed out capturing Mac screenshot #{scene}:\n#{details}")
+    end
+    sleep(0.25)
+  end
+
+  Process.waitpid(pid)
+end
+
+def prepare_macos_screenshot(name, source)
+  destination = File.join(MACOS_SCREENSHOT_OUTPUT, "en-US", "#{name}.png")
+  width, height = image_dimensions(source)
+  target_width, target_height = if width >= 2560 && height >= 1600
+                                  [2560, 1600]
+                                elsif width >= 1280 && height >= 800
+                                  [1280, 800]
+                                else
+                                  UI.user_error!("#{name} is #{width}x#{height}; Mac App Store screenshots must be at least 1280x800")
+                                end
+
+  success = system(
+    "/usr/bin/sips",
+    "--cropToHeightWidth", target_height.to_s, target_width.to_s,
+    source,
+    "--out", destination,
+    out: File::NULL
+  )
+  UI.user_error!("Unable to crop #{name} to #{target_width}x#{target_height}") unless success
+end
+
+def image_dimensions(path)
+  output, status = Open3.capture2("/usr/bin/sips", "-g", "pixelWidth", "-g", "pixelHeight", path)
+  UI.user_error!("Unable to inspect Mac screenshot #{path}") unless status.success?
+
+  width = output[/pixelWidth: (\d+)/, 1].to_i
+  height = output[/pixelHeight: (\d+)/, 1].to_i
+  UI.user_error!("Unable to read Mac screenshot dimensions for #{path}") if width.zero? || height.zero?
+  [width, height]
 end

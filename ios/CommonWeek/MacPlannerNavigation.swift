@@ -36,6 +36,38 @@ enum MacPlannerSection: String, CaseIterable, Identifiable {
     }
 }
 
+enum MacAppStoreScreenshot: String {
+    case week
+    case events
+    case tasks
+
+    static var current: MacAppStoreScreenshot? {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["APP_STORE_SCREENSHOTS"] == "1"
+            ? ProcessInfo.processInfo.environment["APP_STORE_MAC_SCREENSHOT_SCENE"].flatMap(Self.init(rawValue:))
+            : nil
+        #else
+        nil
+        #endif
+    }
+
+    var section: MacPlannerSection {
+        switch self {
+        case .week: .week
+        case .events: .events
+        case .tasks: .weekOfUsTasks
+        }
+    }
+
+    var selection: MacPlannerSelection? {
+        switch self {
+        case .week: nil
+        case .events: .event("event-0")
+        case .tasks: .planningItem("weekly-task-1")
+        }
+    }
+}
+
 enum MacPlannerSelection: Hashable {
     case planningItem(String)
     case event(String)
