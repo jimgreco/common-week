@@ -758,4 +758,11 @@ enum WeekDate {
         guard let date = iso8601.date(from: value) else { return value }
         return date.formatted(date: .omitted, time: .shortened)
     }
+
+    static func hourlyWeatherTime(_ value: String) -> String {
+        let time = value.split(separator: "T", maxSplits: 1).last ?? Substring(value)
+        guard let hour = Int(time.prefix(2)), (0...23).contains(hour) else { return value }
+        let displayHour = hour % 12 == 0 ? 12 : hour % 12
+        return "\(displayHour) \(hour < 12 ? "AM" : "PM")"
+    }
 }

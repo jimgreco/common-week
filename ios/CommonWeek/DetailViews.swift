@@ -36,7 +36,7 @@ struct WeatherDetailView: View {
                                     HStack(spacing: 10) {
                                         ForEach(weather.hourly) { hour in
                                             VStack(spacing: 8) {
-                                                Text(WeekDate.eventTime(hour.time)).font(.caption2).foregroundStyle(.secondary)
+                                                Text(WeekDate.hourlyWeatherTime(hour.time)).font(.caption2).foregroundStyle(.secondary)
                                                 Image(systemName: weatherIcon(hour.conditionCode)).symbolRenderingMode(.multicolor)
                                                 Text("\(temperature(hour.temperatureF))°").font(.headline)
                                                 Text("\(hour.precipitationProbability)%").font(.caption2).foregroundStyle(.blue)

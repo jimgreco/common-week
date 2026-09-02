@@ -38,6 +38,11 @@ final class WeekDateTests: XCTestCase {
         XCTAssertEqual(WeekDate.weekTitle("2026-08-10"), "August 10–16")
     }
 
+    func testHourlyWeatherTimeOmitsTheDateAndMinutes() {
+        XCTAssertEqual(WeekDate.hourlyWeatherTime("2026-09-02T00:00"), "12 AM")
+        XCTAssertEqual(WeekDate.hourlyWeatherTime("2026-09-02T13:00"), "1 PM")
+    }
+
     func testTodayComparisonDoesNotShiftDateAtEasternMidnight() {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
