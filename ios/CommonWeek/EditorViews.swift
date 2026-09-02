@@ -1083,8 +1083,12 @@ struct CalendarEventEditorView: View {
         _notes = State(initialValue: event?.description ?? "")
         _calendarId = State(initialValue: event?.calendarPreferenceId ?? data.editableCalendars.first?.id ?? "")
         _allDay = State(initialValue: event?.allDay ?? false)
-        _start = State(initialValue: event.flatMap { WeekDate.iso8601.date(from: $0.start) } ?? defaultStart)
-        _end = State(initialValue: event.flatMap { WeekDate.iso8601.date(from: $0.end) } ?? defaultStart.addingTimeInterval(3600))
+        _start = State(initialValue: event.map {
+            WeekDate.calendarEventDate($0.start, timeZoneIdentifier: data.household.timezone)
+        } ?? defaultStart)
+        _end = State(initialValue: event.map {
+            WeekDate.calendarEventDate($0.end, timeZoneIdentifier: data.household.timezone)
+        } ?? defaultStart.addingTimeInterval(3600))
     }
 
     var body: some View {

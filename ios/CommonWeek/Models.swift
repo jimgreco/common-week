@@ -652,6 +652,11 @@ enum WeekDate {
 
     static let iso8601 = ISO8601DateFormatter()
 
+    static func calendarEventDate(_ value: String, timeZoneIdentifier: String) -> Date {
+        iso8601.date(from: value)
+            ?? calendarDate(value, hour: 12, timeZoneIdentifier: timeZoneIdentifier)
+    }
+
     static func parse(_ value: String) -> Date {
         dateOnly.date(from: String(value.prefix(10))) ?? Date()
     }

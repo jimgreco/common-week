@@ -281,7 +281,7 @@ struct MacPlannerView: View {
                     .navigationSplitViewColumnWidth(min: 390, ideal: 520)
             } detail: {
                 inspector(data)
-                    .navigationSplitViewColumnWidth(min: 330, ideal: 420)
+                    .navigationSplitViewColumnWidth(min: 350, ideal: 400, max: 460)
             }
             .task(id: "\(user.userId):\(data.weekStart):\(data.household.timezone)") {
                 synchronizeDay(with: data)
@@ -1481,6 +1481,247 @@ private struct MacEmptyInspector: View {
     }
 }
 
+private struct MacInspectorStatus: Identifiable {
+    let text: String
+    let systemImage: String
+    let tint: Color
+
+    var id: String { "\(systemImage)-\(text)" }
+}
+
+private struct MacInspectorLayout<Content: View, Footer: View>: View {
+    private let content: Content
+    private let footer: Footer
+
+    init(
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder footer: () -> Footer
+    ) {
+        self.content = content()
+        self.footer = footer()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                content
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 22)
+                    .padding(.bottom, 28)
+            }
+            Divider()
+            footer
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+                .background(.regularMaterial)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+}
+
+private struct MacInspectorHeader: View {
+    let kind: String
+    let systemImage: String
+    let tint: Color
+    @Binding var title: String
+    let editable: Bool
+    let edited: Bool
+    let subtitle: String?
+    let statuses: [MacInspectorStatus]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 13) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 38, height: 38)
+                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 7) {
+                        Text(kind.uppercased())
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .tracking(1.35)
+                            .foregroundStyle(.secondary)
+                        if edited {
+                            Label("Edited", systemImage: "circle.fill")
+                                .font(.caption2.weight(.semibold))
+                                .labelStyle(.titleAndIcon)
+                                .foregroundStyle(CWTheme.accent)
+                        }
+                    }
+
+                    if editable {
+                        TextField(titlePrompt, text: $title, axis: .vertical)
+                            .font(.title3.weight(.semibold))
+                            .textFieldStyle(.plain)
+                            .lineLimit(1...4)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(
+                                Color(uiColor: .secondarySystemGroupedBackground),
+                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .stroke(edited ? CWTheme.accent.opacity(0.45) : CWTheme.rule.opacity(0.55), lineWidth: 1)
+                            }
+                            .accessibilityLabel(titlePrompt)
+                    } else {
+                        Text(title)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(CWTheme.ink)
+                    }
+
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if !statuses.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(statuses) { status in
+                            Label(status.text, systemImage: status.systemImage)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(status.tint)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(status.tint.opacity(0.11), in: Capsule())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var titlePrompt: String {
+        kind == "Calendar event" ? "Title" : "What needs doing?"
+    }
+}
+
+private struct MacInspectorSection<Content: View>: View {
+    let title: String
+    let systemImage: String
+    private let content: Content
+
+    init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 2)
+            VStack(spacing: 0) { content }
+                .background(
+                    Color(uiColor: .secondarySystemGroupedBackground).opacity(0.78),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(CWTheme.rule.opacity(0.5), lineWidth: 1)
+                }
+        }
+    }
+}
+
+private struct MacInspectorRow<Content: View>: View {
+    let title: String
+    let systemImage: String
+    private let content: Content
+
+    init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.callout)
+                .foregroundStyle(CWTheme.ink)
+                .layoutPriority(1)
+            Spacer(minLength: 8)
+            content
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 43)
+    }
+}
+
+private struct MacInspectorOptionalField: View {
+    let title: String
+    let systemImage: String
+    let prompt: String
+    @Binding var text: String
+    let lineLimit: ClosedRange<Int>
+    @State private var expanded: Bool
+
+    init(
+        title: String,
+        systemImage: String,
+        prompt: String,
+        text: Binding<String>,
+        lineLimit: ClosedRange<Int> = 1...4
+    ) {
+        self.title = title
+        self.systemImage = systemImage
+        self.prompt = prompt
+        self._text = text
+        self.lineLimit = lineLimit
+        self._expanded = State(initialValue: !text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    var body: some View {
+        if expanded || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(title, systemImage: systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                TextField(prompt, text: $text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(lineLimit)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel(title)
+            }
+            .padding(14)
+        } else {
+            Button {
+                withAnimation(.easeOut(duration: 0.16)) { expanded = true }
+            } label: {
+                Label("Add \(title.lowercased())", systemImage: "plus")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(CWTheme.accentStrong)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 43)
+        }
+    }
+}
+
+private struct MacInspectorDivider: View {
+    var body: some View {
+        Divider().padding(.leading, 42)
+    }
+}
+
 private struct MacEventEditorState: Equatable {
     let title: String
     let calendarId: String
@@ -1528,9 +1769,8 @@ private struct MacEventInspector: View {
         self.commandRouter = commandRouter
         self.dirtyChanged = dirtyChanged
         self.deleted = deleted
-        let start = WeekDate.iso8601.date(from: event.start)
-            ?? WeekDate.calendarDate(String(event.start.prefix(10)), hour: 9, timeZoneIdentifier: data.household.timezone)
-        let end = WeekDate.iso8601.date(from: event.end) ?? start.addingTimeInterval(3600)
+        let start = WeekDate.calendarEventDate(event.start, timeZoneIdentifier: data.household.timezone)
+        let end = WeekDate.calendarEventDate(event.end, timeZoneIdentifier: data.household.timezone)
         let calendarId = event.calendarPreferenceId ?? ""
         _title = State(initialValue: event.title)
         _calendarId = State(initialValue: calendarId)
@@ -1559,107 +1799,195 @@ private struct MacEventInspector: View {
     }
 
     var body: some View {
-        Form {
-            if event.canEdit == true {
-                Section("Calendar Event") {
-                    TextField("Title", text: $title)
-                    Picker("Calendar", selection: $calendarId) {
-                        ForEach(data.editableCalendars) { calendar in Text(calendar.name).tag(calendar.id) }
-                    }
-                    .disabled(event.recurringEventId != nil && recurringScope == "occurrence")
-                    Toggle("All-day event", isOn: $allDay)
-                }
-                Section("When") {
-                    DatePicker("Starts", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
-                    DatePicker("Ends", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
-                    Text("You can also drag this event onto a day in the week header to move the occurrence.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Section("Details") {
-                    TextField("Location", text: $location)
-                    TextField("Notes", text: $notes, axis: .vertical).lineLimit(3...8)
-                }
-                if event.recurringEventId != nil {
-                    Section("Recurring Event") {
-                        Picker("Apply changes to", selection: $recurringScope) {
-                            Text("This occurrence").tag("occurrence")
-                            Text("Entire series").tag("series")
+        MacInspectorLayout {
+            VStack(alignment: .leading, spacing: 22) {
+                MacInspectorHeader(
+                    kind: "Calendar event",
+                    systemImage: "calendar",
+                    tint: selectedCalendar.map { Color(hex: $0.color) } ?? Color(hex: event.calendarColor),
+                    title: $title,
+                    editable: event.canEdit == true,
+                    edited: isDirty,
+                    subtitle: selectedCalendar?.name ?? event.calendarAlias,
+                    statuses: eventStatuses
+                )
+
+                if event.canEdit == true {
+                    MacInspectorSection(title: "Schedule", systemImage: "clock") {
+                        MacInspectorRow(title: "Calendar", systemImage: "calendar.badge.clock") {
+                            Picker("Calendar", selection: $calendarId) {
+                                ForEach(data.editableCalendars) { calendar in Text(calendar.name).tag(calendar.id) }
+                            }
+                            .labelsHidden()
+                            .frame(maxWidth: 190)
+                            .disabled(event.recurringEventId != nil && recurringScope == "occurrence")
                         }
-                        .pickerStyle(.segmented)
-                        Text(recurringScope == "series"
-                             ? "The full series is updated while its recurrence schedule stays intact."
-                             : "Only this occurrence is updated.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        MacInspectorDivider()
+                        MacInspectorRow(title: "All day", systemImage: "sun.max") {
+                            Toggle("All-day event", isOn: $allDay).labelsHidden()
+                        }
+                        MacInspectorDivider()
+                        MacInspectorRow(title: "Starts", systemImage: "arrow.right.circle") {
+                            DatePicker("Starts", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                                .labelsHidden()
+                                .fixedSize()
+                        }
+                        MacInspectorDivider()
+                        MacInspectorRow(title: "Ends", systemImage: "checkmark.circle") {
+                            DatePicker("Ends", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                                .labelsHidden()
+                                .fixedSize()
+                        }
+                    }
+
+                    MacInspectorSection(title: "Details", systemImage: "text.alignleft") {
+                        MacInspectorOptionalField(
+                            title: "Location",
+                            systemImage: "mappin.and.ellipse",
+                            prompt: "Add a location",
+                            text: $location
+                        )
+                        MacInspectorDivider()
+                        MacInspectorOptionalField(
+                            title: "Notes",
+                            systemImage: "note.text",
+                            prompt: "Add notes",
+                            text: $notes,
+                            lineLimit: 2...7
+                        )
+                    }
+
+                    if event.recurringEventId != nil {
+                        MacInspectorSection(title: "Recurring event", systemImage: "repeat") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Apply changes to")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Picker("Apply changes to", selection: $recurringScope) {
+                                    Text("This occurrence").tag("occurrence")
+                                    Text("Entire series").tag("series")
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.segmented)
+                                Text(recurringScope == "series"
+                                     ? "The full series is updated while its recurrence schedule stays intact."
+                                     : "Only this occurrence is updated.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(14)
+                        }
+                    }
+                } else {
+                    MacInspectorSection(title: "Event details", systemImage: "lock") {
+                        MacInspectorRow(title: "Calendar", systemImage: "calendar") {
+                            Text(event.calendarAlias).foregroundStyle(.secondary)
+                        }
+                        MacInspectorDivider()
+                        MacInspectorRow(title: "When", systemImage: "clock") {
+                            Text(eventDateSummary)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let location = event.location, !location.isEmpty {
+                            MacInspectorDivider()
+                            MacInspectorRow(title: "Location", systemImage: "mappin.and.ellipse") {
+                                Text(location)
+                                    .multilineTextAlignment(.trailing)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
-                Section {
+
+                if let attendees = event.attendees, !attendees.isEmpty {
+                    MacInspectorSection(title: "Guests", systemImage: "person.2") {
+                        ForEach(attendees) { attendee in
+                            HStack(spacing: 10) {
+                                Image(systemName: attendee.responseStatus == "accepted" ? "checkmark.circle.fill" : "person.crop.circle")
+                                    .foregroundStyle(attendee.responseStatus == "accepted" ? CWTheme.accent : .secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(attendee.displayName ?? attendee.email)
+                                    Text(attendee.responseStatus.capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if attendee.`self` == true {
+                                    Text("You")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(CWTheme.accentStrong)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                        }
+                        if event.canRespond == true {
+                            Divider()
+                            HStack {
+                                responseButton("Going", status: "accepted")
+                                responseButton("Maybe", status: "tentative")
+                                responseButton("Can’t Go", status: "declined")
+                            }
+                            .padding(14)
+                        }
+                    }
+                }
+
+                if !event.allDay {
+                    MacInspectorSection(title: "Week of Us reminder", systemImage: "bell") {
+                        MacInspectorRow(title: "Notify me", systemImage: "bell.badge") {
+                            Picker("Notify me", selection: $reminderSelection) {
+                                Text("None").tag("none")
+                                Text("At start time").tag("0")
+                                Text("10 minutes before").tag("10")
+                                Text("30 minutes before").tag("30")
+                                Text("1 hour before").tag("60")
+                                Text("1 day before").tag("1440")
+                            }
+                            .labelsHidden()
+                            .frame(maxWidth: 190)
+                        }
+                    }
+                }
+            }
+        } footer: {
+            HStack(spacing: 10) {
+                if let googleURL = event.googleUrl.flatMap(URL.init(string:)) {
+                    Link(destination: googleURL) {
+                        Label("Open", systemImage: "arrow.up.right.square")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Spacer()
+                if event.canEdit == true {
                     Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
                         .buttonStyle(.borderedProminent)
                         .disabled(!canSave)
-                    Button(event.recurringEventId == nil ? "Delete Event" : "Delete Recurring Event…", role: .destructive) {
-                        confirmingDelete = true
+                }
+                Menu {
+                    Button("Hide from Week of Us", systemImage: "eye.slash", role: .destructive) {
+                        Task { if await viewModel.hideEvent(event) { dirtyChanged(false); deleted() } }
                     }
-                }
-            } else {
-                Section("Event") {
-                    LabeledContent("Title", value: event.title)
-                    LabeledContent("Calendar", value: event.calendarAlias)
-                    LabeledContent("When", value: event.allDay ? "All day" : eventTimeRange(event))
-                    if let location = event.location, !location.isEmpty { LabeledContent("Location", value: location) }
-                    Label("This event is read-only for your Google account.", systemImage: "lock.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let attendees = event.attendees, !attendees.isEmpty {
-                Section("Guests") {
-                    ForEach(attendees) { attendee in
-                        HStack {
-                            Image(systemName: attendee.responseStatus == "accepted" ? "checkmark.circle.fill" : "person.crop.circle")
-                                .foregroundStyle(attendee.responseStatus == "accepted" ? CWTheme.accent : .secondary)
-                            VStack(alignment: .leading) {
-                                Text(attendee.displayName ?? attendee.email)
-                                Text(attendee.responseStatus.capitalized).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if attendee.`self` == true { Text("You").font(.caption.bold()).foregroundStyle(CWTheme.accentStrong) }
+                    if event.canEdit == true {
+                        Divider()
+                        Button(
+                            event.recurringEventId == nil ? "Delete Event" : "Delete Recurring Event…",
+                            systemImage: "trash",
+                            role: .destructive
+                        ) {
+                            confirmingDelete = true
                         }
                     }
-                    if event.canRespond == true {
-                        HStack {
-                            responseButton("Going", status: "accepted")
-                            responseButton("Maybe", status: "tentative")
-                            responseButton("Can’t Go", status: "declined")
-                        }
-                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
                 }
-            }
-            if !event.allDay {
-                Section("Week of Us Reminder") {
-                    Picker("Notify me", selection: $reminderSelection) {
-                        Text("None").tag("none")
-                        Text("At start time").tag("0")
-                        Text("10 minutes before").tag("10")
-                        Text("30 minutes before").tag("30")
-                        Text("1 hour before").tag("60")
-                        Text("1 day before").tag("1440")
-                    }
-                }
-            }
-            if let googleURL = event.googleUrl.flatMap(URL.init(string:)) {
-                Section { Link("Open in Google Calendar", destination: googleURL) }
-            }
-            Section {
-                Button("Hide from Week of Us", role: .destructive) {
-                    Task { if await viewModel.hideEvent(event) { dirtyChanged(false); deleted() } }
-                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
         }
-        .formStyle(.grouped)
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
-        .navigationTitle(isDirty ? "Event — Edited" : "Event")
+        .navigationTitle("Event")
         .onAppear { dirtyChanged(isDirty) }
         .task { reminderLoaded = true }
         .onChange(of: reminderSelection) { _, value in
@@ -1707,10 +2035,41 @@ private struct MacEventInspector: View {
     private var isDirty: Bool { editorState != baseline }
     private var canSave: Bool {
         event.canEdit == true
+            && isDirty
             && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !calendarId.isEmpty
             && end >= start
             && !isSaving
+    }
+
+    private var eventStatuses: [MacInspectorStatus] {
+        var statuses: [MacInspectorStatus] = []
+        if allDay {
+            statuses.append(MacInspectorStatus(text: "All day", systemImage: "sun.max.fill", tint: CWTheme.accentStrong))
+        }
+        if event.recurringEventId != nil {
+            statuses.append(MacInspectorStatus(text: "Recurring", systemImage: "repeat", tint: CWTheme.accentStrong))
+        }
+        if event.canEdit != true {
+            statuses.append(MacInspectorStatus(text: "Read-only", systemImage: "lock.fill", tint: .secondary))
+        }
+        return statuses
+    }
+
+    private var selectedCalendar: EditableCalendar? {
+        data.editableCalendars.first(where: { $0.id == calendarId })
+    }
+
+    private var eventDateSummary: String {
+        let startDate = String(event.start.prefix(10))
+        if event.allDay {
+            let exclusiveEnd = String(event.end.prefix(10))
+            let inclusiveEnd = exclusiveEnd > startDate ? WeekDate.addDays(-1, to: exclusiveEnd) : startDate
+            return inclusiveEnd == startDate
+                ? WeekDate.longDay(startDate)
+                : "\(WeekDate.longDay(startDate)) – \(WeekDate.longDay(inclusiveEnd))"
+        }
+        return "\(WeekDate.longDay(startDate)) · \(eventTimeRange(event))"
     }
 
     private func save() async {
@@ -1842,45 +2201,82 @@ private struct MacPlanningItemInspector: View {
     }
 
     var body: some View {
-        Form {
-            Section("Week of Us Item") {
-                TextField("What needs doing?", text: $text, axis: .vertical)
-                    .lineLimit(3...8)
-                Picker("Type", selection: $type) {
-                    Text("Plan or note").tag(PlanningItemType.note)
-                    Text("Task").tag(PlanningItemType.task)
+        MacInspectorLayout {
+            VStack(alignment: .leading, spacing: 22) {
+                MacInspectorHeader(
+                    kind: "Week of Us item",
+                    systemImage: type == .task ? "checkmark.square" : "note.text",
+                    tint: CWTheme.accentStrong,
+                    title: $text,
+                    editable: true,
+                    edited: isDirty,
+                    subtitle: item.createdByName ?? "Shared with your household",
+                    statuses: itemStatuses
+                )
+
+                MacInspectorSection(title: "Planning", systemImage: "calendar.badge.clock") {
+                    MacInspectorRow(title: "Type", systemImage: type == .task ? "checkmark.square" : "note.text") {
+                        Picker("Type", selection: $type) {
+                            Text("Plan or note").tag(PlanningItemType.note)
+                            Text("Task").tag(PlanningItemType.task)
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 170)
+                    }
+                    MacInspectorDivider()
+                    MacInspectorRow(title: "When", systemImage: "calendar") {
+                        if item.planningDate != nil {
+                            DatePicker("Date", selection: $date, displayedComponents: .date)
+                                .labelsHidden()
+                                .fixedSize()
+                        } else {
+                            Text("This week").foregroundStyle(.secondary)
+                        }
+                    }
                 }
-                if item.planningDate != nil {
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
-                } else {
-                    LabeledContent("When", value: "This week")
+
+                MacInspectorSection(title: "Reminder", systemImage: "bell") {
+                    MacInspectorRow(title: "Remind me", systemImage: "bell.badge") {
+                        Toggle("Remind me", isOn: $reminderEnabled).labelsHidden()
+                    }
+                    if reminderEnabled {
+                        MacInspectorDivider()
+                        MacInspectorRow(title: "At", systemImage: "clock") {
+                            DatePicker("At", selection: $reminderDate, displayedComponents: [.date, .hourAndMinute])
+                                .labelsHidden()
+                                .fixedSize()
+                        }
+                    }
                 }
             }
-            Section("Reminder") {
-                Toggle("Remind me", isOn: $reminderEnabled)
-                if reminderEnabled {
-                    DatePicker("At", selection: $reminderDate, displayedComponents: [.date, .hourAndMinute])
-                }
-            }
-            Section {
+        } footer: {
+            HStack(spacing: 10) {
                 if item.type == .task {
                     Button(item.isCompleted ? "Reopen Task" : "Complete Task") {
                         Task { await viewModel.toggle(item) }
                     }
-                    if !appleReminders.writableSelectedLists.isEmpty {
+                    .buttonStyle(.bordered)
+                }
+                Spacer()
+                Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSave)
+                Menu {
+                    if item.type == .task, !appleReminders.writableSelectedLists.isEmpty {
                         Button("Move to Apple Reminders…") { showingTaskMigration = true }
                             .disabled(isDirty)
                     }
+                    if item.type == .task, !appleReminders.writableSelectedLists.isEmpty { Divider() }
+                    Button("Delete Item", systemImage: "trash", role: .destructive, action: requestDelete)
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
                 }
-                Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
-                Button("Delete Item", role: .destructive, action: requestDelete)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
         }
-        .formStyle(.grouped)
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
-        .navigationTitle(isDirty ? "\(item.type.title) — Edited" : item.type.title)
+        .navigationTitle(item.type.title)
         .onAppear { dirtyChanged(isDirty) }
         .onChange(of: editorState) { _, _ in dirtyChanged(isDirty) }
         .onChange(of: commandRouter.revision) { _, _ in
@@ -1899,7 +2295,7 @@ private struct MacPlanningItemInspector: View {
     }
 
     private func save() async {
-        guard !isSaving else { return }
+        guard canSave else { return }
         isSaving = true
         defer { isSaving = false }
         let planningDate = item.planningDate == nil
@@ -1930,6 +2326,34 @@ private struct MacPlanningItemInspector: View {
     }
 
     private var isDirty: Bool { editorState != baseline }
+
+    private var canSave: Bool {
+        isDirty
+            && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !isSaving
+    }
+
+    private var itemStatuses: [MacInspectorStatus] {
+        var statuses = [
+            MacInspectorStatus(
+                text: type == .task ? "Task" : "Plan",
+                systemImage: type == .task ? "checkmark.square" : "note.text",
+                tint: CWTheme.accentStrong
+            ),
+            MacInspectorStatus(
+                text: item.planningDate.map(WeekDate.shortDay) ?? "This week",
+                systemImage: "calendar",
+                tint: CWTheme.accentStrong
+            )
+        ]
+        if item.isCompleted {
+            statuses.append(MacInspectorStatus(text: "Completed", systemImage: "checkmark.circle.fill", tint: CWTheme.accentStrong))
+        }
+        if let carryoverLabel = item.carryoverLabel {
+            statuses.append(MacInspectorStatus(text: carryoverLabel, systemImage: "arrow.forward", tint: .orange))
+        }
+        return statuses
+    }
 }
 
 private struct MacAppleReminderInspector: View {
@@ -1991,15 +2415,86 @@ private struct MacAppleReminderInspector: View {
     }
 
     var body: some View {
-        Form {
-            Section("Apple Reminder") {
-                TextField("What needs doing?", text: $title, axis: .vertical)
-                    .lineLimit(3...8)
-                    .disabled(!task.canModify)
-                Picker("List", selection: $listId) {
-                    ForEach(listChoices) { list in Text(list.title).tag(list.id) }
+        MacInspectorLayout {
+            VStack(alignment: .leading, spacing: 22) {
+                MacInspectorHeader(
+                    kind: "Apple Reminder",
+                    systemImage: "checklist",
+                    tint: CWTheme.accentStrong,
+                    title: $title,
+                    editable: task.canModify,
+                    edited: isDirty,
+                    subtitle: listChoices.first(where: { $0.id == listId })?.title ?? task.listTitle,
+                    statuses: reminderStatuses
+                )
+
+                MacInspectorSection(title: "Reminder", systemImage: "checklist") {
+                    MacInspectorRow(title: "List", systemImage: "list.bullet") {
+                        Picker("List", selection: $listId) {
+                            ForEach(listChoices) { list in Text(list.title).tag(list.id) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 180)
+                        .disabled(!task.canModify)
+                    }
+                    MacInspectorDivider()
+                    MacInspectorRow(title: "Priority", systemImage: "exclamationmark") {
+                        Picker("Priority", selection: $priority) {
+                            ForEach(AppleReminderPriority.allCases) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 160)
+                        .disabled(!task.canModify)
+                    }
                 }
-                .disabled(!task.canModify)
+
+                MacInspectorSection(title: "Due", systemImage: "calendar") {
+                    MacInspectorRow(title: "Date", systemImage: "calendar") {
+                        DatePicker("Date", selection: $dueDate, displayedComponents: .date)
+                            .labelsHidden()
+                            .fixedSize()
+                            .disabled(!task.canModify)
+                    }
+                    MacInspectorDivider()
+                    MacInspectorRow(title: "Include time", systemImage: "clock") {
+                        Toggle("Include due time", isOn: $includesTime)
+                            .labelsHidden()
+                            .disabled(!task.canModify)
+                    }
+                    if includesTime {
+                        MacInspectorDivider()
+                        MacInspectorRow(title: "Time", systemImage: "clock.fill") {
+                            DatePicker("Time", selection: $dueDate, displayedComponents: .hourAndMinute)
+                                .labelsHidden()
+                                .fixedSize()
+                                .disabled(!task.canModify)
+                        }
+                    }
+                }
+
+                if task.canModify || !notes.isEmpty || !urlText.isEmpty {
+                    MacInspectorSection(title: "Details", systemImage: "text.alignleft") {
+                        MacInspectorOptionalField(
+                            title: "Notes",
+                            systemImage: "note.text",
+                            prompt: "Add notes",
+                            text: $notes,
+                            lineLimit: 2...7
+                        )
+                        .disabled(!task.canModify)
+                        MacInspectorDivider()
+                        MacInspectorOptionalField(
+                            title: "URL",
+                            systemImage: "link",
+                            prompt: "Add a URL",
+                            text: $urlText,
+                            lineLimit: 1...3
+                        )
+                        .textInputAutocapitalization(.never)
+                        .disabled(!task.canModify)
+                    }
+                }
+
                 if task.isRecurring {
                     Label(
                         task.canModify
@@ -2014,48 +2509,40 @@ private struct MacAppleReminderInspector: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            }
-            Section("Due") {
-                DatePicker("Date", selection: $dueDate, displayedComponents: .date)
-                    .disabled(!task.canModify)
-                Toggle("Include due time", isOn: $includesTime)
-                    .disabled(!task.canModify)
-                if includesTime {
-                    DatePicker("Time", selection: $dueDate, displayedComponents: .hourAndMinute)
-                        .disabled(!task.canModify)
+
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
-            Section("Details") {
-                TextField("Notes", text: $notes, axis: .vertical)
-                    .lineLimit(3...8)
-                    .disabled(!task.canModify)
-                Picker("Priority", selection: $priority) {
-                    ForEach(AppleReminderPriority.allCases) { Text($0.title).tag($0) }
-                }
-                .disabled(!task.canModify)
-                TextField("URL", text: $urlText)
-                    .textInputAutocapitalization(.never)
-                    .disabled(!task.canModify)
-            }
-            if let errorMessage {
-                Section { Text(errorMessage).foregroundStyle(.red) }
-            }
-            Section {
+        } footer: {
+            HStack(spacing: 10) {
                 Button(task.isCompleted ? "Reopen Reminder" : "Complete Reminder") {
                     Task { await store.toggle(task) }
                 }
+                .buttonStyle(.bordered)
                 .disabled(!task.canModify)
+                Spacer()
                 if task.canModify {
                     Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
-                    Button("Delete Reminder", role: .destructive, action: requestDelete)
+                        .disabled(!canSave)
+                    Menu {
+                        Button("Delete Reminder", systemImage: "trash", role: .destructive, action: requestDelete)
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
             }
         }
-        .formStyle(.grouped)
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
-        .navigationTitle(isDirty ? "Apple Reminder — Edited" : "Apple Reminder")
+        .navigationTitle("Apple Reminder")
         .onAppear { dirtyChanged(isDirty) }
         .onChange(of: editorState) { _, _ in dirtyChanged(isDirty) }
         .onChange(of: commandRouter.revision) { _, _ in
@@ -2072,7 +2559,7 @@ private struct MacAppleReminderInspector: View {
     }
 
     private func save() async {
-        guard !isSaving else { return }
+        guard canSave else { return }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
@@ -2118,6 +2605,34 @@ private struct MacAppleReminderInspector: View {
     }
 
     private var isDirty: Bool { editorState != baseline }
+
+    private var canSave: Bool {
+        task.canModify
+            && isDirty
+            && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !isSaving
+    }
+
+    private var reminderStatuses: [MacInspectorStatus] {
+        var statuses: [MacInspectorStatus] = []
+        if task.isCompleted {
+            statuses.append(MacInspectorStatus(text: "Completed", systemImage: "checkmark.circle.fill", tint: CWTheme.accentStrong))
+        }
+        if task.carryoverCount > 0 {
+            statuses.append(MacInspectorStatus(
+                text: task.isCompleted ? "Completed after due date" : "Overdue · carried to today",
+                systemImage: "exclamationmark.circle.fill",
+                tint: .orange
+            ))
+        }
+        if task.isRecurring {
+            statuses.append(MacInspectorStatus(text: "Recurring", systemImage: "repeat", tint: CWTheme.accentStrong))
+        }
+        if !task.canModify {
+            statuses.append(MacInspectorStatus(text: "Read-only", systemImage: "lock.fill", tint: .secondary))
+        }
+        return statuses
+    }
 }
 
 private struct MacNewAppleReminderView: View {

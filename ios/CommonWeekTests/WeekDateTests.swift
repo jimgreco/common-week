@@ -76,6 +76,26 @@ final class WeekDateTests: XCTestCase {
         )
     }
 
+    func testCalendarEventDateAcceptsGoogleAllDayValues() {
+        let start = WeekDate.calendarEventDate(
+            "2026-08-24",
+            timeZoneIdentifier: "America/New_York"
+        )
+        let end = WeekDate.calendarEventDate(
+            "2026-09-01",
+            timeZoneIdentifier: "America/New_York"
+        )
+
+        XCTAssertEqual(
+            WeekDate.string(start, timeZoneIdentifier: "America/New_York"),
+            "2026-08-24"
+        )
+        XCTAssertEqual(
+            WeekDate.string(end, timeZoneIdentifier: "America/New_York"),
+            "2026-09-01"
+        )
+    }
+
     func testPreviewContainsACompleteWeek() {
         XCTAssertEqual(PreviewData.planner.days.count, 7)
         XCTAssertFalse(PreviewData.planner.editableCalendars.isEmpty)
