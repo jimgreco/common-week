@@ -551,14 +551,15 @@ struct MacPlannerView: View {
                 : navigation.selectedDay
             switch navigation.section {
             case .events: sheet = .event(date: date)
-            case .plans: sheet = .item(date: date, type: .note)
+            case .plans: sheet = .item(date: nil, type: .note)
             case .appleReminders:
                 if appleReminders.writableSelectedLists.isEmpty {
                     appleReminders.notice = "Choose a writable Reminders list before creating a reminder."
                 } else {
                     sheet = .reminder(date: date)
                 }
-            case .week, .weekOfUsTasks: sheet = .item(date: date, type: .task)
+            case .week: sheet = .item(date: date, type: .task)
+            case .weekOfUsTasks: sheet = .item(date: nil, type: .task)
             case .notifications, .settings: break
             }
         case .search:

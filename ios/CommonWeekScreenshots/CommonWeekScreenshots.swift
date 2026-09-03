@@ -158,8 +158,19 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.buttons["Cancel"].exists)
         XCTAssertTrue(app.buttons["Save"].exists)
         XCTAssertTrue(app.textFields["What are you planning?"].exists)
+        XCTAssertTrue(app.staticTexts["This week"].exists)
 
         attachCurrentScreen(named: "Mac add plan modal")
+
+        app.buttons["Cancel"].tap()
+        let tasksSection = app.descendants(matching: .any)["mac-sidebar-weekOfUsTasks"]
+        XCTAssertTrue(tasksSection.waitForExistence(timeout: 5))
+        tasksSection.tap()
+        app.buttons["New Item"].tap()
+
+        XCTAssertTrue(app.staticTexts["Add task"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textFields["What needs doing?"].exists)
+        XCTAssertTrue(app.staticTexts["This week"].exists)
     }
 
     func testMacPlannerShellNavigationAndUnsavedEditProtection() throws {
