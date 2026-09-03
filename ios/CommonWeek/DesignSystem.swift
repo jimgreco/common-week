@@ -120,6 +120,275 @@ struct CardSurface<Content: View>: View {
     }
 }
 
+#if targetEnvironment(macCatalyst)
+struct MacModalLayout<Content: View>: View {
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let tint: Color
+    let cancelTitle: String
+    let primaryTitle: String
+    let primaryDisabled: Bool
+    let cancel: () -> Void
+    let primaryAction: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            MacModalHeading(
+                eyebrow: eyebrow,
+                title: title,
+                subtitle: subtitle,
+                systemImage: systemImage,
+                tint: tint
+            )
+
+            Divider()
+
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            MacModalActions(
+                cancelTitle: cancelTitle,
+                primaryTitle: primaryTitle,
+                primaryDisabled: primaryDisabled,
+                showsCancel: true,
+                cancel: cancel,
+                primaryAction: primaryAction
+            )
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+}
+
+private struct MacModalHeading: View {
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 42, height: 42)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow.uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(1.45)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(CWTheme.ink)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 20)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .background(Color(uiColor: .systemGroupedBackground))
+    }
+}
+
+private struct MacModalActions: View {
+    let cancelTitle: String
+    let primaryTitle: String
+    let primaryDisabled: Bool
+    let showsCancel: Bool
+    let cancel: () -> Void
+    let primaryAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if showsCancel {
+                Button(cancelTitle, action: cancel)
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+            }
+            Spacer()
+            Button(primaryTitle, action: primaryAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(primaryDisabled)
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .background(.regularMaterial)
+    }
+}
+
+private struct MacModalChromeModifier: ViewModifier {
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let tint: Color
+    let cancelTitle: String
+    let primaryTitle: String
+    let primaryDisabled: Bool
+    let showsCancel: Bool
+    let cancel: () -> Void
+    let primaryAction: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    MacModalHeading(
+                        eyebrow: eyebrow,
+                        title: title,
+                        subtitle: subtitle,
+                        systemImage: systemImage,
+                        tint: tint
+                    )
+                    Divider()
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    Divider()
+                    MacModalActions(
+                        cancelTitle: cancelTitle,
+                        primaryTitle: primaryTitle,
+                        primaryDisabled: primaryDisabled,
+                        showsCancel: showsCancel,
+                        cancel: cancel,
+                        primaryAction: primaryAction
+                    )
+                }
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+    }
+}
+
+extension View {
+    func macModalFormStyle() -> some View {
+        formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+            .background(Color(uiColor: .systemGroupedBackground))
+    }
+
+    func macModalChrome(
+        eyebrow: String,
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color = CWTheme.accentStrong,
+        cancelTitle: String = "Cancel",
+        primaryTitle: String,
+        primaryDisabled: Bool = false,
+        showsCancel: Bool = true,
+        cancel: @escaping () -> Void,
+        primaryAction: @escaping () -> Void
+    ) -> some View {
+        modifier(MacModalChromeModifier(
+            eyebrow: eyebrow,
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            tint: tint,
+            cancelTitle: cancelTitle,
+            primaryTitle: primaryTitle,
+            primaryDisabled: primaryDisabled,
+            showsCancel: showsCancel,
+            cancel: cancel,
+            primaryAction: primaryAction
+        ))
+    }
+}
+#endif
+
+extension View {
+    @ViewBuilder
+    func cwModalFormStyle() -> some View {
+        #if targetEnvironment(macCatalyst)
+        macModalFormStyle()
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder
+    func cwModalChrome(
+        eyebrow: String,
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color = CWTheme.accentStrong,
+        cancelTitle: String = "Cancel",
+        primaryTitle: String,
+        primaryDisabled: Bool = false,
+        showsCancel: Bool = true,
+        cancel: @escaping () -> Void,
+        primaryAction: @escaping () -> Void
+    ) -> some View {
+        #if targetEnvironment(macCatalyst)
+        macModalChrome(
+            eyebrow: eyebrow,
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            tint: tint,
+            cancelTitle: cancelTitle,
+            primaryTitle: primaryTitle,
+            primaryDisabled: primaryDisabled,
+            showsCancel: showsCancel,
+            cancel: cancel,
+            primaryAction: primaryAction
+        )
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder
+    func cwModalNavigationTitle(_ title: String) -> some View {
+        #if targetEnvironment(macCatalyst)
+        self
+        #else
+        navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+
+    @ViewBuilder
+    func cwModalNavigationActions(
+        cancelTitle: String? = "Cancel",
+        primaryTitle: String,
+        primaryDisabled: Bool = false,
+        cancel: @escaping () -> Void,
+        primaryAction: @escaping () -> Void
+    ) -> some View {
+        #if targetEnvironment(macCatalyst)
+        self
+        #else
+        toolbar {
+            if let cancelTitle {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(cancelTitle, action: cancel)
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(primaryTitle, action: primaryAction)
+                    .disabled(primaryDisabled)
+            }
+        }
+        #endif
+    }
+}
+
 extension Color {
     init(hex: String) {
         let value = UInt64(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0

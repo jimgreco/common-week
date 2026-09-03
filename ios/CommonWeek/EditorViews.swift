@@ -51,68 +51,47 @@ struct ItemEditorView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("What") {
-                    TextField(type == .note ? "What are you planning?" : "What needs doing?", text: $text, axis: .vertical)
-                        .lineLimit(3...7)
-                    if destination == .weekOfUs {
-                        Picker("Type", selection: $type) { Text("Plan or note").tag(PlanningItemType.note); Text("Task").tag(PlanningItemType.task) }
-                    }
-                }
-                if canChooseDestination {
-                    Section("Save to") {
-                        Picker("Destination", selection: $destination) {
-                            Text("Week of Us").tag(TaskCreationDestination.weekOfUs)
-                            ForEach(appleReminders.writableSelectedLists) { list in
-                                Text("Reminders · \(list.title)").tag(TaskCreationDestination.appleReminders(list.id))
-                            }
-                        }
-                        Text(destination == .weekOfUs
-                             ? "This task is shared with your Week of Us household and appears on the web."
-                             : PlatformCopy.appleReminderDeviceOnly)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Section("Schedule") {
-                    if isDailyItem {
-                        DatePicker("When", selection: $scheduledDate, displayedComponents: [.date])
-                            .accessibilityIdentifier("planning-date")
-                    } else {
-                        LabeledContent("When", value: "This week")
-                    }
-                    if destination == .weekOfUs {
-                        Toggle("Remind me", isOn: $reminderEnabled)
-                        if reminderEnabled {
-                            DatePicker("Reminder", selection: $reminderDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
-                        }
-                    } else {
-                        Toggle("Include due time", isOn: $appleDueTimeEnabled)
-                        if appleDueTimeEnabled {
-                            DatePicker("Due time", selection: $scheduledDate, displayedComponents: [.hourAndMinute])
-                        }
-                    }
-                }
-                if case .appleReminders = destination {
-                    AppleReminderRecurrenceEditor(
-                        draft: $appleRecurrence,
-                        dueDate: scheduledDate,
-                        timeZoneIdentifier: data.household.timezone
+        editorBody
+            .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+            .onChange(of: type) { _, nextType in
+                if nextType != .task { destination = .weekOfUs }
+            }
+            .sheet(isPresented: $showingTaskMigration) {
+                if let item {
+                    CustomTaskMigrationView(
+                        item: item,
+                        data: data,
+                        store: appleReminders,
+                        viewModel: viewModel,
+                        onMoved: { dismiss() }
                     )
                 }
-                if let saveError {
-                    Section { Text(saveError).font(.footnote).foregroundStyle(.red) }
-                }
-                if let item {
-                    Section {
-                        if item.type == .task, !appleReminders.writableSelectedLists.isEmpty {
-                            Button("Move to Apple Reminders…") { showingTaskMigration = true }
-                        }
-                        Button("Delete item", role: .destructive) { Task { if await viewModel.deleteItem(item) { dismiss() } } }
-                    }
-                }
             }
+    }
+
+    @ViewBuilder
+    private var editorBody: some View {
+        #if targetEnvironment(macCatalyst)
+        MacModalLayout(
+            eyebrow: item == nil ? "New \(type == .task ? "task" : "plan")" : "Week of Us item",
+            title: item == nil ? "Add \(type.title.lowercased())" : "Edit item",
+            subtitle: type == .task
+                ? "Add a clear next step to your shared week."
+                : "Capture an idea, intention, or note for the week.",
+            systemImage: type == .task ? "checkmark.square" : "note.text",
+            tint: CWTheme.accentStrong,
+            cancelTitle: "Cancel",
+            primaryTitle: isSaving ? "Saving…" : "Save",
+            primaryDisabled: !canSave,
+            cancel: { dismiss() },
+            primaryAction: { Task { await save() } }
+        ) {
+            Form { editorSections }
+                .macModalFormStyle()
+        }
+        #else
+        NavigationStack {
+            Form { editorSections }
             .navigationTitle(item == nil ? "Add \(type.title.lowercased())" : "Edit item")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -124,19 +103,83 @@ struct ItemEditorView: View {
                 }
             }
         }
-        .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
-        .onChange(of: type) { _, nextType in
-            if nextType != .task { destination = .weekOfUs }
+        #endif
+    }
+
+    @ViewBuilder
+    private var editorSections: some View {
+        Section {
+            TextField(type == .note ? "What are you planning?" : "What needs doing?", text: $text, axis: .vertical)
+                .lineLimit(2...6)
+            if destination == .weekOfUs {
+                Picker("Type", selection: $type) {
+                    Text("Plan or note").tag(PlanningItemType.note)
+                    Text("Task").tag(PlanningItemType.task)
+                }
+            }
+        } header: {
+            Label("What", systemImage: type == .task ? "checkmark.square" : "text.alignleft")
         }
-        .sheet(isPresented: $showingTaskMigration) {
-            if let item {
-                CustomTaskMigrationView(
-                    item: item,
-                    data: data,
-                    store: appleReminders,
-                    viewModel: viewModel,
-                    onMoved: { dismiss() }
-                )
+        if canChooseDestination {
+            Section {
+                Picker("Destination", selection: $destination) {
+                    Text("Week of Us").tag(TaskCreationDestination.weekOfUs)
+                    ForEach(appleReminders.writableSelectedLists) { list in
+                        Text("Reminders · \(list.title)").tag(TaskCreationDestination.appleReminders(list.id))
+                    }
+                }
+                Text(destination == .weekOfUs
+                     ? "This task is shared with your Week of Us household and appears on the web."
+                     : PlatformCopy.appleReminderDeviceOnly)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Label("Save to", systemImage: "tray.and.arrow.down")
+            }
+        }
+        Section {
+            if isDailyItem {
+                DatePicker("When", selection: $scheduledDate, displayedComponents: [.date])
+                    .accessibilityIdentifier("planning-date")
+            } else {
+                LabeledContent("When", value: "This week")
+            }
+            if destination == .weekOfUs {
+                Toggle("Remind me", isOn: $reminderEnabled)
+                if reminderEnabled {
+                    DatePicker("Reminder", selection: $reminderDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                }
+            } else {
+                Toggle("Include due time", isOn: $appleDueTimeEnabled)
+                if appleDueTimeEnabled {
+                    DatePicker("Due time", selection: $scheduledDate, displayedComponents: [.hourAndMinute])
+                }
+            }
+        } header: {
+            Label("Schedule", systemImage: "calendar.badge.clock")
+        }
+        if case .appleReminders = destination {
+            AppleReminderRecurrenceEditor(
+                draft: $appleRecurrence,
+                dueDate: scheduledDate,
+                timeZoneIdentifier: data.household.timezone
+            )
+        }
+        if let saveError {
+            Section {
+                Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+        if let item {
+            Section {
+                if item.type == .task, !appleReminders.writableSelectedLists.isEmpty {
+                    Button("Move to Apple Reminders…") { showingTaskMigration = true }
+                }
+                Button("Delete item", role: .destructive) {
+                    Task { if await viewModel.deleteItem(item) { dismiss() } }
+                }
             }
         }
     }
@@ -147,6 +190,10 @@ struct ItemEditorView: View {
 
     private var isDailyItem: Bool {
         item?.planningDate != nil || planningDate != nil
+    }
+
+    private var canSave: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSaving
     }
 
     private func save() async {
@@ -265,15 +312,14 @@ struct CustomTaskMigrationView: View {
                     }
                 }
             }
-            .navigationTitle("Move Task")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isMoving ? "Moving…" : "Move") { confirmingMove = true }
-                        .disabled(listId.isEmpty || isMoving)
-                }
-            }
+            .cwModalFormStyle()
+            .cwModalNavigationTitle("Move Task")
+            .cwModalNavigationActions(
+                primaryTitle: isMoving ? "Moving…" : "Move",
+                primaryDisabled: listId.isEmpty || isMoving,
+                cancel: { dismiss() },
+                primaryAction: { confirmingMove = true }
+            )
             .confirmationDialog(
                 "Move this shared task?",
                 isPresented: $confirmingMove,
@@ -287,6 +333,17 @@ struct CustomTaskMigrationView: View {
                 Text("The new Reminder is device-local. Deleting the Week of Us task removes it from the shared household planner and cannot be undone.")
             }
         }
+        .cwModalChrome(
+            eyebrow: "Apple Reminders",
+            title: "Move task",
+            subtitle: "Create a private Apple Reminder, then remove the shared task.",
+            systemImage: "arrow.right.square",
+            tint: .orange,
+            primaryTitle: isMoving ? "Moving…" : "Move Task",
+            primaryDisabled: listId.isEmpty || isMoving,
+            cancel: { dismiss() },
+            primaryAction: { confirmingMove = true }
+        )
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
     }
 
@@ -633,7 +690,7 @@ struct LocationPickerView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Person") {
+                Section {
                     Picker("Person", selection: $person) {
                         Text("Everyone").tag("everyone")
                         ForEach(day.memberLocations) { assignment in
@@ -642,8 +699,10 @@ struct LocationPickerView: View {
                     }
                     .pickerStyle(.inline)
                     .labelsHidden()
+                } header: {
+                    Label("Person", systemImage: "person.2")
                 }
-                Section("Location") {
+                Section {
                     HStack(spacing: 10) {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary)
@@ -696,6 +755,8 @@ struct LocationPickerView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+                } header: {
+                    Label("Location", systemImage: "location.magnifyingglass")
                 }
 
                 if selectedResult != nil {
@@ -711,7 +772,7 @@ struct LocationPickerView: View {
                 }
 
                 if !locations.isEmpty {
-                    Section("Saved locations") {
+                    Section {
                         ForEach(locations) { location in
                             Button { choose(location) } label: {
                                 HStack {
@@ -727,6 +788,8 @@ struct LocationPickerView: View {
                                 }
                             }
                         }
+                    } header: {
+                        Label("Saved locations", systemImage: "bookmark")
                     }
                 } else if selectedResult == nil {
                     Section {
@@ -737,14 +800,17 @@ struct LocationPickerView: View {
                         )
                     }
                 }
-                Section("Apply to") {
+                Section {
                     Picker("Range", selection: $scope) {
                         Text("This day").tag("day")
                         Text("Through Sunday").tag("through-sunday")
                         Text("Entire week").tag("week")
                     }.pickerStyle(.inline).labelsHidden()
+                } header: {
+                    Label("Apply to", systemImage: "calendar.badge.clock")
                 }
             }
+            .cwModalFormStyle()
             .task(id: searchText) { await search() }
             .onChange(of: searchText) { _, newValue in
                 if let selectedResult, newValue != selectedResult.assignmentName {
@@ -759,35 +825,54 @@ struct LocationPickerView: View {
                 selectedResult = nil
                 searchText = ""
             }
-            .navigationTitle("Set location")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving…" : "Set") {
-                        Task {
-                            isSaving = true
-                            let succeeded: Bool
-                            if let selectedResult {
-                                succeeded = await viewModel.setLocation(
-                                    selectedResult,
-                                    for: day.date,
-                                    memberIds: selectedMemberIds,
-                                    scope: scope,
-                                    saveForReuse: saveForReuse
-                                )
-                            } else if let location = locations.first(where: { $0.id == selectedId }) {
-                                succeeded = await viewModel.setLocation(location, for: day.date, memberIds: selectedMemberIds, scope: scope)
-                            } else {
-                                succeeded = false
-                            }
-                            if succeeded { dismiss() }
-                            isSaving = false
-                        }
-                    }.disabled((selectedResult == nil && selectedId.isEmpty) || isSaving)
-                }
-            }
+            .cwModalNavigationTitle("Set location")
+            .cwModalNavigationActions(
+                primaryTitle: isSaving ? "Saving…" : "Set",
+                primaryDisabled: !canSetLocation,
+                cancel: { dismiss() },
+                primaryAction: { Task { await setLocation() } }
+            )
         }
+        .cwModalChrome(
+            eyebrow: "Day context",
+            title: "Set location",
+            subtitle: "Choose who will be where and how long the change applies.",
+            systemImage: "location.fill",
+            primaryTitle: isSaving ? "Saving…" : "Set Location",
+            primaryDisabled: !canSetLocation,
+            cancel: { dismiss() },
+            primaryAction: { Task { await setLocation() } }
+        )
+    }
+
+    private var canSetLocation: Bool {
+        (selectedResult != nil || !selectedId.isEmpty) && !isSaving
+    }
+
+    private func setLocation() async {
+        guard canSetLocation else { return }
+        isSaving = true
+        let succeeded: Bool
+        if let selectedResult {
+            succeeded = await viewModel.setLocation(
+                selectedResult,
+                for: day.date,
+                memberIds: selectedMemberIds,
+                scope: scope,
+                saveForReuse: saveForReuse
+            )
+        } else if let location = locations.first(where: { $0.id == selectedId }) {
+            succeeded = await viewModel.setLocation(
+                location,
+                for: day.date,
+                memberIds: selectedMemberIds,
+                scope: scope
+            )
+        } else {
+            succeeded = false
+        }
+        if succeeded { dismiss() }
+        isSaving = false
     }
 
     private var selectedMemberIds: [String] {
@@ -1095,7 +1180,7 @@ struct CalendarEventEditorView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 Form {
-                Section("Event") {
+                Section {
                     TextField("Title", text: $title)
                     Picker("Calendar", selection: $calendarId) { ForEach(calendarChoices) { Text($0.name).tag($0.id) } }
                         .disabled(event != nil && !canMoveCalendar)
@@ -1104,13 +1189,17 @@ struct CalendarEventEditorView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Toggle("All-day event", isOn: $allDay)
+                } header: {
+                    Label("Event", systemImage: "calendar")
                 }
-                Section("When") {
+                Section {
                     DatePicker("Starts", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
                     DatePicker("Ends", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                } header: {
+                    Label("When", systemImage: "clock")
                 }
                 if event == nil {
-                    Section("Repeats") {
+                    Section {
                         Picker("Repeats", selection: recurrenceFrequency) {
                             Text("Does not repeat").tag("")
                             ForEach(CalendarRecurrenceFrequency.allCases) { frequency in
@@ -1157,8 +1246,10 @@ struct CalendarEventEditorView: View {
                                 Stepper("\(recurrence.count ?? 10) events", value: recurrenceCount, in: 1...999)
                             }
                         }
+                    } header: {
+                        Label("Repeats", systemImage: "repeat")
                     }
-                    Section("Guests") {
+                    Section {
                         TextField("alex@example.com, sam@example.com", text: $guestEmailInput, axis: .vertical)
                             .lineLimit(1...4)
                             .textInputAutocapitalization(.never)
@@ -1167,9 +1258,11 @@ struct CalendarEventEditorView: View {
                         Text("Separate email addresses with commas. Google Calendar will email invitations.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                    } header: {
+                        Label("Guests", systemImage: "person.2")
                     }
                 }
-                Section("Details") {
+                Section {
                     HStack(spacing: 10) {
                         Image(systemName: "mappin.and.ellipse")
                             .foregroundStyle(.secondary)
@@ -1235,9 +1328,11 @@ struct CalendarEventEditorView: View {
                             .foregroundStyle(.red)
                     }
                     TextField("Notes", text: $notes, axis: .vertical).lineLimit(3...7)
+                } header: {
+                    Label("Details", systemImage: "text.alignleft")
                 }
                 if event?.recurringEventId != nil {
-                    Section("Recurring event") {
+                    Section {
                         Picker("Apply changes to", selection: $recurringScope) {
                             Text("This occurrence").tag("occurrence")
                             Text("Entire series").tag("series")
@@ -1249,6 +1344,8 @@ struct CalendarEventEditorView: View {
                             Text("Choose Entire series to move this event to another calendar.")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
+                    } header: {
+                        Label("Recurring event", systemImage: "repeat")
                     }
                 }
                 if let authoringError {
@@ -1262,6 +1359,7 @@ struct CalendarEventEditorView: View {
                     Section { Button(event.recurringEventId == nil ? "Delete from Google Calendar" : "Delete this occurrence", role: .destructive) { confirmingDelete = true } }
                 }
             }
+                .cwModalFormStyle()
                 .task(id: location) { await searchEventLocations() }
                 .onChange(of: locationSuggestions) { _, suggestions in
                     guard !suggestions.isEmpty else { return }
@@ -1284,17 +1382,28 @@ struct CalendarEventEditorView: View {
                     updateRecurrenceForStartChange(from: oldStart, to: newStart)
                     if end < newStart { end = newStart }
                 }
-                .navigationTitle(event == nil ? "Add event" : "Edit event")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
-                            .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || calendarId.isEmpty || end < start || isSaving)
-                    }
-                }
+                .cwModalNavigationTitle(event == nil ? "Add event" : "Edit event")
+                .cwModalNavigationActions(
+                    primaryTitle: isSaving ? "Saving…" : "Save",
+                    primaryDisabled: !canSave,
+                    cancel: { dismiss() },
+                    primaryAction: { Task { await save() } }
+                )
             }
         }
+        .cwModalChrome(
+            eyebrow: event == nil ? "New calendar event" : "Calendar event",
+            title: event == nil ? "Add event" : "Edit event",
+            subtitle: event == nil
+                ? "Block out time and keep everyone in sync."
+                : "Update the event details shared through Google Calendar.",
+            systemImage: "calendar",
+            tint: selectedCalendarColor,
+            primaryTitle: isSaving ? "Saving…" : "Save",
+            primaryDisabled: !canSave,
+            cancel: { dismiss() },
+            primaryAction: { Task { await save() } }
+        )
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
         .confirmationDialog(event?.recurringEventId == nil ? "Delete this event from Google Calendar?" : "Delete this occurrence from Google Calendar?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             if let event {
@@ -1311,6 +1420,17 @@ struct CalendarEventEditorView: View {
         } message: {
             Text("This cannot be undone from Week of Us.")
         }
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !calendarId.isEmpty
+            && end >= start
+            && !isSaving
+    }
+
+    private var selectedCalendarColor: Color {
+        calendarChoices.first(where: { $0.id == calendarId }).map { Color(hex: $0.color) } ?? CWTheme.accentStrong
     }
 
     private func chooseEventLocation(_ suggestion: EventLocationSuggestion) {

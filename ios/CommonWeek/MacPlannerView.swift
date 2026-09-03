@@ -112,6 +112,24 @@ private enum MacPlannerSheet: Identifiable {
         case .location(let day): "location-\(day.date)"
         }
     }
+
+    var preferredWidth: CGFloat {
+        switch self {
+        case .item: 540
+        case .reminder, .location: 600
+        case .event, .search: 680
+        case .weather: 580
+        }
+    }
+
+    var preferredHeight: CGFloat {
+        switch self {
+        case .item: 450
+        case .reminder, .event, .location: 720
+        case .search: 620
+        case .weather: 660
+        }
+    }
 }
 
 private enum MacDeletionTarget: Identifiable {
@@ -180,7 +198,7 @@ struct MacPlannerView: View {
         .searchFocused($searchFocused)
         .sheet(item: $sheet) { sheet in
             sheetView(sheet)
-                .frame(minWidth: 520, idealWidth: 620, minHeight: 520, idealHeight: 700)
+                .frame(width: sheet.preferredWidth, height: sheet.preferredHeight)
         }
         .confirmationDialog(
             deletionTitle,
@@ -2664,25 +2682,29 @@ private struct MacNewAppleReminderView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Apple Reminder") {
+                Section {
                     TextField("What needs doing?", text: $title, axis: .vertical)
                     Picker("List", selection: $listId) {
                         ForEach(store.writableSelectedLists) { Text($0.title).tag($0.id) }
                     }
+                } header: {
+                    Label("Reminder", systemImage: "checklist")
                 }
-                Section("Due") {
+                Section {
                     DatePicker("Date", selection: $dueDate, displayedComponents: .date)
                     Toggle("Include due time", isOn: $includesTime)
                     if includesTime {
                         DatePicker("Time", selection: $dueDate, displayedComponents: .hourAndMinute)
                     }
+                } header: {
+                    Label("Due", systemImage: "calendar")
                 }
                 AppleReminderRecurrenceEditor(
                     draft: $recurrence,
                     dueDate: dueDate,
                     timeZoneIdentifier: data.household.timezone
                 )
-                Section("Details") {
+                Section {
                     TextField("Notes", text: $notes, axis: .vertical)
                         .lineLimit(3...8)
                     Picker("Priority", selection: $priority) {
@@ -2690,21 +2712,30 @@ private struct MacNewAppleReminderView: View {
                     }
                     TextField("URL", text: $urlText)
                         .textInputAutocapitalization(.never)
+                } header: {
+                    Label("Details", systemImage: "text.alignleft")
                 }
                 if let errorMessage {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
             }
-            .navigationTitle("New Apple Reminder")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
-                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || listId.isEmpty || isSaving)
-                }
-            }
+            .cwModalFormStyle()
         }
+        .cwModalChrome(
+            eyebrow: "New reminder",
+            title: "Add Apple Reminder",
+            subtitle: "Create a private reminder that stays in Apple Reminders on this Mac.",
+            systemImage: "checklist",
+            primaryTitle: isSaving ? "Saving…" : "Save Reminder",
+            primaryDisabled: !canSave,
+            cancel: { dismiss() },
+            primaryAction: { Task { await save() } }
+        )
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !listId.isEmpty && !isSaving
     }
 
     private func save() async {
@@ -2834,11 +2865,17 @@ private struct MacPlannerSearchView: View {
                     await viewModel.search(newValue)
                 }
             }
-            .navigationTitle("Search")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
         }
+        .cwModalChrome(
+            eyebrow: "Planner search",
+            title: "Search",
+            subtitle: "Find events, plans, and tasks across your shared calendar.",
+            systemImage: "magnifyingglass",
+            primaryTitle: "Done",
+            showsCancel: false,
+            cancel: {},
+            primaryAction: { dismiss() }
+        )
     }
 
     private var filteredResults: [PlannerSearchResult] {

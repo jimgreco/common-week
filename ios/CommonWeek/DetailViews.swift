@@ -52,10 +52,25 @@ struct WeatherDetailView: View {
                 }
             }
             .background(AppBackground())
-            .navigationTitle(WeekDate.longDay(day.date))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .cwModalNavigationTitle(WeekDate.longDay(day.date))
+            .cwModalNavigationActions(
+                cancelTitle: nil,
+                primaryTitle: "Done",
+                cancel: {},
+                primaryAction: { dismiss() }
+            )
         }
+        .cwModalChrome(
+            eyebrow: "Forecast",
+            title: WeekDate.longDay(day.date),
+            subtitle: day.location?.name ?? "Weather for your planned location.",
+            systemImage: weather.map { weatherIcon($0.conditionCode) } ?? "cloud.slash",
+            tint: .blue,
+            primaryTitle: "Done",
+            showsCancel: false,
+            cancel: {},
+            primaryAction: { dismiss() }
+        )
     }
 
     private func metric(_ icon: String, _ value: String, _ label: String) -> some View {

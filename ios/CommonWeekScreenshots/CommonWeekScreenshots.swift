@@ -143,6 +143,25 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if targetEnvironment(macCatalyst)
+    func testMacPlanModalUsesPolishedChrome() throws {
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
+        app.launch()
+
+        let plansSection = app.descendants(matching: .any)["mac-sidebar-plans"]
+        XCTAssertTrue(plansSection.waitForExistence(timeout: 15))
+        plansSection.tap()
+        app.buttons["New Item"].tap()
+
+        XCTAssertTrue(app.staticTexts["Add plan"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Capture an idea, intention, or note for the week."].exists)
+        XCTAssertTrue(app.buttons["Cancel"].exists)
+        XCTAssertTrue(app.buttons["Save"].exists)
+        XCTAssertTrue(app.textFields["What are you planning?"].exists)
+
+        attachCurrentScreen(named: "Mac add plan modal")
+    }
+
     func testMacPlannerShellNavigationAndUnsavedEditProtection() throws {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
@@ -177,7 +196,7 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.navigationBars["Events"].waitForExistence(timeout: 5))
 
         app.typeKey("f", modifierFlags: .command)
-        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Search"].waitForExistence(timeout: 5))
     }
     #endif
 
