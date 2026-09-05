@@ -1,10 +1,27 @@
 import SwiftUI
 
+enum PlanningItemPlacement: String, CaseIterable, Identifiable {
+    case day
+    case week
+
+    var id: String { rawValue }
+
+    func planningDate(from date: Date, timeZoneIdentifier: String) -> String? {
+        switch self {
+        case .day:
+            WeekDate.string(date, timeZoneIdentifier: timeZoneIdentifier)
+        case .week:
+            nil
+        }
+    }
+}
+
 struct ItemEditorView: View {
     let item: PlanningItem?
     let planningDate: String?
     let data: WeeklyPlannerData
     let allowsAppleReminderDestination: Bool
+    let allowsWeeklyPlacement: Bool
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var appleReminders: AppleRemindersStore
     @Environment(\.dismiss) private var dismiss
@@ -13,6 +30,7 @@ struct ItemEditorView: View {
     @State private var reminderEnabled: Bool
     @State private var reminderDate: Date
     @State private var scheduledDate: Date
+    @State private var placement: PlanningItemPlacement
     @State private var destination: TaskCreationDestination
     @State private var appleDueTimeEnabled = false
     @State private var appleRecurrence = AppleReminderRecurrenceDraft()
@@ -27,7 +45,8 @@ struct ItemEditorView: View {
         data: WeeklyPlannerData,
         viewModel: PlannerViewModel,
         appleReminders: AppleRemindersStore,
-        allowsAppleReminderDestination: Bool = true
+        allowsAppleReminderDestination: Bool = true,
+        allowsWeeklyPlacement: Bool = true
     ) {
         self.item = item
         self.planningDate = planningDate
@@ -35,6 +54,7 @@ struct ItemEditorView: View {
         self.viewModel = viewModel
         self.appleReminders = appleReminders
         self.allowsAppleReminderDestination = allowsAppleReminderDestination
+        self.allowsWeeklyPlacement = allowsWeeklyPlacement
         _text = State(initialValue: item?.text ?? "")
         _type = State(initialValue: item?.type ?? defaultType)
         let existingReminder = item?.reminder.flatMap { WeekDate.iso8601.date(from: $0.remindAt) }
@@ -43,6 +63,7 @@ struct ItemEditorView: View {
         _scheduledDate = State(initialValue: (item?.planningDate ?? planningDate).map {
             WeekDate.calendarDate($0, hour: 9, timeZoneIdentifier: data.household.timezone)
         } ?? Date())
+        _placement = State(initialValue: (item?.planningDate ?? planningDate) == nil ? .week : .day)
         let canUseAppleDefault = allowsAppleReminderDestination && item == nil && planningDate != nil && defaultType == .task
             && appleReminders.writableSelectedLists.contains {
                 appleReminders.defaultDestination == .appleReminders($0.id)
@@ -55,6 +76,12 @@ struct ItemEditorView: View {
             .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
             .onChange(of: type) { _, nextType in
                 if nextType != .task { destination = .weekOfUs }
+            }
+            .onChange(of: placement) { _, nextPlacement in
+                if nextPlacement == .week { destination = .weekOfUs }
+            }
+            .onChange(of: destination) { _, nextDestination in
+                if case .appleReminders = nextDestination { placement = .day }
             }
             .sheet(isPresented: $showingTaskMigration) {
                 if let item {
@@ -138,11 +165,24 @@ struct ItemEditorView: View {
             }
         }
         Section {
+            if canChooseWeeklyPlacement {
+                Picker("When", selection: $placement) {
+                    Text("Day").tag(PlanningItemPlacement.day)
+                    Text("This week").tag(PlanningItemPlacement.week)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("planning-placement")
+            }
             if isDailyItem {
-                DatePicker("When", selection: $scheduledDate, displayedComponents: [.date])
+                DatePicker(canChooseWeeklyPlacement ? "Date" : "When", selection: $scheduledDate, displayedComponents: [.date])
                     .accessibilityIdentifier("planning-date")
             } else {
                 LabeledContent("When", value: "This week")
+                if canChooseWeeklyPlacement {
+                    Text("Weekly items are shared with your household and do not use a date.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             if destination == .weekOfUs {
                 Toggle("Remind me", isOn: $reminderEnabled)
@@ -185,11 +225,16 @@ struct ItemEditorView: View {
     }
 
     private var canChooseDestination: Bool {
-        allowsAppleReminderDestination && item == nil && planningDate != nil && type == .task && !appleReminders.writableSelectedLists.isEmpty
+        allowsAppleReminderDestination && item == nil && isDailyItem && type == .task && !appleReminders.writableSelectedLists.isEmpty
+    }
+
+    private var canChooseWeeklyPlacement: Bool {
+        allowsWeeklyPlacement && item == nil && planningDate != nil
     }
 
     private var isDailyItem: Bool {
-        item?.planningDate != nil || planningDate != nil
+        if let item { return item.planningDate != nil }
+        return placement == .day
     }
 
     private var canSave: Bool {
@@ -204,7 +249,7 @@ struct ItemEditorView: View {
         if case .appleReminders(let listId) = destination,
            item == nil,
            type == .task,
-           planningDate != nil {
+           isDailyItem {
             do {
                 try await appleReminders.createReminder(
                     title: trimmed,
@@ -223,9 +268,10 @@ struct ItemEditorView: View {
             }
             return
         }
-        let selectedPlanningDate = isDailyItem
-            ? WeekDate.string(scheduledDate, timeZoneIdentifier: data.household.timezone)
-            : nil
+        let selectedPlanningDate = placement.planningDate(
+            from: scheduledDate,
+            timeZoneIdentifier: data.household.timezone
+        )
         let draft = PlanningItemDraft(
             id: item?.id,
             text: trimmed,

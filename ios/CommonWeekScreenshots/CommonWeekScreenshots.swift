@@ -182,7 +182,16 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.buttons["Today"].exists)
         XCTAssertTrue(app.buttons["Next Week"].exists)
         XCTAssertTrue(app.buttons["Refresh"].exists)
-        XCTAssertTrue(app.buttons["New Item"].exists)
+        let newItem = app.buttons["New Item"]
+        XCTAssertTrue(newItem.exists)
+        newItem.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["mac-new-event"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["mac-new-note"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["mac-new-task"].exists)
+        app.descendants(matching: .any)["mac-new-note"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["planning-placement"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["This week"].exists)
+        app.buttons["Cancel"].tap()
 
         let tasksSection = app.descendants(matching: .any)["mac-sidebar-weekOfUsTasks"]
         XCTAssertTrue(tasksSection.waitForExistence(timeout: 15))

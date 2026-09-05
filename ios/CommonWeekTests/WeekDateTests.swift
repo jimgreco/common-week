@@ -69,6 +69,28 @@ final class WeekDateTests: XCTestCase {
         )
     }
 
+    func testWeeklyPlanningItemPlacementOmitsThePlanningDate() {
+        let date = WeekDate.calendarDate(
+            "2026-09-05",
+            hour: 9,
+            timeZoneIdentifier: "America/New_York"
+        )
+
+        XCTAssertEqual(
+            PlanningItemPlacement.day.planningDate(
+                from: date,
+                timeZoneIdentifier: "America/New_York"
+            ),
+            "2026-09-05"
+        )
+        XCTAssertNil(
+            PlanningItemPlacement.week.planningDate(
+                from: date,
+                timeZoneIdentifier: "America/New_York"
+            )
+        )
+    }
+
     func testCalendarDateRoundTripsAheadOfUTC() {
         let date = WeekDate.calendarDate(
             "2026-08-15",

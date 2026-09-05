@@ -95,7 +95,7 @@ struct MacPlannerCommands: Commands {
 }
 
 private enum MacPlannerSheet: Identifiable {
-    case item(date: String?, type: PlanningItemType)
+    case item(date: String?, type: PlanningItemType, allowsAppleReminderDestination: Bool)
     case reminder(date: String)
     case event(date: String)
     case search
@@ -104,7 +104,7 @@ private enum MacPlannerSheet: Identifiable {
 
     var id: String {
         switch self {
-        case .item(let date, let type): "item-\(date ?? "weekly")-\(type.rawValue)"
+        case .item(let date, let type, _): "item-\(date ?? "weekly")-\(type.rawValue)"
         case .reminder(let date): "reminder-\(date)"
         case .event(let date): "event-\(date)"
         case .search: "search"
@@ -130,6 +130,12 @@ private enum MacPlannerSheet: Identifiable {
         case .weather: 660
         }
     }
+}
+
+private enum MacWeekCreationKind {
+    case event
+    case note
+    case task
 }
 
 private enum MacDeletionTarget: Identifiable {
@@ -405,6 +411,7 @@ struct MacPlannerView: View {
                     nextWeek: { request(.weekOffset(7)) },
                     refresh: { commandRouter.perform(.refresh) },
                     create: { commandRouter.perform(.newItem) },
+                    createFromWeek: openWeekCreation,
                     dropOnDay: reschedule(_:to:)
                 )
                 if navigation.section == .week || navigation.section == .events {
@@ -516,7 +523,7 @@ struct MacPlannerView: View {
     private func sheetView(_ sheet: MacPlannerSheet) -> some View {
         if let data = viewModel.data {
             switch sheet {
-            case .item(let date, let type):
+            case .item(let date, let type, let allowsAppleReminderDestination):
                 ItemEditorView(
                     item: nil,
                     planningDate: date,
@@ -524,7 +531,7 @@ struct MacPlannerView: View {
                     data: data,
                     viewModel: viewModel,
                     appleReminders: appleReminders,
-                    allowsAppleReminderDestination: false
+                    allowsAppleReminderDestination: allowsAppleReminderDestination
                 )
             case .reminder(let date):
                 MacNewAppleReminderView(date: date, data: data, store: appleReminders)
@@ -551,15 +558,18 @@ struct MacPlannerView: View {
                 : navigation.selectedDay
             switch navigation.section {
             case .events: sheet = .event(date: date)
-            case .plans: sheet = .item(date: nil, type: .note)
+            case .plans:
+                sheet = .item(date: nil, type: .note, allowsAppleReminderDestination: false)
             case .appleReminders:
                 if appleReminders.writableSelectedLists.isEmpty {
                     appleReminders.notice = "Choose a writable Reminders list before creating a reminder."
                 } else {
                     sheet = .reminder(date: date)
                 }
-            case .week: sheet = .item(date: date, type: .task)
-            case .weekOfUsTasks: sheet = .item(date: nil, type: .task)
+            case .week:
+                sheet = .item(date: date, type: .task, allowsAppleReminderDestination: true)
+            case .weekOfUsTasks:
+                sheet = .item(date: nil, type: .task, allowsAppleReminderDestination: false)
             case .notifications, .settings: break
             }
         case .search:
@@ -583,6 +593,20 @@ struct MacPlannerView: View {
             break // The selected inspector handles Command-S using the same router revision.
         case .settings:
             openWindow(id: "settings")
+        }
+    }
+
+    private func openWeekCreation(_ kind: MacWeekCreationKind) {
+        let date = navigation.selectedDay.isEmpty
+            ? viewModel.data?.weekStart ?? WeekDate.string(Date())
+            : navigation.selectedDay
+        switch kind {
+        case .event:
+            sheet = .event(date: date)
+        case .note:
+            sheet = .item(date: date, type: .note, allowsAppleReminderDestination: false)
+        case .task:
+            sheet = .item(date: date, type: .task, allowsAppleReminderDestination: true)
         }
     }
 
@@ -926,6 +950,7 @@ private struct MacWeekHeader: View {
     let nextWeek: () -> Void
     let refresh: () -> Void
     let create: () -> Void
+    let createFromWeek: (MacWeekCreationKind) -> Void
     let dropOnDay: (MacPlannerDragPayload, String) -> Bool
 
     var body: some View {
@@ -955,9 +980,31 @@ private struct MacWeekHeader: View {
                 Spacer()
                 Button(action: refresh) { Image(systemName: "arrow.clockwise") }
                     .accessibilityLabel("Refresh")
-                Button(action: create) { Label("New", systemImage: "plus") }
+                if section == .week {
+                    Menu {
+                        Button("New Event", systemImage: "calendar.badge.plus") {
+                            createFromWeek(.event)
+                        }
+                        .accessibilityIdentifier("mac-new-event")
+                        Button("New Note", systemImage: "note.text.badge.plus") {
+                            createFromWeek(.note)
+                        }
+                        .accessibilityIdentifier("mac-new-note")
+                        Button("New Task", systemImage: "checkmark.square") {
+                            createFromWeek(.task)
+                        }
+                        .accessibilityIdentifier("mac-new-task")
+                    } label: {
+                        Label("New", systemImage: "plus")
+                    }
                     .buttonStyle(.borderedProminent)
                     .accessibilityLabel("New Item")
+                    .accessibilityIdentifier("mac-new-menu")
+                } else {
+                    Button(action: create) { Label("New", systemImage: "plus") }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityLabel("New Item")
+                }
             }
             if section == .week || section == .appleReminders {
                 HStack(spacing: 6) {
