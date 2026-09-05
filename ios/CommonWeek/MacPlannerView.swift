@@ -325,35 +325,70 @@ struct MacPlannerView: View {
     }
 
     private func sidebar(_ data: WeeklyPlannerData) -> some View {
-        List(selection: sidebarSelection) {
-            Section("Planner") {
-                sidebarRow(.week)
-                sidebarRow(.events)
-                sidebarRow(.plans)
-                sidebarRow(.weekOfUsTasks)
-            }
-            Section("On This Mac") {
-                sidebarRow(.appleReminders)
-            }
-            Section("Account") {
-                sidebarRow(.notifications, badge: notifications.inbox.unreadCount)
-                sidebarRow(.settings)
-            }
-            Section {
-                VStack(alignment: .leading, spacing: 5) {
-                    BrandMark()
-                    Text(data.household.name)
-                        .font(.caption.weight(.semibold))
-                    Text(user.email)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        VStack(spacing: 0) {
+            List(selection: sidebarSelection) {
+                Section("Planner") {
+                    sidebarRow(.week)
+                    sidebarRow(.events)
+                    sidebarRow(.plans)
+                    sidebarRow(.weekOfUsTasks)
                 }
-                .padding(.vertical, 8)
+                Section("On This Mac") {
+                    sidebarRow(.appleReminders)
+                }
+                Section("Account") {
+                    sidebarRow(.notifications, badge: notifications.inbox.unreadCount)
+                    sidebarRow(.settings)
+                }
             }
+            .listStyle(.sidebar)
+
+            Divider()
+
+            MacSidebarIdentity(householdName: data.household.name, email: user.email)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
         }
-        .listStyle(.sidebar)
         .navigationTitle("Week of Us")
+    }
+
+    private struct MacSidebarIdentity: View {
+        let householdName: String
+        let email: String
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 11) {
+                BrandMark(iconSize: 36, titleSize: 17)
+
+                Divider()
+
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(CWTheme.accent.opacity(0.14))
+                        Image(systemName: "person.2.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(CWTheme.accentStrong)
+                    }
+                    .frame(width: 32, height: 32)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(householdName)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(email)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Week of Us, \(householdName), \(email)")
+        }
     }
 
     private func sidebarRow(_ section: MacPlannerSection, badge: Int = 0) -> some View {

@@ -48,15 +48,21 @@ struct AppBackground: View {
 
 struct BrandMark: View {
     var compact = false
+    var iconSize: CGFloat? = nil
+    var titleSize: CGFloat = 20
+
+    private var resolvedIconSize: CGFloat {
+        iconSize ?? (compact ? 30 : 42)
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             BrandGlyph(compact: compact)
-            .frame(width: compact ? 30 : 42, height: compact ? 30 : 42)
+                .frame(width: resolvedIconSize, height: resolvedIconSize)
 
             if !compact {
                 Text("Week of Us")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .font(.system(size: titleSize, weight: .bold, design: .rounded))
                     .tracking(-0.4)
             }
         }
@@ -68,35 +74,47 @@ private struct BrandGlyph: View {
     let compact: Bool
 
     var body: some View {
-        VStack(spacing: compact ? 3 : 5) {
-            slider(dotColor: Color(red: 0.89, green: 0.67, blue: 0.25), position: 0.22)
-            slider(dotColor: Color(red: 0.63, green: 0.72, blue: 0.67), position: 0.68)
-            slider(dotColor: Color(red: 0.80, green: 0.47, blue: 0.40), position: 0.42)
-        }
-        .padding(compact ? 3 : 8)
-        .background {
-            if !compact {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Color(red: 0.09, green: 0.16, blue: 0.14))
-                    .shadow(color: CWTheme.accent.opacity(0.22), radius: 8, y: 4)
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let rowHeight = side * (compact ? 0.20 : 1 / 6)
+            let spacing = side * (compact ? 0.10 : 1 / 12)
+            let inset = side * (compact ? 0.10 : 1 / 6)
+
+            VStack(spacing: spacing) {
+                slider(dotColor: Color(red: 0.89, green: 0.67, blue: 0.25), position: 0.22, rowHeight: rowHeight)
+                slider(dotColor: Color(red: 0.63, green: 0.72, blue: 0.67), position: 0.68, rowHeight: rowHeight)
+                slider(dotColor: Color(red: 0.80, green: 0.47, blue: 0.40), position: 0.42, rowHeight: rowHeight)
+            }
+            .padding(inset)
+            .frame(width: side, height: side)
+            .background {
+                if !compact {
+                    RoundedRectangle(cornerRadius: side * 0.26, style: .continuous)
+                        .fill(Color(red: 0.09, green: 0.16, blue: 0.14))
+                        .shadow(
+                            color: CWTheme.accent.opacity(0.22),
+                            radius: side * 0.19,
+                            y: side * 0.10
+                        )
+                }
             }
         }
     }
 
-    private func slider(dotColor: Color, position: CGFloat) -> some View {
+    private func slider(dotColor: Color, position: CGFloat, rowHeight: CGFloat) -> some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(compact ? CWTheme.accentStrong.opacity(0.52) : CWTheme.cream)
-                    .frame(height: compact ? 2 : 3)
+                    .frame(height: rowHeight * 0.36)
                 Circle()
                     .fill(dotColor)
-                    .frame(width: compact ? 6 : 8, height: compact ? 6 : 8)
-                    .offset(x: max(0, (proxy.size.width - (compact ? 6 : 8)) * position))
+                    .frame(width: rowHeight, height: rowHeight)
+                    .offset(x: max(0, (proxy.size.width - rowHeight) * position))
             }
             .frame(maxHeight: .infinity)
         }
-        .frame(height: compact ? 6 : 8)
+        .frame(height: rowHeight)
     }
 }
 
