@@ -260,34 +260,33 @@ private struct MacModalChromeModifier: ViewModifier {
     let primaryAction: () -> Void
 
     func body(content: Content) -> some View {
-        content
-            .toolbar(.hidden, for: .navigationBar)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    MacModalHeading(
-                        eyebrow: eyebrow,
-                        title: title,
-                        subtitle: subtitle,
-                        systemImage: systemImage,
-                        tint: tint
-                    )
-                    Divider()
-                }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VStack(spacing: 0) {
-                    Divider()
-                    MacModalActions(
-                        cancelTitle: cancelTitle,
-                        primaryTitle: primaryTitle,
-                        primaryDisabled: primaryDisabled,
-                        showsCancel: showsCancel,
-                        cancel: cancel,
-                        primaryAction: primaryAction
-                    )
-                }
-            }
-            .background(Color(uiColor: .systemGroupedBackground))
+        VStack(spacing: 0) {
+            MacModalHeading(
+                eyebrow: eyebrow,
+                title: title,
+                subtitle: subtitle,
+                systemImage: systemImage,
+                tint: tint
+            )
+
+            Divider()
+
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            MacModalActions(
+                cancelTitle: cancelTitle,
+                primaryTitle: primaryTitle,
+                primaryDisabled: primaryDisabled,
+                showsCancel: showsCancel,
+                cancel: cancel,
+                primaryAction: primaryAction
+            )
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
     }
 }
 
