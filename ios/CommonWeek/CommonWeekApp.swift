@@ -141,5 +141,10 @@ struct RootView: View {
                 #endif
             }
         }
+        .onOpenURL { url in
+            guard url.scheme == "commonweek", url.host == "planner" else { return }
+            let capture = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "capture" } ?? false
+            NotificationCoordinator.shared.openQuickTasks(capture: capture)
+        }
     }
 }

@@ -94,6 +94,9 @@ final class APIClient {
         try await send(path: "/api/ios/planner", query: [URLQueryItem(name: "week", value: week)])
     }
 
+    func coverage() async throws -> CoveragePayload { try await send(path: "/api/coverage") }
+    func saveCoverage(_ entry: EventCoverage) async throws -> CoveragePayload { try await send(path: "/api/coverage", method: "POST", body: entry) }
+
     func taskWorkspace(resource: [String: String] = [:]) async throws -> TaskWorkspacePayload {
         try await send(path: "/api/task-workspace", query: resource.map { URLQueryItem(name: $0.key, value: $0.value) })
     }

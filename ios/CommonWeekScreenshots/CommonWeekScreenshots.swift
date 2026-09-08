@@ -9,6 +9,29 @@ final class CommonWeekScreenshots: XCTestCase {
         app = XCUIApplication()
     }
 
+    func testCoverageAndShareWeek() throws {
+        launchDemo()
+        #if !targetEnvironment(macCatalyst)
+        app.buttons["Week tools"].tap()
+        #endif
+        app.buttons["Pickup & drop-off"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Miriam"].firstMatch.waitForExistence(timeout: 8))
+        attachCurrentScreen(named: "Pickup and drop-off coverage")
+        app.buttons["Done"].firstMatch.tap()
+        #if !targetEnvironment(macCatalyst)
+        app.buttons["Week tools"].tap()
+        #endif
+        app.buttons["Share week"].firstMatch.tap()
+        let create = app.buttons["Create PDF"]
+        XCTAssertTrue(scrollToExistence(create)); create.tap()
+        XCTAssertTrue(app.buttons["Share PDF"].waitForExistence(timeout: 8))
+        attachCurrentScreen(named: "Share week with PDF export")
+        app.buttons["Kitchen display"].tap()
+        XCTAssertTrue(app.buttons["Exit display"].waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Kitchen week display")
+        app.buttons["Exit display"].tap()
+    }
+
     #if !targetEnvironment(macCatalyst)
     func testTaskWorkspaceCaptureAndDetails() throws {
         launchDemo()

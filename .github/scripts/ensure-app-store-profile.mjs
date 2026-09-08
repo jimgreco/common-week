@@ -64,6 +64,10 @@ async function pages(authToken, path) {
 async function ensureBundle(authToken, identifier) {
   const found = await request(authToken, 'GET', `/bundleIds?filter[identifier]=${encodeURIComponent(identifier)}&filter[platform]=IOS&limit=200`);
   const exact = found.data?.find((bundle) => bundle.attributes?.identifier === identifier);
+  if (!exact && process.argv.includes('--widget')) {
+    const created = await request(authToken, 'POST', '/bundleIds', { data: { type: 'bundleIds', attributes: { identifier, name: 'Week of Us Widgets', platform: 'IOS' } } });
+    return created.data;
+  }
   if (!exact) throw new Error(`Bundle ID ${identifier} does not exist in Apple Developer.`);
   return exact;
 }
@@ -124,8 +128,10 @@ async function main() {
     throw new Error(`Unsupported App Store profile type ${profileType}.`);
   }
   const bundle = await ensureBundle(authToken, bundleIdentifier);
-  await ensureAppleSignIn(authToken, bundle.id);
-  await ensurePushNotifications(authToken, bundle.id);
+  if (!process.argv.includes('--widget')) {
+    await ensureAppleSignIn(authToken, bundle.id);
+    await ensurePushNotifications(authToken, bundle.id);
+  }
   const certificate = await matchingCertificate(authToken, certificatePath);
   const existingProfiles = await pages(
     authToken,

@@ -4,7 +4,7 @@ import Foundation
 final class PlannerViewModel: ObservableObject {
     var workspaceUserId: String { activeUser?.userId ?? data?.members.first?.userId ?? "demo-user" }
     var canEditHousehold: Bool { data?.isDemo == true || (activeUser != nil && activeUser?.role != "viewer") }
-    @Published var data: WeeklyPlannerData?
+    @Published var data: WeeklyPlannerData? { didSet { WidgetPublisher.publish(data, userId: workspaceUserId) } }
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var toast: String?

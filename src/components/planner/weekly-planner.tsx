@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { CoveragePanel } from "./coverage-panel";
+import { WeekShare } from "./week-share";
 import { TaskWorkspaceProvider, TaskWorkspaceDialog } from "@/components/planner/task-workspace";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -65,6 +67,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [days, setDays] = useState(initialData.days);
   const [weeklyItems, setWeeklyItems] = useState(initialData.weeklyItems);
   const familyUserId = initialFamily?.currentUserId ?? currentUserId ?? initialData.members.find((member) => member.displayName === currentUserName)?.userId ?? initialData.members[0]?.userId ?? "demo-user";
+  const [coverageOpen,setCoverageOpen]=useState(false);
+  const [shareOpen,setShareOpen]=useState(false);
   const [family, setFamily] = useState<FamilyPlanningData>(() => initialFamily ?? emptyFamilyPlanning(initialData.weekStart, familyUserId));
   const [tasksOpen, setTasksOpen] = useState(false);
   const [linkedTask, setLinkedTask] = useState<string | undefined>();
@@ -557,6 +561,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         <nav className={`topbar-actions ${mobileMenu ? "is-open" : ""}`} aria-label="Account navigation">
           <button className="topbar-link" type="button" onClick={() => { setSearchOpen(true); setMobileMenu(false); }}><Search size={15} /> Search</button>
           <button className="topbar-link" type="button" onClick={()=>{setTasksOpen(true);setMobileMenu(false);}}>Tasks & backlog</button>
+          <button className="topbar-link" onClick={()=>{setCoverageOpen(true);setMobileMenu(false);}}>Pickup & drop-off</button>
+          <button className="topbar-link" onClick={()=>{setShareOpen(true);setMobileMenu(false);}}>Share week</button>
           <NotificationInboxButton initialInbox={initialInbox} timeZone={initialData.household.timezone} />
           <button className="topbar-link" type="button" onClick={toggleTheme} title="Toggle dark mode"><span className="avatar" title={theme === "dark" ? "Dark mode" : "Light mode"}>{theme === "dark" ? "🌙" : "☀️"}</span></button>
           <Link className="topbar-link" href="/settings"><Settings size={15} /> Settings</Link>
@@ -636,6 +642,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         </section>
       </section>
 
+      {coverageOpen && <CoveragePanel data={{...initialData,days,weeklyItems,childProfiles:family.children}} userId={familyUserId} onClose={()=>setCoverageOpen(false)}/>}
+      {shareOpen && <WeekShare data={{...initialData,days,weeklyItems,childProfiles:family.children}} onClose={()=>setShareOpen(false)}/>}
       {tasksOpen && <TaskWorkspaceDialog initialItemId={linkedTask} onClose={()=>{setTasksOpen(false);setLinkedTask(undefined);}} />}
       {familyOpen && !familyLoading && <FamilyPlanningPanel key={initialData.weekStart} family={family} data={{ ...initialData, days, calendarState }} items={guideItems} initialStep={familyStep} onMutation={mutateFamily} onClose={() => setFamilyOpen(false)} onToggle={toggleGuideItem} onMove={moveGuideItem} onEdit={(item) => { setFamilyOpen(false); if (item.weekStartDate !== initialData.weekStart) { router.push(`/planner?week=${item.weekStartDate}&item=${item.id}`); } else setEditingItem(item); }} onEvent={(event) => { setFamilyOpen(false); setSelectedEvent(event); }} />}
       {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} members={initialData.members} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}

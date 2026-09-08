@@ -522,6 +522,13 @@ async function apnsToken(): Promise<string> {
 }
 
 async function sendPush(device: { token: string; environment: string }, delivery: DeliveryRow) {
+  const link = new URL(delivery.deep_link, applicationOrigin());
+  const itemId = link.searchParams.get("task") ?? link.searchParams.get("item");
+  const task = itemId && /^[0-9a-f-]{36}$/i.test(itemId) ? await query(
+    `select 1 from planning_items p join household_members hm on hm.household_id=p.household_id where p.id=$1 and p.type='task' and hm.user_id=$2`, [itemId, delivery.user_id],
+  ) : null;
+  const category = task?.rows.length ? "FAMILY_TASK" : "FAMILY_REMINDER";
+
   const origin = device.environment === "sandbox"
     ? "https://api.sandbox.push.apple.com"
     : "https://api.push.apple.com";
@@ -550,7 +557,7 @@ async function sendPush(device: { token: string; environment: string }, delivery
     });
     request.on("error", (error) => { client.close(); reject(error); });
     request.end(JSON.stringify({
-      aps: { alert: { title: delivery.title, body: delivery.body }, sound: "default", badge: delivery.unread_count },
+      aps: { alert: { title: delivery.title, body: delivery.body }, sound: "default", badge: delivery.unread_count, category },
       path: notificationDeliveryDeepLink(delivery.deep_link, delivery.outbox_id),
     }));
   });

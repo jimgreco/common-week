@@ -1332,3 +1332,23 @@ textarea:focus-visible {
 .workspace-task-details { padding:14px; background:var(--accent-wash); border-radius:12px; }
 .workspace-capture .primary-button { background:var(--accent); color:var(--white); padding:10px 14px; border-radius:9px; font-weight:600; }
 .workspace-capture .primary-button:disabled { opacity:.45; }
+
+.coverage-event { border-top: 1px solid var(--rule); margin-top: 24px; padding-top: 16px; }
+.coverage-child { border: 1px solid var(--rule); border-radius: 12px; padding: 16px; margin: 16px 0; display: grid; gap: 12px; }
+.coverage-child label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.coverage-child textarea { width: 100%; min-height: 64px; }
+.coverage-leg { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.share-options { display: flex; gap: 16px; flex-wrap: wrap; margin: 20px 0; }
+.week-share-preview { width: 100%; height: 55vh; background: white; border: 1px solid var(--rule); margin-top: 16px; }
+.kitchen-display { position: fixed; inset: 0; z-index: 200; background: var(--paper); display: flex; flex-direction: column; padding: 24px; }
+.kitchen-display header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.kitchen-display iframe { flex: 1; }
+.week-tools-body { padding: 24px; overflow-y: auto; }
+.week-tools-body > p { color: var(--ink); margin-bottom: 20px; line-height: 1.5; }
+.week-tools-body > fieldset { display: flex; flex-wrap: wrap; gap: 12px 20px; border: 1px solid var(--rule); border-radius: 12px; padding: 16px; }
+.week-tools-body legend { padding: 0 6px; font-weight: 600; }
+.week-tools-body label { display: inline-flex; align-items: center; gap: 8px; }
+.week-tools-body input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+.week-tools-body select, .week-tools-body textarea, .week-tools-body input[type=number] { padding: 8px 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 8px; }
+.week-tools-body .dialog-actions { justify-content: flex-start; gap: 12px; }
+@media(max-width:600px) { .week-tools-body { padding: 16px; } .kitchen-display { padding: 12px; } .kitchen-display header { flex-wrap: wrap; } }

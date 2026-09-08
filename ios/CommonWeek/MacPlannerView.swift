@@ -99,6 +99,8 @@ private enum MacPlannerSheet: Identifiable {
     case reminder(date: String)
     case event(date: String)
     case search
+    case coverage
+    case shareWeek
     case taskWorkspace(String? = nil)
     case familyPlanning
     case weather(DayPlan)
@@ -109,6 +111,8 @@ private enum MacPlannerSheet: Identifiable {
         case .item(let date, let type, _): "item-\(date ?? "weekly")-\(type.rawValue)"
         case .reminder(let date): "reminder-\(date)"
         case .event(let date): "event-\(date)"
+        case .coverage: "coverage"
+        case .shareWeek: "share-week"
         case .taskWorkspace: "task-workspace"
         case .familyPlanning: "family-planning"
         case .search: "search"
@@ -119,6 +123,7 @@ private enum MacPlannerSheet: Identifiable {
 
     var preferredWidth: CGFloat {
         switch self {
+        case .coverage, .shareWeek: 700
         case .taskWorkspace: 700
         case .familyPlanning: 700
         case .item: 540
@@ -130,6 +135,7 @@ private enum MacPlannerSheet: Identifiable {
 
     var preferredHeight: CGFloat {
         switch self {
+        case .coverage, .shareWeek: 780
         case .taskWorkspace: 780
         case .familyPlanning: 780
         case .item: 450
@@ -248,7 +254,7 @@ struct MacPlannerView: View {
         .onChange(of: navigation.section) { _, _ in updateCommandAvailability() }
         .onChange(of: unsavedChanges.isDirty) { _, _ in updateCommandAvailability() }
         .task { updateCommandAvailability() }
-        .task(id: notifications.pendingDestination) { await openPendingNotification() }
+        .task(id: "\(String(describing: notifications.pendingDestination))-\(viewModel.data?.weekStart ?? "loading")") { await openPendingNotification() }
         .task(id: appStoreScreenshotRevision) { await captureAppStoreScreenshotIfNeeded() }
     }
 
@@ -336,6 +342,8 @@ struct MacPlannerView: View {
         VStack(spacing: 0) {
             List(selection: sidebarSelection) {
                 Section("Planner") {
+                    Button { sheet = .coverage } label: { Label("Pickup & drop-off", systemImage: "car.side") }
+                    Button { sheet = .shareWeek } label: { Label("Share week", systemImage: "square.and.arrow.up") }
                     Button { sheet = .taskWorkspace() } label: { Label("Tasks & backlog", systemImage: "checklist") }
                     Button { sheet = .familyPlanning } label: { Label("Plan your week", systemImage: "person.2.badge.gearshape") }
                         .accessibilityIdentifier("family-planning-open")
@@ -572,6 +580,8 @@ struct MacPlannerView: View {
     private func sheetView(_ sheet: MacPlannerSheet) -> some View {
         if let data = viewModel.data {
             switch sheet {
+            case .coverage: CoverageView(planner: data, viewModel: viewModel)
+            case .shareWeek: WeekShareView(planner: data, viewModel: viewModel)
             case .taskWorkspace(let id): TaskWorkspaceView(planner: data, viewModel: viewModel, initialItemId: id)
             case .familyPlanning:
                 FamilyPlanningView(planner: data, viewModel: viewModel)
@@ -975,6 +985,13 @@ struct MacPlannerView: View {
                 return
             }
             navigation.select(.notifications)
+            notifications.consume(destination)
+            return
+        }
+        if case .taskWorkspace(let id) = destination.target, destination.weekStart == nil {
+            if viewModel.data == nil { await viewModel.load(quietly: true) }
+            guard viewModel.data != nil else { return }
+            sheet = .taskWorkspace(id)
             notifications.consume(destination)
             return
         }

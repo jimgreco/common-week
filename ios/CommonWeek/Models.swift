@@ -301,6 +301,7 @@ struct CalendarAttendee: Codable, Hashable, Identifiable {
 }
 
 struct EditableCalendar: Codable, Identifiable, Hashable {
+    var visibility: String? = nil
     let id: String
     let sourceUserId: String?
     let name: String

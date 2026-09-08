@@ -17,8 +17,9 @@ jobs:
     timeout-minutes: 45
     env:
       IOS_BUNDLE_ID: com.jimgreco.commonweek
-      IOS_PROFILE_NAME: Week of Us App Store Notifications 20260826
-      MACCATALYST_PROFILE_NAME: Week of Us Mac Catalyst App Store 20260830
+      IOS_PROFILE_NAME: Week of Us App Store Widgets 20260908
+      WIDGET_PROFILE_NAME: Week of Us Widgets App Store 20260908
+      MACCATALYST_PROFILE_NAME: Week of Us Mac Catalyst App Store 20260908
       IOS_API_BASE_URL: ${{ vars.IOS_API_BASE_URL || 'https://weekofus.com' }}
 
     steps:
@@ -176,6 +177,15 @@ jobs:
             --certificate-der "$RUNNER_TEMP/distribution.der" \
             --output "$IOS_PROFILE_PATH"
 
+          WIDGET_PROFILE_PATH="$RUNNER_TEMP/week-widgets.mobileprovision"
+          node .github/scripts/ensure-app-store-profile.mjs \
+            --widget \
+            --bundle-id "${IOS_BUNDLE_ID}.widgets" \
+            --profile-name "$WIDGET_PROFILE_NAME" \
+            --profile-type IOS_APP_STORE \
+            --certificate-der "$RUNNER_TEMP/distribution.der" \
+            --output "$WIDGET_PROFILE_PATH"
+
           MACCATALYST_PROFILE_PATH="$RUNNER_TEMP/common-week-maccatalyst-app-store.provisionprofile"
           node .github/scripts/ensure-app-store-profile.mjs \
             --bundle-id "$IOS_BUNDLE_ID" \
@@ -212,6 +222,16 @@ jobs:
 
           install_profile "$IOS_PROFILE_PATH" "$IOS_PROFILE_NAME" mobileprovision
           install_profile "$MACCATALYST_PROFILE_PATH" "$MACCATALYST_PROFILE_NAME" provisionprofile
+          security cms -D -i "$WIDGET_PROFILE_PATH" > "$RUNNER_TEMP/widget-profile.plist"
+          for profile in "$RUNNER_TEMP/widget-profile.plist" "$RUNNER_TEMP/mobileprovision-profile.plist"; do
+            if ! /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' "$profile" | grep -q 'group.com.jimgreco.commonweek'; then
+              echo '::error::Enable group.com.jimgreco.commonweek for the iOS app and widget bundle IDs in Apple Developer, then regenerate their provisioning profiles. See docs/SETUP.md.'
+              exit 1
+            fi
+          done
+          WIDGET_UUID="$(plutil -extract UUID raw -o - "$RUNNER_TEMP/widget-profile.plist")"
+          cp "$WIDGET_PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$WIDGET_UUID.mobileprovision"
+
 
 
       - name: Compute build metadata
@@ -241,7 +261,8 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            APP_PROFILE_NAME="$PROFILE_NAME" \
+            WIDGET_PROFILE_NAME="$WIDGET_PROFILE_NAME" \
             CURRENT_PROJECT_VERSION="$APP_BUILD_NUMBER" \
             archive
 
@@ -329,6 +350,8 @@ jobs:
             <dict>
               <key>${IOS_BUNDLE_ID}</key>
               <string>${PROFILE_NAME}</string>
+              <key>${IOS_BUNDLE_ID}.widgets</key>
+              <string>${WIDGET_PROFILE_NAME}</string>
             </dict>
             <key>stripSwiftSymbols</key><true/>
             <key>uploadSymbols</key><true/>

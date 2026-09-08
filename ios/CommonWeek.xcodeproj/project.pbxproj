@@ -13,15 +13,22 @@
 		1EDD71A17A2152BF1D37220A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FE9DB5960BC4265E4C44FBEA /* PrivacyInfo.xcprivacy */; };
 		2FCBB27160146FD1A0B6838B /* MacPlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC7E5930C3EF8266880B1A6 /* MacPlannerView.swift */; };
 		33D0F8A5E3F3A191AB66C3A4 /* PlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 540DB50FE63FB747D5B0822A /* PlannerView.swift */; };
+		359709104684D14DA1751F59 /* QuickActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DF578A93D405346D009879C /* QuickActions.swift */; };
 		3902C8073C4B9AD59BF3AF8B /* AuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABF657900C4FFE9A5A8E859F /* AuthStore.swift */; };
 		3A1E0BE7211680E4FC0BB640 /* DayCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBB4BD1D591F466CDCAD021F /* DayCardView.swift */; };
+		45954E94EC9E5715617B5B42 /* WeekWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD089507C2BBCC80062FBFC /* WeekWidgets.swift */; };
 		51B1B07F6F38A69A7BA7A61F /* PlannerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF76B68EACAAC800419E71B7 /* PlannerViewModel.swift */; };
 		563CD0448C592384B7BEE26B /* OfflineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C7FB1EF7975CDF39025D1F /* OfflineStore.swift */; };
 		580BDC3D8A7E9AF082365A28 /* WeekDateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D280453135ABCB20247AFB /* WeekDateTests.swift */; };
+		5899BAACC180AFF12FBE26E7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4DEB933E35E8AE41195226EE /* PrivacyInfo.xcprivacy */; };
+		59C6757BE18BA4CF3C62B488 /* WeekTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BC17D905558E2E286D0D86E /* WeekTools.swift */; };
 		59DA9D0C29ACA1D36F85FFEC /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAA864FC8098B23F5DEEEA40 /* SnapshotHelper.swift */; };
+		5E3740638A80678959035D2A /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C0A1C1EF92830FC77DB828 /* WidgetSnapshot.swift */; };
 		60E1726747051AA65C8BBD33 /* AppleReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F4FB653815BBA68CECAE9B /* AppleReminders.swift */; };
 		70E0FC2B4A1E349189F00A0E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66D3F14C98728A22A430B035 /* Assets.xcassets */; };
 		7A8583A7642567A6496565A0 /* BackgroundRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */; };
+		7DC0D0A367D873EF73D5016A /* WeekToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC523FDAFABD3C14E7572B34 /* WeekToolsTests.swift */; };
+		87EF2111F3A32AD46128A2FE /* WeekWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7E10508B41CFE7191055B03B /* WeekWidgets.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8955D7FD9F3F1732386B80F6 /* PreviewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 486C7DCCE5B01586DDA720F4 /* PreviewData.swift */; };
 		8CB7268C1D33378B37229A52 /* CommonWeekApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E8618295C4BEC334961F6E0 /* CommonWeekApp.swift */; };
 		8DE3E510E3F610FB253B783D /* MacPlannerNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAE7F4C4D203BD0712A9E033 /* MacPlannerNavigation.swift */; };
@@ -31,6 +38,7 @@
 		A4B9F540A8BBDDC3DECAA190 /* CommonWeekScreenshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8331B2E2EC2CFC6ADBA542 /* CommonWeekScreenshots.swift */; };
 		A5017F6AC2B1F3907CDD5535 /* EditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E742DE5970A5A51F2F8406 /* EditorViews.swift */; };
 		A9BC2CB65D4DA11765D861AC /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3014EBACE5446E3C9F0BB9EE /* DetailViews.swift */; };
+		ABBF21B3FECAC509CDA072BA /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C0A1C1EF92830FC77DB828 /* WidgetSnapshot.swift */; };
 		AD26AC3ED9C99D8F23587974 /* AppleRemindersStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 061CAC11D7B6F3AA77E48F58 /* AppleRemindersStoreTests.swift */; };
 		B5B29713E342A3F05A6FF98F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194B7E6770649ECF980A47F1 /* APIClient.swift */; };
 		C452C1A3ECFC0FCB44393F8F /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 966E7B5827AF770CFD268416 /* Models.swift */; };
@@ -43,6 +51,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		9C2473A41152706FA46803A2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EBEA60E21C0B540508BFC32F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E0D69D39F76DB8C0FB8C0D59;
+			remoteInfo = WeekWidgets;
+		};
 		CFAEC57B89D4672AAEAA560D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = EBEA60E21C0B540508BFC32F /* Project object */;
@@ -59,10 +74,25 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		B5B719135FBCB080D71EEB05 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				87EF2111F3A32AD46128A2FE /* WeekWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		061CAC11D7B6F3AA77E48F58 /* AppleRemindersStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleRemindersStoreTests.swift; sourceTree = "<group>"; };
 		089FDAFB595631006ABDEC55 /* FamilyPlanningViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanningViews.swift; sourceTree = "<group>"; };
 		0B0876CEA88D6489E9350516 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		0DF578A93D405346D009879C /* QuickActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActions.swift; sourceTree = "<group>"; };
 		13927DF55278747670B39822 /* CommonWeek.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CommonWeek.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		14A1CA4C82B995948B44F51A /* NotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCoordinator.swift; sourceTree = "<group>"; };
 		15D280453135ABCB20247AFB /* WeekDateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekDateTests.swift; sourceTree = "<group>"; };
@@ -75,26 +105,35 @@
 		4460E961C4CD945D28F9DA2B /* AppleRemindersClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleRemindersClient.swift; sourceTree = "<group>"; };
 		46C7FB1EF7975CDF39025D1F /* OfflineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineStore.swift; sourceTree = "<group>"; };
 		486C7DCCE5B01586DDA720F4 /* PreviewData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewData.swift; sourceTree = "<group>"; };
+		4DEB933E35E8AE41195226EE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		540DB50FE63FB747D5B0822A /* PlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerView.swift; sourceTree = "<group>"; };
 		54C2671E9B1E8A76FE122356 /* CommonWeek.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CommonWeek.entitlements; sourceTree = "<group>"; };
 		66D3F14C98728A22A430B035 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		6CD089507C2BBCC80062FBFC /* WeekWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekWidgets.swift; sourceTree = "<group>"; };
 		73103BD7E542B3780C527683 /* CommonWeekScreenshots.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CommonWeekScreenshots.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		741EB27C0B29673F259D35F9 /* FamilyPlanningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanningTests.swift; sourceTree = "<group>"; };
 		78E742DE5970A5A51F2F8406 /* EditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViews.swift; sourceTree = "<group>"; };
+		7E10508B41CFE7191055B03B /* WeekWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = WeekWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		83231BA8632DDC33D6A60E5A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		8971F5CDE9538481710D1578 /* AppleReminderRecurrence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleReminderRecurrence.swift; sourceTree = "<group>"; };
 		91AA3F476AC821FEC7698CC3 /* CommonWeekTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CommonWeekTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		957BF1AB37F7A9234D49080C /* WeekWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WeekWidgets.entitlements; sourceTree = "<group>"; };
 		966E7B5827AF770CFD268416 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		9BC17D905558E2E286D0D86E /* WeekTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekTools.swift; sourceTree = "<group>"; };
+		A81BDE7C63D0FEDCF44F50D2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefresh.swift; sourceTree = "<group>"; };
 		ABF657900C4FFE9A5A8E859F /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
 		CB485157E90B26B555EE1D77 /* TaskCarryover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCarryover.swift; sourceTree = "<group>"; };
 		CBC7E5930C3EF8266880B1A6 /* MacPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPlannerView.swift; sourceTree = "<group>"; };
+		CC523FDAFABD3C14E7572B34 /* WeekToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekToolsTests.swift; sourceTree = "<group>"; };
 		D3D4AB04D74535B15E61C3F2 /* FamilyPlanningEditors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanningEditors.swift; sourceTree = "<group>"; };
 		DAE7F4C4D203BD0712A9E033 /* MacPlannerNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPlannerNavigation.swift; sourceTree = "<group>"; };
 		DB4AD6D78689E7F9DFED0B9E /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		E75F905F402D3487A486607C /* CommonWeek-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "CommonWeek-iOS.entitlements"; sourceTree = "<group>"; };
 		EAA864FC8098B23F5DEEEA40 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
 		EB945B3DAB17D185AC34288A /* FamilyPlanning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanning.swift; sourceTree = "<group>"; };
 		ED8331B2E2EC2CFC6ADBA542 /* CommonWeekScreenshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonWeekScreenshots.swift; sourceTree = "<group>"; };
+		F8C0A1C1EF92830FC77DB828 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		FBB4BD1D591F466CDCAD021F /* DayCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayCardView.swift; sourceTree = "<group>"; };
 		FE9DB5960BC4265E4C44FBEA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FF76B68EACAAC800419E71B7 /* PlannerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerViewModel.swift; sourceTree = "<group>"; };
@@ -107,6 +146,7 @@
 				13927DF55278747670B39822 /* CommonWeek.app */,
 				73103BD7E542B3780C527683 /* CommonWeekScreenshots.xctest */,
 				91AA3F476AC821FEC7698CC3 /* CommonWeekTests.xctest */,
+				7E10508B41CFE7191055B03B /* WeekWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,6 +157,8 @@
 				F79937A2D52A61EAA2E2039B /* CommonWeek */,
 				771669D16ED0DBA8EFC5E62A /* CommonWeekScreenshots */,
 				A4AA45FCCC82DD05E138133B /* CommonWeekTests */,
+				F51205462721025E50047EA5 /* Shared */,
+				8315169DB276BED0DBBBDDD9 /* WeekWidgets */,
 				059D81E61159033FDAB2A37F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -130,14 +172,34 @@
 			path = CommonWeekScreenshots;
 			sourceTree = "<group>";
 		};
+		8315169DB276BED0DBBBDDD9 /* WeekWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				A81BDE7C63D0FEDCF44F50D2 /* Info.plist */,
+				4DEB933E35E8AE41195226EE /* PrivacyInfo.xcprivacy */,
+				957BF1AB37F7A9234D49080C /* WeekWidgets.entitlements */,
+				6CD089507C2BBCC80062FBFC /* WeekWidgets.swift */,
+			);
+			path = WeekWidgets;
+			sourceTree = "<group>";
+		};
 		A4AA45FCCC82DD05E138133B /* CommonWeekTests */ = {
 			isa = PBXGroup;
 			children = (
 				061CAC11D7B6F3AA77E48F58 /* AppleRemindersStoreTests.swift */,
 				741EB27C0B29673F259D35F9 /* FamilyPlanningTests.swift */,
 				15D280453135ABCB20247AFB /* WeekDateTests.swift */,
+				CC523FDAFABD3C14E7572B34 /* WeekToolsTests.swift */,
 			);
 			path = CommonWeekTests;
+			sourceTree = "<group>";
+		};
+		F51205462721025E50047EA5 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F8C0A1C1EF92830FC77DB828 /* WidgetSnapshot.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		F79937A2D52A61EAA2E2039B /* CommonWeek */ = {
@@ -150,6 +212,7 @@
 				66D3F14C98728A22A430B035 /* Assets.xcassets */,
 				ABF657900C4FFE9A5A8E859F /* AuthStore.swift */,
 				AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */,
+				E75F905F402D3487A486607C /* CommonWeek-iOS.entitlements */,
 				54C2671E9B1E8A76FE122356 /* CommonWeek.entitlements */,
 				2E8618295C4BEC334961F6E0 /* CommonWeekApp.swift */,
 				FBB4BD1D591F466CDCAD021F /* DayCardView.swift */,
@@ -171,8 +234,10 @@
 				17AE84A55F77B2E94AAB5770 /* PlatformCopy.swift */,
 				486C7DCCE5B01586DDA720F4 /* PreviewData.swift */,
 				FE9DB5960BC4265E4C44FBEA /* PrivacyInfo.xcprivacy */,
+				0DF578A93D405346D009879C /* QuickActions.swift */,
 				DB4AD6D78689E7F9DFED0B9E /* SignInView.swift */,
 				CB485157E90B26B555EE1D77 /* TaskCarryover.swift */,
+				9BC17D905558E2E286D0D86E /* WeekTools.swift */,
 			);
 			path = CommonWeek;
 			sourceTree = "<group>";
@@ -222,10 +287,12 @@
 			buildPhases = (
 				6E2D1B50BFF157CA6673B1BB /* Sources */,
 				945050689C4BEA69A74BA878 /* Resources */,
+				B5B719135FBCB080D71EEB05 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				6F43C5E841D166F33879CEEF /* PBXTargetDependency */,
 			);
 			name = CommonWeek;
 			packageProductDependencies = (
@@ -233,6 +300,24 @@
 			productName = CommonWeek;
 			productReference = 13927DF55278747670B39822 /* CommonWeek.app */;
 			productType = "com.apple.product-type.application";
+		};
+		E0D69D39F76DB8C0FB8C0D59 /* WeekWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3F7E8BDF4F036C027AE57C79 /* Build configuration list for PBXNativeTarget "WeekWidgets" */;
+			buildPhases = (
+				DA8840FDC5A1EDCFBB6D7618 /* Sources */,
+				1BE8A30A6C5EF6D495DE4F9A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WeekWidgets;
+			packageProductDependencies = (
+			);
+			productName = WeekWidgets;
+			productReference = 7E10508B41CFE7191055B03B /* WeekWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -251,6 +336,9 @@
 						DevelopmentTeam = V6JPQCD336;
 					};
 					E0AA6906D86C0A1CC6E8DAFB = {
+						DevelopmentTeam = V6JPQCD336;
+					};
+					E0D69D39F76DB8C0FB8C0D59 = {
 						DevelopmentTeam = V6JPQCD336;
 					};
 				};
@@ -272,11 +360,20 @@
 				E0AA6906D86C0A1CC6E8DAFB /* CommonWeek */,
 				60DB16454917B71BDE127820 /* CommonWeekScreenshots */,
 				804BC5B671614AD9FFA0F47E /* CommonWeekTests */,
+				E0D69D39F76DB8C0FB8C0D59 /* WeekWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		1BE8A30A6C5EF6D495DE4F9A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5899BAACC180AFF12FBE26E7 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		945050689C4BEA69A74BA878 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -326,8 +423,20 @@
 				51B1B07F6F38A69A7BA7A61F /* PlannerViewModel.swift in Sources */,
 				96B40FA463F1498F8111690C /* PlatformCopy.swift in Sources */,
 				8955D7FD9F3F1732386B80F6 /* PreviewData.swift in Sources */,
+				359709104684D14DA1751F59 /* QuickActions.swift in Sources */,
 				D64C4B2C7F21A9FA87564205 /* SignInView.swift in Sources */,
 				9066D9D477831FABB305C0C9 /* TaskCarryover.swift in Sources */,
+				59C6757BE18BA4CF3C62B488 /* WeekTools.swift in Sources */,
+				ABBF21B3FECAC509CDA072BA /* WidgetSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DA8840FDC5A1EDCFBB6D7618 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				45954E94EC9E5715617B5B42 /* WeekWidgets.swift in Sources */,
+				5E3740638A80678959035D2A /* WidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -338,6 +447,7 @@
 				AD26AC3ED9C99D8F23587974 /* AppleRemindersStoreTests.swift in Sources */,
 				96517295FE6D3D77B8E97C51 /* FamilyPlanningTests.swift in Sources */,
 				580BDC3D8A7E9AF082365A28 /* WeekDateTests.swift in Sources */,
+				7DC0D0A367D873EF73D5016A /* WeekToolsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -348,6 +458,14 @@
 			isa = PBXTargetDependency;
 			target = E0AA6906D86C0A1CC6E8DAFB /* CommonWeek */;
 			targetProxy = CFAEC57B89D4672AAEAA560D /* PBXContainerItemProxy */;
+		};
+		6F43C5E841D166F33879CEEF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilters = (
+				ios,
+			);
+			target = E0D69D39F76DB8C0FB8C0D59 /* WeekWidgets */;
+			targetProxy = 9C2473A41152706FA46803A2 /* PBXContainerItemProxy */;
 		};
 		C74F9A21CA97220E1DFB0ABD /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -461,6 +579,28 @@
 			};
 			name = Debug;
 		};
+		77D55B7B94DFD3B797609CAA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = WeekWidgets/WeekWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WeekWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Family Week";
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek.widgets;
+				PROVISIONING_PROFILE_SPECIFIER = "$(WIDGET_PROFILE_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 		88A6FA91E33CB3D9AB6FC77B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -565,6 +705,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CommonWeek/CommonWeek.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "CommonWeek/CommonWeek-iOS.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Distribution";
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				"ENABLE_APP_SANDBOX[sdk=macosx*]" = YES;
@@ -581,12 +722,35 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek;
 				PRODUCT_MODULE_NAME = CommonWeek;
 				PRODUCT_NAME = "Week of Us";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "$(APP_PROFILE_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;
 				TARGETED_DEVICE_FAMILY = 1;
 				"TARGETED_DEVICE_FAMILY[sdk=macosx*]" = 6;
 			};
 			name = Release;
+		};
+		BDE30B883C4B05C9646E2AB6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = WeekWidgets/WeekWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = WeekWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Family Week";
+				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek.widgets;
+				PROVISIONING_PROFILE_SPECIFIER = "$(WIDGET_PROFILE_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
 		};
 		DE18E6F36AE4A30E771F9B64 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -595,6 +759,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CommonWeek/CommonWeek.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "CommonWeek/CommonWeek-iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				"ENABLE_APP_SANDBOX[sdk=macosx*]" = YES;
@@ -611,6 +776,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.jimgreco.commonweek;
 				PRODUCT_MODULE_NAME = CommonWeek;
 				PRODUCT_NAME = "Week of Us";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "$(APP_PROFILE_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -635,6 +801,15 @@
 			buildConfigurations = (
 				DE18E6F36AE4A30E771F9B64 /* Debug */,
 				8E0E4038C1C1EBFB159EC8B0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3F7E8BDF4F036C027AE57C79 /* Build configuration list for PBXNativeTarget "WeekWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BDE30B883C4B05C9646E2AB6 /* Debug */,
+				77D55B7B94DFD3B797609CAA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

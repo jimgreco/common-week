@@ -355,6 +355,7 @@ struct TaskWorkspaceView: View {
     @State private var tasks: [WorkspaceTask] = []
     @State private var filter = "All"
     @State private var capture = ""
+    @FocusState private var captureFocused: Bool
     @State private var error: String?
     @State private var busy = false
     @State private var selected: WorkspaceTask?
@@ -366,7 +367,7 @@ struct TaskWorkspaceView: View {
             List {
                 if viewModel.canEditHousehold {
                     Section("Capture now, plan later") {
-                        TextField("New task", text: $capture).accessibilityIdentifier("backlog-capture")
+                        TextField("New task", text: $capture).focused($captureFocused).accessibilityIdentifier("backlog-capture")
                         Button("Add to backlog") { Task { await add() } }.disabled(busy || capture.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
@@ -389,7 +390,7 @@ struct TaskWorkspaceView: View {
             }
             .navigationTitle("Household tasks")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.fixedSize() } }
-            .task { await reload(); if let initialItemId { selected = tasks.first { $0.id == initialItemId } } }
+            .task { await reload(); if initialItemId == "quick-mine" { filter = "Mine" }; if initialItemId == "quick-capture" { filter = "Backlog"; captureFocused = true }; if let initialItemId { selected = tasks.first { $0.id == initialItemId } } }
             .refreshable { await reload() }
             .sheet(item: $selected, onDismiss: { Task { await reload(); await viewModel.load(quietly: true) } }) { task in
                 ItemCollaborationView(resource: ["itemId": task.id], title: task.text, planner: planner, viewModel: viewModel).familyPlanningSheetSize()

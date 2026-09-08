@@ -319,6 +319,30 @@ try {
   await workspace(owner.token,{action:"task",resource,responsibleMemberId:child.id});
   console.log("Task workspace integration passed: assignment notifications, concurrent claims, backlog carryover, scheduling, deadlines, shared checklist/comments/files, and event privacy.");
 
+  const coverageInput={calendarId:sharedCalendar,eventId:"coverage-occurrence",childId:child.id,dropOffUserId:owner.userId,pickupUserId:partner.userId,dropOffNeeded:true,pickupNeeded:true,travelMinutes:20,notes:"School gate",revision:0};
+  const coverage=await api(owner.token,"/api/coverage",coverageInput);
+  assert.equal(coverage.ok,true,coverage.error);
+  assert.equal(coverage.data.find(r=>r.eventId===coverageInput.eventId).revision,1);
+  assert.equal((await api(owner.token,"/api/coverage",coverageInput)).ok,false,"stale coverage cannot overwrite another edit");
+  assert.equal((await api(viewer.token,"/api/coverage",{...coverageInput,revision:1})).ok,false,"viewers cannot assign coverage");
+  assert.equal((await api(outsider.token,"/api/coverage",{...coverageInput,revision:1})).ok,false,"coverage is household private");
+  assert.equal((await api(partner.token,"/api/coverage",{...coverageInput,calendarId:privateCalendar})).ok,false,"private calendar transport remains private");
+  assert.equal((await api(owner.token,"/api/coverage",{...coverageInput,pickupUserId:outsider.userId,revision:1})).ok,false,"foreign adults cannot be assigned");
+  assert.equal((await api(owner.token,"/api/coverage",{...coverageInput,revision:1,confirmation:"pickup"})).ok,false,"only assigned adult confirms");
+  const confirmed=await api(partner.token,"/api/coverage",{...coverageInput,revision:1,confirmation:"pickup",confirmed:true});
+  assert.equal(confirmed.ok,true,confirmed.error);
+  assert.equal(confirmed.data.find(r=>r.eventId===coverageInput.eventId).pickupConfirmed,true);
+  const changed=await api(owner.token,"/api/coverage",{...coverageInput,revision:2,pickupUserId:owner.userId});
+  assert.equal(changed.data.find(r=>r.eventId===coverageInput.eventId).pickupConfirmed,false,"reassignment resets confirmation");
+  assert.equal((await api(outsider.token,"/api/coverage")).data.length,0);
+  const departed=await api(owner.token,"/api/coverage",{...coverageInput,revision:3});
+  assert.equal(departed.ok,true,departed.error);
+  await client.query("delete from household_members where household_id=$1 and user_id=$2",[householdIds[0],partner.userId]);
+  const afterDeparture=(await api(owner.token,"/api/coverage")).data.find(r=>r.eventId===coverageInput.eventId);
+  assert.equal(afterDeparture.pickupUserId,null,"departed adult coverage becomes uncovered");
+  assert.equal(afterDeparture.pickupConfirmed,false);
+  console.log("Coverage integration passed: shared Google event metadata, revisions, confirmation ownership, private calendars, viewer and household isolation.");
+
   await change(owner.token, { action: "deleteChild", id: child.id });
   assert.equal((await workspace(owner.token)).tasks.find(t=>t.id===captureId).responsibleMemberId,null,"deleted child responsibility is cleared");
   const retainedTask = items(await planner(owner.token)).find((item) => item.id === taskId);

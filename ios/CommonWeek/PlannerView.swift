@@ -10,6 +10,8 @@ enum PlannerSheet: Identifiable {
     case search
     case notifications
     case settings
+    case coverage
+    case shareWeek
     case taskWorkspace(String? = nil)
     case familyPlanning
 
@@ -23,6 +25,8 @@ enum PlannerSheet: Identifiable {
         case .location(let day): "location-\(day.date)"
         case .search: "search"
         case .notifications: "notifications"
+        case .coverage: "coverage"
+        case .shareWeek: "share-week"
         case .taskWorkspace: "task-workspace"
         case .familyPlanning: "family-planning"
         case .settings: "settings"
@@ -106,6 +110,10 @@ struct PlannerView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { BrandMark(compact: true) }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Button { sheet = .coverage } label: { Label("Pickup & drop-off", systemImage: "car.side") }
+                        Button { sheet = .shareWeek } label: { Label("Share week", systemImage: "square.and.arrow.up") }
+                    } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Week tools")
                     Button { sheet = .taskWorkspace() } label: { Image(systemName: "checklist") }.accessibilityLabel("Tasks and backlog")
                     Button { sheet = .familyPlanning } label: { Image(systemName: "person.2.badge.gearshape") }
                         .accessibilityLabel("Plan your week")
@@ -137,7 +145,7 @@ struct PlannerView: View {
                 sheetView(destination)
                     .presentationDragIndicator(.visible)
             }
-            .task(id: notifications.pendingDestination) {
+            .task(id: "\(String(describing: notifications.pendingDestination))-\(viewModel.data?.weekStart ?? "loading")") {
                 await openPendingNotification()
             }
         }
@@ -150,6 +158,13 @@ struct PlannerView: View {
             if let item = notifications.inbox.items.first(where: { $0.id == id }) {
                 await openInboxItem(item)
             }
+            notifications.consume(destination)
+            return
+        }
+        if case .taskWorkspace(let id) = destination.target, destination.weekStart == nil {
+            if viewModel.data == nil { await viewModel.load(quietly: true) }
+            guard viewModel.data != nil else { return }
+            sheet = .taskWorkspace(id)
             notifications.consume(destination)
             return
         }
@@ -479,6 +494,8 @@ struct PlannerView: View {
             case .notifications: NotificationInboxView(coordinator: notifications, onOpen: { item in
                 Task { await openInboxItem(item) }
             })
+            case .coverage: CoverageView(planner: data, viewModel: viewModel)
+            case .shareWeek: WeekShareView(planner: data, viewModel: viewModel)
             case .taskWorkspace(let id): TaskWorkspaceView(planner: data, viewModel: viewModel, initialItemId: id)
             case .familyPlanning: FamilyPlanningView(planner: data, viewModel: viewModel)
             case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth, appleReminders: appleReminders)

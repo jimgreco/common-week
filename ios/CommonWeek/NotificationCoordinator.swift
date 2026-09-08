@@ -27,6 +27,12 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
+        let snooze = UNNotificationAction(identifier: "SNOOZE", title: "Snooze 15 minutes", options: [.authenticationRequired])
+        let complete = UNNotificationAction(identifier: "COMPLETE", title: "Complete task", options: [.authenticationRequired])
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(identifier: "FAMILY_TASK", actions: [complete, snooze], intentIdentifiers: []),
+            UNNotificationCategory(identifier: "FAMILY_REMINDER", actions: [snooze], intentIdentifiers: [])
+        ])
     }
 
     func refreshAuthorizationStatus() async {
@@ -127,6 +133,8 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
     }
 
     func unregisterCurrentAccount() async {
+        let pending = await UNUserNotificationCenter.current().pendingNotificationRequests()
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: pending.filter { $0.identifier.hasPrefix("snooze-") }.map(\.identifier))
         guard APIClient.shared.token != nil,
               let token = UserDefaults.standard.string(forKey: "pushDeviceToken") else { return }
         do {
@@ -135,6 +143,10 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
         } catch {
             registrationError = error.localizedDescription
         }
+    }
+
+    func openQuickTasks(capture: Bool) {
+        pendingDestination = PlannerNotificationDestination(weekStart: nil, target: .taskWorkspace(capture ? "quick-capture" : "quick-mine"))
     }
 
     func consume(_ destination: PlannerNotificationDestination) {
@@ -183,8 +195,30 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
         let destination = (response.notification.request.content.userInfo["path"] as? String)
             .flatMap(Self.plannerDestination(for:))
         Task { @MainActor in
-            if let destination { self.pendingDestination = destination }
             await self.refreshInbox()
+            do {
+                if response.actionIdentifier == "COMPLETE" || response.actionIdentifier == "SNOOZE" {
+                    let freshInbox = try await APIClient.shared.notificationInbox()
+                    self.inbox = freshInbox
+                    guard let destination, case .inbox(let id) = destination.target,
+                          let item = freshInbox.items.first(where: { $0.id == id }), APIClient.shared.token != nil else { throw APIError.server("Open the app to act on this notification.") }
+                    if response.actionIdentifier == "COMPLETE" {
+                        let query = URLComponents(string: item.deepLink)?.queryItems
+                        guard let task = item.target?.planningItemId ?? query?.first(where: { $0.name == "task" })?.value else { throw APIError.server("This notification is not an available task.") }
+                        try await APIClient.shared.mutateTaskWorkspace(["action": .string("task"), "resource": .object(["itemId": .string(task)]), "isCompleted": .bool(true)])
+                        center.removePendingNotificationRequests(withIdentifiers: ["snooze-\(id)"])
+                        await self.markRead(id)
+                        WidgetPublisher.publish(nil, userId: "")
+                    } else {
+                        let content = response.notification.request.content.mutableCopy() as! UNMutableNotificationContent
+                        content.badge = nil
+                        try await center.add(UNNotificationRequest(identifier: "snooze-\(id)", content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 900, repeats: false)))
+                    }
+                } else if let destination { self.pendingDestination = destination }
+            } catch {
+                self.inboxError = error.localizedDescription
+                if let destination { self.pendingDestination = destination }
+            }
             completionHandler()
         }
     }

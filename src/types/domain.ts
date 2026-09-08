@@ -180,6 +180,7 @@ export type GoogleCalendarAccessRole =
   | "owner";
 
 export interface EditableCalendar {
+  visibility?: CalendarVisibility;
   id: string;
   sourceUserId?: string;
   name: string;

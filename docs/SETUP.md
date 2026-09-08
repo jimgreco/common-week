@@ -132,3 +132,30 @@ The browser never connects to PostgreSQL. Household identity comes from the serv
 - Interrupt the iPhone network, confirm the protected cached week remains visible, create/update/complete/delete planner items and change a location, then restore connectivity and confirm the queued edit count returns to zero without duplicates.
 - Exercise invite delivery, resend, cancel, member removal, leave, and owner transfer. Confirm expired/revoked links fail closed.
 - Delete a non-owner account and a sole-owner account from both web and iPhone; confirm data and local cache are removed and Apple/Google access is revoked. Confirm an owner with remaining members must transfer ownership first.
+
+### Family week widgets (iPhone)
+
+The iOS app embeds `com.jimgreco.commonweek.widgets`. The App Group
+`group.com.jimgreco.commonweek` was registered and assigned to both the app and
+widget identifiers in Apple Developer on 2026-09-08. For a new developer team,
+repeat that registration and association before releasing. Regenerate the two iOS App Store profiles
+named in `.github/workflows/testflight.yml` after associating the group. The
+workflow checks both profiles for the group before archiving. The Mac Catalyst
+build does not embed the iPhone widget extension or use this entitlement.
+
+Widgets show a local snapshot of shared timed events and tasks assigned to the
+signed-in adult. Private calendars and notes are excluded. The snapshot is
+cleared on sign-out and expires after 24 hours; opening the current week refreshes
+it. Widget taps open My tasks or the backlog capture field. Shortcuts exposes
+“Add a family task” and “Open my family tasks”; adding requires a signed-in account
+and saves to the shared backlog. Notification Complete updates the household task;
+Snooze schedules a device-local reminder for 15 minutes and requires unlocking.
+
+Migration 019 stores per-occurrence pickup/drop-off coverage separately from
+Google Calendar. Changes use revision checks, and only the assigned adult may
+confirm a handoff. Travel warnings use a manual buffer, not live routing.
+
+Share week is available on web, iPhone and Mac. Notes and private calendars are
+opt-in, exports contain only the chosen people and details, and kitchen display
+refreshes the selected week every minute. PDFs are static copies; refresh or
+export again after changing the plan.

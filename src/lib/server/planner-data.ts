@@ -326,6 +326,7 @@ export async function getPlannerData(
     weeklyItems: items.filter((item) => item.planningDate === null),
     locations,
     visibleCalendars: visibleCalendarRows.map((calendar) => ({
+      visibility: calendar.visibility,
       id: calendar.id,
       sourceUserId: calendar.user_id,
       name: calendar.display_alias ?? calendar.calendar_name,
