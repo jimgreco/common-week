@@ -49,6 +49,7 @@ jobs:
       - run: npm run db:migrate
       - run: npm run test:database
       - run: npm run build
+      - run: npm run test:family
       - run: npm run test:smoke
 
   ios:

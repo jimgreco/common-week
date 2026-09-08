@@ -12,6 +12,9 @@ The production application uses the existing self-hosted PostgreSQL 16 service. 
 - Seven-column desktop week and stacked iPhone week with previous/current/next navigation
 - Native SwiftUI iPhone companion with Keychain sessions, Google OAuth handoff, in-app Calendar connection and management, protected offline snapshots, queued planner/location edits, and background refresh
 - Daily and weekly notes/tasks, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
+- Repeating shared tasks with daily, weekday, weekly, and custom-interval schedules; reusable templates for a week's one-off plans and tasks
+- Children’s profiles with names, colors, linked calendars, and tagged shared plans/tasks, without creating sign-in accounts
+- Guided weekly planning with unfinished work, calendar commitments, routines, children’s schedules, shared priorities/meals/logistics notes, and each adult’s review status
 - Email and iPhone-push reminders, morning agendas, Sunday planning prompts, and opt-in household-change alerts with a shared web/native inbox, per-channel delivery history, reliable deep links, and catch-up after downtime
 - Calendar search, attendee status and RSVP, plus occurrence-or-series editing and deletion for recurring Google events
 - Saved/default/travel locations, day/through-Sunday/whole-week assignment, and Open-Meteo geocoding
@@ -48,7 +51,7 @@ npm run test:run
 npm run build && npm run test:smoke
 npm run db:migrate
 npm run test:database
-npm run build
+npm run test:family
 ```
 
 The native app lives in [`ios`](ios). Open [`ios/CommonWeek.xcodeproj`](ios/CommonWeek.xcodeproj) in Xcode, or see the [iPhone development guide](ios/README.md) for project generation, simulator, and API setup.
@@ -63,6 +66,20 @@ The native app lives in [`ios`](ios). Open [`ios/CommonWeek.xcodeproj`](ios/Comm
 - **Date safety:** planning dates remain `YYYY-MM-DD` strings; Monday boundaries are computed without converting date-only values through UTC.
 - **Realtime:** PostgreSQL triggers publish only household/table identifiers; the authenticated event stream filters those notifications and never exposes row data.
 - **Credential boundary:** Google access and refresh tokens are encrypted with AES-256-GCM before storage and are used only in server modules.
+
+## Family planning
+
+Open **Plan this week** from the planner, or **Plan next week** to prepare the coming week. The guide brings unfinished tasks, calendar commitments, recurring routines, children, shared notes, and review status into one workflow. The Sunday planning notification opens this guide for the coming week.
+
+- Add children by name and color in the guide. Linking a calendar keeps its existing visibility and editing permissions. Tag a shared task or plan with a child to include it in that child’s week; children do not need an account or email address.
+- Create recurring shared tasks in **Routines**. Each scheduled occurrence has its own completion state. Weekly routines can belong to the whole week or selected weekdays. Custom intervals cover schedules such as every other week.
+- Editing or stopping a routine updates its open future occurrences. Completed tasks, past occurrences, and explicitly deleted occurrences are preserved. Reloading a week cannot recreate a deleted occurrence. Existing unfinished-task carryover continues to preserve task identity.
+- Save a week’s one-off plans and tasks as a named template and apply it to another week. Repeating tasks already come from their routines and are excluded from templates. Applying the same template twice to the same week does not duplicate items.
+- Save shared priorities, meal ideas, and logistics notes, then mark the week reviewed. Each adult reviews for themselves. Changing the shared notes requires a new review; simultaneous edits report a conflict rather than silently replacing another person’s notes.
+
+Apply migration `015_family_planning.sql` before deploying these features. Profile, routine, template, and review changes require a connection; native shared-task editing retains its existing offline support. Recurring tasks are generated when a current or future week is loaded, up to two years ahead; browsing older weeks does not create historical chores.
+
+After a production build, `DATABASE_URL=... npm run test:family` starts a local authenticated application and checks the family workflows against PostgreSQL. It creates isolated test households and removes them when finished. Set `FAMILY_TEST_BASE_URL` to test an already running local application instead.
 
 Key paths:
 

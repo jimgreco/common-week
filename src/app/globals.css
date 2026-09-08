@@ -1150,3 +1150,149 @@ textarea:focus-visible {
   .paper-preview-day:nth-child(4) { background: rgb(26 53 41 / 38%); }
   .skeleton { background: linear-gradient(100deg, #202c26 30%, #2a3931 50%, #202c26 70%); background-size: 200% 100%; }
 }
+
+/* Shared family planning */
+.family-planning-strip { max-width: 1800px; margin: 0 auto 18px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 20px; border: 1px solid var(--rule); border-radius: 16px; background: var(--white); box-shadow: var(--shadow-sm); }
+.family-strip-title, .family-strip-actions { display: flex; align-items: center; gap: 14px; }
+.family-strip-icon { display: grid; place-items: center; width: 44px; height: 44px; background: var(--accent-wash); color: var(--accent); border-radius: 13px; }
+.family-strip-title strong { display: block; font-family: var(--font-display), Georgia, serif; font-size: 22px; font-weight: 500; letter-spacing: -.025em; }
+.family-strip-title div > span { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 11px; }
+.family-strip-actions > .text-button { display: flex; align-items: center; gap: 6px; padding: 8px 3px; font-size: 12px; }
+.family-child-filters { display: flex; flex-wrap: wrap; gap: 7px; max-width: 1800px; margin: 0 auto 12px; }
+.family-child-filters > button { border: 1px solid var(--rule); padding: 8px 13px; background: var(--white); border-radius: 24px; font-size: 12px; cursor: pointer; }
+.family-child-filters > button.is-active { border-color: var(--accent); background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent); }
+.child-badge { display: inline-flex; align-items: center; gap: 5px; width: fit-content; color: var(--ink-soft); font-size: 10px; line-height: 1.5; }
+.child-badge i, .family-calendar-links i { display: inline-block; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; }
+.planning-row-body > .child-badge { margin-top: 3px; }
+.routine-item-label { display: block; margin-top: 3px; font-size: 9px; color: var(--muted); }
+.family-guide-heading { padding: 24px 28px 22px; background: linear-gradient(125deg, var(--accent-wash), var(--paper)); }
+.family-kicker { font-size: 9px; letter-spacing: .15em; font-weight: 650; color: var(--accent); }
+.family-guide-heading h3 { margin: 10px 0 5px; font: 500 36px/1.1 var(--font-display), Georgia, serif; letter-spacing: -.04em; }
+.family-guide-heading p { margin: 0; color: var(--ink-soft); font-size: 13px; }
+.family-steps { display: flex; gap: 3px; overflow-x: auto; padding: 13px 16px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.family-steps button { display: flex; align-items: center; justify-content: center; flex: 1; gap: 5px; padding: 8px 5px; min-width: max-content; border: 0; border-radius: 8px; background: transparent; color: var(--ink-soft); font-size: 10px; cursor: pointer; }
+.family-steps button > span { display: grid; place-items: center; height: 18px; width: 18px; flex-shrink: 0; background: var(--paper-deep); border-radius: 50%; font-size: 9px; }
+.family-steps button[aria-current="step"] { color: var(--accent-strong); background: var(--accent-wash); font-weight: 650; }
+.family-steps button[aria-current="step"] > span { background: var(--accent); color: var(--white); }
+.family-step-content { padding: 25px 28px; min-height: 330px; }
+.family-section-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.family-section-heading .eyebrow { font-size: 9px; }
+.family-section-heading h3 { margin: 6px 0 9px; font: 500 26px/1.15 var(--font-display), Georgia, serif; letter-spacing: -.03em; }
+.family-section-heading h4 { margin: 0 0 7px; font-size: 15px; font-weight: 600; }
+.family-section-heading p { color: var(--ink-soft); margin: 0; font-size: 12px; line-height: 1.7; }
+.family-count { padding: 7px 10px; border-radius: 20px; background: var(--accent-wash); color: var(--accent); font-size: 10px; white-space: nowrap; }
+.family-muted { margin: 16px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.family-item-list { display: flex; flex-direction: column; }
+.family-task { display: flex; align-items: center; gap: 10px; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+.family-complete { display: flex; align-items: center; padding: 3px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.family-task-copy { flex: 1; min-width: 0; padding: 0; text-align: left; border: 0; background: transparent; cursor: pointer; }
+.family-task-copy strong { display: block; font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.family-task-copy small { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); }
+.family-task > .text-button { display: flex; gap: 4px; align-items: center; font-size: 10px; white-space: nowrap; }
+.family-empty { display: grid; justify-items: center; padding: 40px 15px; text-align: center; color: var(--accent); background: var(--accent-wash); border-radius: 14px; }
+.family-empty h4 { margin: 13px 0 5px; font: 500 24px var(--font-display), Georgia, serif; }
+.family-empty p { margin: 0; color: var(--ink-soft); font-size: 12px; }
+.family-provider-state { padding: 12px 14px; border: 1px solid var(--rule-strong); border-radius: 10px; color: var(--ink-soft); background: var(--paper); font-size: 12px; line-height: 1.6; }
+.family-agenda { display: grid; gap: 0; border: 1px solid var(--rule); border-radius: 13px; overflow: hidden; }
+.family-agenda section { display: grid; grid-template-columns: 100px 1fr; border-bottom: 1px solid var(--rule); }
+.family-agenda section:last-child { border-bottom: 0; }
+.family-agenda section > header { padding: 13px; background: var(--paper); }
+.family-agenda header strong, .family-agenda header small { display: block; }
+.family-agenda header strong { font-size: 12px; }
+.family-agenda header small { color: var(--muted); font-size: 9px; margin-top: 3px; }
+.family-agenda section > div { padding: 5px 10px; }
+.family-agenda section p { color: var(--muted); margin: 12px 0; font-size: 11px; }
+.family-agenda button { display: flex; width: 100%; align-items: center; gap: 8px; padding: 8px 0; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.family-agenda button > i { width: 4px; height: 18px; border-radius: 3px; }
+.family-agenda button > span { flex: 1; font-size: 11px; }
+.family-agenda button > small { color: var(--warning); font-size: 9px; }
+.family-card-list { display: flex; flex-direction: column; gap: 8px; }
+.family-routine, .family-template { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--white); }
+.family-routine > svg { color: var(--accent); }
+.family-routine > div:first-of-type, .family-template > div:first-child { flex: 1; min-width: 100px; }
+.family-routine strong, .family-template strong { font-size: 12px; font-weight: 600; }
+.family-routine p, .family-template small { display: block; font-size: 10px; line-height: 1.6; color: var(--muted); margin: 4px 0 0; }
+.family-routine.is-paused { background: var(--paper); }
+.family-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.family-row-actions .text-button { font-size: 11px; }
+.family-add-button { margin-top: 12px; }
+.family-editor { padding: 18px; border: 1px solid var(--rule-strong); border-radius: 13px; background: var(--paper); }
+.family-editor label, .routine-fields label, .family-template-save label { font-size: 11px; }
+.family-editor input, .family-editor select, .routine-fields input, .routine-fields select, .family-template-save input { width: 100%; min-width: 0; min-height: 39px; padding: 8px 10px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--white); color: var(--ink); }
+.routine-fields small { color: var(--muted); font-weight: 400; }
+.family-weekdays, .child-colors, .family-calendar-links { border: 0; padding: 0; margin: 0; min-width: 0; }
+.family-weekdays legend, .child-colors legend, .family-calendar-links legend { margin-bottom: 10px; font-size: 11px; font-weight: 550; }
+.family-weekdays legend small { display: block; margin-top: 4px; font-size: 10px; }
+.family-weekdays > div { display: flex; gap: 5px; flex-wrap: wrap; }
+.family-weekdays label { position: relative; }
+.family-weekdays input, .child-colors input { position: absolute; width: 100%; height: 100%; min-height: 0; padding: 0; margin: 0; opacity: 0; cursor: pointer; }
+.family-weekdays span { display: grid; place-items: center; min-width: 37px; height: 36px; padding: 0 7px; border: 1px solid var(--rule-strong); border-radius: 8px; color: var(--ink-soft); background: var(--white); font-size: 10px; }
+.family-weekdays input:checked + span { background: var(--accent); color: #fff; border-color: var(--accent); }
+.family-weekdays input:focus-visible + span, .child-colors input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 3px; }
+.family-form-actions { display: flex; justify-content: flex-end; gap: 9px; }
+.family-template-section { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--rule); }
+.family-template .button { min-height: 34px; font-size: 10px; }
+.family-template-preview { flex-basis: 100%; padding: 14px; border-radius: 9px; background: var(--accent-wash); }
+.family-template-preview ul { margin: 12px 0; padding-left: 17px; font-size: 11px; line-height: 1.8; }
+.family-template-save { display: flex; align-items: flex-end; gap: 10px; margin-top: 17px; }
+.family-template-save label { display: grid; gap: 7px; flex: 1; }
+.family-template-save .button { font-size: 11px; }
+.child-colors { display: flex; gap: 10px; }
+.child-colors label { display: inline-block; position: relative; }
+.child-colors span { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 50%; color: white; }
+.family-calendar-links p { font-size: 11px; line-height: 1.7; color: var(--muted); margin: 0 0 10px; }
+.family-calendar-links > label { display: flex; align-items: center; flex-direction: row; gap: 8px; padding: 8px 0; }
+.family-calendar-links input { width: 15px; height: 15px; min-height: 0; padding: 0; accent-color: var(--accent); }
+.family-children-grid { display: grid; gap: 10px; }
+.family-child-card { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--rule); border-radius: 13px; flex-wrap: wrap; }
+.family-child-avatar { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 14px; font: 500 23px var(--font-display), Georgia, serif; color: #fff; }
+.family-child-card > div:first-of-type { flex: 1; }
+.family-child-card h4 { font-size: 14px; margin: 0; font-weight: 600; }
+.family-child-card p { font-size: 10px; color: var(--muted); margin: 6px 0 0; }
+.family-child-confirm { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; background: var(--danger-surface); border-radius: 9px; }
+.family-child-confirm p { flex-basis: 100%; margin: 0 0 5px; color: var(--danger-ink); }
+.family-review-notes label > span { font-family: var(--font-display), Georgia, serif; font-size: 20px; font-weight: 500; }
+.family-review-notes label > small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.family-review-notes textarea { min-height: 85px; resize: vertical; font-size: 12px; line-height: 1.65; background: var(--paper); }
+.family-review-notes + .button { margin-top: 18px; }
+.family-plan-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 21px; }
+.family-plan-summary > div { padding: 16px 10px; text-align: center; border-radius: 12px; background: var(--accent-wash); }
+.family-plan-summary strong { display: block; color: var(--accent); font: 500 31px var(--font-display), Georgia, serif; }
+.family-plan-summary span { display: block; color: var(--ink-soft); font-size: 10px; margin-top: 5px; }
+.family-reviewers { display: flex; flex-direction: column; gap: 12px; }
+.family-reviewers > div { display: flex; gap: 11px; align-items: center; }
+.family-review-check { display: grid; place-items: center; width: 29px; height: 29px; color: var(--muted); background: var(--paper); border-radius: 50%; }
+.family-review-check.is-reviewed { color: var(--accent); background: var(--accent-soft); }
+.family-reviewers strong { font-size: 12px; font-weight: 550; flex: 1; }
+.family-reviewers small { color: var(--muted); font-size: 10px; }
+.family-review-button { margin-top: 20px; }
+.family-error { color: var(--danger-ink); background: var(--danger-surface); padding: 12px 14px; border-radius: 9px; font-size: 12px; line-height: 1.6; }
+.family-success { display: flex; align-items: flex-start; gap: 7px; background: var(--accent-wash); color: var(--accent-strong); padding: 12px 14px; border-radius: 9px; font-size: 12px; line-height: 1.6; }
+.family-success svg { flex-shrink: 0; margin-top: 2px; }
+.family-guide-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 28px; border-top: 1px solid var(--rule); background: var(--paper); border-radius: 0 0 20px 20px; }
+.family-guide-footer > span { color: var(--muted); font-size: 10px; }
+.item-repeat-control { border-top: 1px solid var(--rule); padding-top: 15px; }
+.item-repeat-control .routine-fields { margin-top: 15px; }
+@media (max-width: 760px) {
+  .family-planning-strip { flex-wrap: wrap; gap: 14px; padding: 15px; }
+  .family-strip-title strong { font-size: 20px; }
+  .family-strip-actions { width: 100%; gap: 13px; }
+  .family-strip-actions .button { margin-left: auto; font-size: 11px; }
+  .family-guide-heading { padding: 22px 19px; }
+  .family-guide-heading h3 { font-size: 30px; }
+  .family-step-content { padding: 23px 18px; }
+  .family-guide-footer { padding: 15px 18px; }
+  .family-section-heading h3 { font-size: 24px; }
+  .family-steps { padding-inline: 12px; }
+  .family-steps button { font-size: 9px; }
+}
+@media (max-width: 420px) {
+  .family-strip-actions { gap: 8px; }
+  .family-strip-actions > .text-button { font-size: 10px; gap: 3px; }
+  .family-strip-actions .button { padding-inline: 10px; }
+  .family-template-save { align-items: stretch; flex-direction: column; }
+  .family-template-save .button { align-self: flex-start; }
+  .family-agenda section { grid-template-columns: 78px 1fr; }
+  .family-guide-footer .button { font-size: 11px; }
+  .family-plan-summary { gap: 6px; }
+}

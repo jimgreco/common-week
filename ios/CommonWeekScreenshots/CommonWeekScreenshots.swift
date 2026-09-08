@@ -9,6 +9,98 @@ final class CommonWeekScreenshots: XCTestCase {
         app = XCUIApplication()
     }
 
+    func testFamilyPlanningProfilesRoutinesTemplatesAndReview() throws {
+        #if targetEnvironment(macCatalyst)
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
+        app.launch()
+        #else
+        launchDemo()
+        #endif
+        try exerciseFamilyPlanningWorkflow()
+    }
+
+    func testAuthenticatedFamilyPlanningWorkflow() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let baseURL = environment["COMMON_WEEK_INTEGRATION_BASE_URL"],
+              let token = environment["COMMON_WEEK_INTEGRATION_SESSION_TOKEN"] else {
+            throw XCTSkip("Authenticated family planning environment is not configured.")
+        }
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launchEnvironment["COMMON_WEEK_API_BASE_URL"] = baseURL
+        app.launchEnvironment["COMMON_WEEK_SESSION_TOKEN"] = token
+        app.launch()
+        try exerciseFamilyPlanningWorkflow()
+    }
+
+    private func exerciseFamilyPlanningWorkflow() throws {
+        let opener = app.buttons["family-planning-open"]
+        XCTAssertTrue(opener.waitForExistence(timeout: 10))
+        opener.tap()
+        let tabs = app.segmentedControls["family-planning-tabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 10))
+        tabs.buttons["Children"].tap()
+        app.buttons["Add child"].tap()
+        let childName = app.textFields["child-name"]
+        XCTAssertTrue(childName.waitForExistence(timeout: 5))
+        childName.tap(); childName.typeText("Alex")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.buttons["Alex"].waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Family child profiles")
+        tabs.buttons["Routines"].tap()
+        app.buttons["New routine"].tap()
+        #if targetEnvironment(macCatalyst)
+        let routineTitle = app.textViews["routine-title"]
+        #else
+        let routineTitle = app.textFields["routine-title"]
+        #endif
+        XCTAssertTrue(routineTitle.waitForExistence(timeout: 5))
+        routineTitle.tap(); routineTitle.typeText("Pack school bags")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.staticTexts["Pack school bags"].waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Shared repeating routines")
+        tabs.buttons["Templates"].tap()
+        let templateName = app.textFields["Template name, e.g. School week"]
+        templateName.tap(); templateName.typeText("School week")
+        app.buttons["Save this week as a template"].tap()
+        XCTAssertTrue(app.buttons["Already added to this week"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+        #if targetEnvironment(macCatalyst)
+        app.buttons["Next Week"].tap()
+        #else
+        app.buttons["Next"].tap()
+        #endif
+        opener.tap()
+        XCTAssertTrue(tabs.waitForExistence(timeout: 10))
+        tabs.buttons["Templates"].tap()
+        XCTAssertTrue(app.buttons["Apply to this week"].waitForExistence(timeout: 5))
+        app.buttons["Apply to this week"].tap()
+        app.buttons["Add template to this week"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Already added to this week"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Already added to this week"].isEnabled)
+        attachCurrentScreen(named: "Reusable week template")
+        tabs.buttons["Review"].tap()
+        app.buttons["Continue"].tap()
+        app.buttons["Continue"].tap()
+        #if targetEnvironment(macCatalyst)
+        let priorities = app.textViews["review-priorities"]
+        #else
+        let priorities = app.textFields["review-priorities"]
+        #endif
+        XCTAssertTrue(priorities.waitForExistence(timeout: 5))
+        priorities.tap(); priorities.typeText("Enjoy family time. ")
+        app.buttons["Save and continue"].tap()
+        let reviewed = app.buttons["I’ve reviewed this week"]
+        XCTAssertTrue(scrollToExistence(reviewed))
+        reviewed.tap()
+        XCTAssertTrue(app.buttons["Mark my review as unfinished"].waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Guided weekly planning review")
+        app.buttons["Done"].tap()
+        opener.tap()
+        tabs.buttons["Children"].tap()
+        XCTAssertTrue(app.buttons["Alex"].waitForExistence(timeout: 5))
+    }
+
     func testAppStoreScreenshots() throws {
         launchDemo()
         snapshot("01-Shared-Week")
@@ -241,7 +333,7 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     private func attachCurrentScreen(named name: String) {
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)

@@ -13,6 +13,7 @@
     "test:run": "vitest run",
     "test:smoke": "playwright test",
     "test:database": "node scripts/test-database.mjs",
+    "test:family": "node scripts/test-family-planning.mjs",
     "check": "npm run lint && npm run typecheck && npm run test:run && npm run build && npm run test:smoke"
   },
   "dependencies": {

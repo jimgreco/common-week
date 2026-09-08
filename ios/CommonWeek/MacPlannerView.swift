@@ -99,6 +99,7 @@ private enum MacPlannerSheet: Identifiable {
     case reminder(date: String)
     case event(date: String)
     case search
+    case familyPlanning
     case weather(DayPlan)
     case location(DayPlan)
 
@@ -107,6 +108,7 @@ private enum MacPlannerSheet: Identifiable {
         case .item(let date, let type, _): "item-\(date ?? "weekly")-\(type.rawValue)"
         case .reminder(let date): "reminder-\(date)"
         case .event(let date): "event-\(date)"
+        case .familyPlanning: "family-planning"
         case .search: "search"
         case .weather(let day): "weather-\(day.date)-\(day.location?.id ?? "household")"
         case .location(let day): "location-\(day.date)"
@@ -115,6 +117,7 @@ private enum MacPlannerSheet: Identifiable {
 
     var preferredWidth: CGFloat {
         switch self {
+        case .familyPlanning: 700
         case .item: 540
         case .reminder, .location: 600
         case .event, .search: 680
@@ -124,6 +127,7 @@ private enum MacPlannerSheet: Identifiable {
 
     var preferredHeight: CGFloat {
         switch self {
+        case .familyPlanning: 780
         case .item: 450
         case .reminder, .event, .location: 720
         case .search: 620
@@ -328,6 +332,8 @@ struct MacPlannerView: View {
         VStack(spacing: 0) {
             List(selection: sidebarSelection) {
                 Section("Planner") {
+                    Button { sheet = .familyPlanning } label: { Label("Plan your week", systemImage: "person.2.badge.gearshape") }
+                        .accessibilityIdentifier("family-planning-open")
                     sidebarRow(.week)
                     sidebarRow(.events)
                     sidebarRow(.plans)
@@ -425,7 +431,9 @@ struct MacPlannerView: View {
     private func mainColumn(_ data: WeeklyPlannerData) -> some View {
         switch navigation.section {
         case .notifications:
-            MacNotificationsView(coordinator: notifications)
+            MacNotificationsView(coordinator: notifications, openReview: { item in
+                Task { await openReviewNotification(item) }
+            })
         case .settings:
             SettingsView(
                 data: data,
@@ -558,6 +566,8 @@ struct MacPlannerView: View {
     private func sheetView(_ sheet: MacPlannerSheet) -> some View {
         if let data = viewModel.data {
             switch sheet {
+            case .familyPlanning:
+                FamilyPlanningView(planner: data, viewModel: viewModel)
             case .item(let date, let type, let allowsAppleReminderDestination):
                 ItemEditorView(
                     item: nil,
@@ -949,7 +959,13 @@ struct MacPlannerView: View {
 
     private func openPendingNotification() async {
         guard let destination = notifications.pendingDestination else { return }
-        if case .inbox = destination.target {
+        if case .inbox(let id) = destination.target {
+            await notifications.refreshInbox()
+            if let item = notifications.inbox.items.first(where: { $0.id == id }), item.kind == "sunday_planning" {
+                await openReviewNotification(item)
+                notifications.consume(destination)
+                return
+            }
             navigation.select(.notifications)
             notifications.consume(destination)
             return
@@ -958,6 +974,8 @@ struct MacPlannerView: View {
         await viewModel.move(toWeek: weekStart)
         guard let data = viewModel.data, data.weekStart == weekStart else { return }
         switch destination.target {
+        case .weeklyReview:
+            sheet = .familyPlanning
         case .planningItem(let id):
             if let item = planningItem(id: id, in: data) {
                 navigation.select(item.type == .task ? .weekOfUsTasks : .plans)
@@ -972,6 +990,13 @@ struct MacPlannerView: View {
             break
         }
         notifications.consume(destination)
+    }
+
+    private func openReviewNotification(_ item: NotificationInboxItem) async {
+        guard let week = item.target?.weekStart ?? NotificationCoordinator.plannerDestination(for: item.deepLink)?.weekStart else { return }
+        await notifications.markRead(item.id)
+        await viewModel.move(toWeek: week)
+        if viewModel.data?.weekStart == week { sheet = .familyPlanning }
     }
 }
 
@@ -2232,6 +2257,7 @@ private struct MacEventInspector: View {
 }
 
 private struct MacPlanningItemEditorState: Equatable {
+    let childId: String
     let text: String
     let type: PlanningItemType
     let date: Date?
@@ -2257,6 +2283,7 @@ private struct MacPlanningItemInspector: View {
     @ObservedObject var commandRouter: MacPlannerCommandRouter
     let requestDelete: () -> Void
     let dirtyChanged: (Bool) -> Void
+    @State private var childId: String
     @State private var text: String
     @State private var type: PlanningItemType
     @State private var date: Date
@@ -2265,6 +2292,7 @@ private struct MacPlanningItemInspector: View {
     @State private var isSaving = false
     @State private var baseline: MacPlanningItemEditorState
     @State private var showingTaskMigration = false
+    @State private var showingRoutine = false
 
     init(
         item: PlanningItem,
@@ -2282,6 +2310,7 @@ private struct MacPlanningItemInspector: View {
         self.commandRouter = commandRouter
         self.requestDelete = requestDelete
         self.dirtyChanged = dirtyChanged
+        _childId = State(initialValue: item.childId ?? "")
         _text = State(initialValue: item.text)
         _type = State(initialValue: item.type)
         _date = State(initialValue: item.planningDate.map {
@@ -2291,6 +2320,7 @@ private struct MacPlanningItemInspector: View {
         _reminderEnabled = State(initialValue: reminder != nil)
         _reminderDate = State(initialValue: reminder ?? Date().addingTimeInterval(3600))
         _baseline = State(initialValue: MacPlanningItemEditorState(
+            childId: item.childId ?? "",
             text: item.text,
             type: item.type,
             date: item.planningDate.map {
@@ -2336,6 +2366,10 @@ private struct MacPlanningItemInspector: View {
                     }
                 }
 
+                MacInspectorSection(title: "Child", systemImage: "person.crop.circle") {
+                    PlanningChildPicker(planner: data, childId: $childId)
+                }
+
                 MacInspectorSection(title: "Reminder", systemImage: "bell") {
                     MacInspectorRow(title: "Remind me", systemImage: "bell.badge") {
                         Toggle("Remind me", isOn: $reminderEnabled).labelsHidden()
@@ -2363,6 +2397,9 @@ private struct MacPlanningItemInspector: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSave)
                 Menu {
+                    if item.type == .task {
+                        Button(item.routineId == nil ? "Repeat this task…" : "Edit repeating routine…") { showingRoutine = true }.disabled(isDirty)
+                    }
                     if item.type == .task, !appleReminders.writableSelectedLists.isEmpty {
                         Button("Move to Apple Reminders…") { showingTaskMigration = true }
                             .disabled(isDirty)
@@ -2382,6 +2419,9 @@ private struct MacPlanningItemInspector: View {
         .onChange(of: editorState) { _, _ in dirtyChanged(isDirty) }
         .onChange(of: commandRouter.revision) { _, _ in
             if commandRouter.command == .save { Task { await save() } }
+        }
+        .sheet(isPresented: $showingRoutine) {
+            PlanningItemRoutineView(item: item, planner: data, viewModel: viewModel).familyPlanningSheetSize()
         }
         .sheet(isPresented: $showingTaskMigration) {
             CustomTaskMigrationView(
@@ -2408,7 +2448,9 @@ private struct MacPlanningItemInspector: View {
             type: type,
             planningDate: planningDate,
             weekStartDate: planningDate.map(WeekDate.weekStart) ?? data.weekStart,
-            remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil
+            remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil,
+            childId: childId.isEmpty ? nil : childId,
+            childAssignmentIsSet: true
         )
         if await viewModel.saveItem(draft) {
             baseline = editorState
@@ -2418,6 +2460,7 @@ private struct MacPlanningItemInspector: View {
 
     private var editorState: MacPlanningItemEditorState {
         MacPlanningItemEditorState(
+            childId: childId,
             text: text,
             type: type,
             date: item.planningDate == nil ? nil : date,
@@ -3024,6 +3067,7 @@ private struct MacPlannerSearchView: View {
 
 private struct MacNotificationsView: View {
     @ObservedObject var coordinator: NotificationCoordinator
+    let openReview: (NotificationInboxItem) -> Void
 
     var body: some View {
         Group {
@@ -3036,7 +3080,8 @@ private struct MacNotificationsView: View {
             } else {
                 List(coordinator.inbox.items) { item in
                     Button {
-                        Task { await coordinator.markRead(item.id) }
+                        if item.kind == "sunday_planning" { openReview(item) }
+                        else { Task { await coordinator.markRead(item.id) } }
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {

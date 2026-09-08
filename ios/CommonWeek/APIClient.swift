@@ -94,6 +94,14 @@ final class APIClient {
         try await send(path: "/api/ios/planner", query: [URLQueryItem(name: "week", value: week)])
     }
 
+    func familyPlanning(week: String) async throws -> FamilyPlanningData {
+        try await send(path: "/api/ios/family-planning", query: [URLQueryItem(name: "week", value: week)])
+    }
+
+    func mutateFamilyPlanning(_ mutation: FamilyPlanningMutation) async throws -> FamilyPlanningData {
+        try await send(path: "/api/ios/family-planning", method: "POST", body: mutation)
+    }
+
     func createItem(_ draft: PlanningItemDraft) async throws -> PlanningItem {
         try await send(path: "/api/ios/planning-items", method: "POST", body: draft)
     }

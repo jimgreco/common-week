@@ -4,11 +4,12 @@ import { useEffect, useId, useRef, useState } from "react";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { AlertTriangle, Bell, CalendarDays, Check, Clock, CloudRain, ExternalLink, EyeOff, LoaderCircle, MapPin, Pencil, Search, Sunrise, Sunset, Trash2, Users, Wind, X } from "lucide-react";
 import { searchLocationsAction } from "@/app/actions/planner";
+import { ChildSelector, RoutineFields, type RoutineDraft } from "@/components/planner/family-planning-fields";
 import { EventLocationAutocomplete } from "@/components/planner/event-location-autocomplete";
 import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, CalendarEventDraft, CalendarRecurrenceFrequency, CalendarRecurrenceWeekday, CalendarResponseStatus, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, HouseholdMember, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
+import type { CalendarEvent, CalendarEventDraft, CalendarRecurrenceFrequency, CalendarRecurrenceWeekday, CalendarResponseStatus, ChildProfile, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, HouseholdMember, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
 
 export type LocationSelection =
   | { kind: "saved"; location: HouseholdLocation }
@@ -67,7 +68,7 @@ function eventDraftWithStartDate(draft: CalendarEventDraft, startDate: string): 
   };
 }
 
-function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+export function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -649,7 +650,11 @@ export function ItemEditorDialog({
   onClose,
   onSave,
   onDelete,
+  childProfiles = [],
+  onRepeat,
 }: {
+  childProfiles?: ChildProfile[];
+  onRepeat?: (routine: RoutineDraft, sourceItemId: string) => Promise<string | null>;
   item: PlanningItem;
   weekDates: string[];
   timeZone: string;
@@ -658,13 +663,24 @@ export function ItemEditorDialog({
   onDelete: (item: PlanningItem) => void;
 }) {
   const [draft, setDraft] = useState(item);
+  const [repeating, setRepeating] = useState(false);
+  const [savingRepeat, setSavingRepeat] = useState(false);
+  const [repeatError, setRepeatError] = useState<string | null>(null);
+  const [routine, setRoutine] = useState<RoutineDraft>(() => ({ id: crypto.randomUUID(), text: item.text, childId: item.childId ?? null, frequency: "weekly", interval: 1, weekdays: item.planningDate ? [(parseDateOnly(item.planningDate).getUTCDay() + 6) % 7] : [], startsOn: item.planningDate ?? item.weekStartDate, endsOn: null, active: true }));
   return (
     <Modal title="Edit planning item" onClose={onClose}>
       <form
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
           if (!draft.text.trim()) return;
-          onSave({ ...draft, text: draft.text.trim() });
+          if (repeating && onRepeat) {
+            setSavingRepeat(true);
+            setRepeatError(null);
+            const result = await onRepeat({ ...routine, text: draft.text.trim(), childId: draft.childId ?? null }, item.id);
+            setSavingRepeat(false);
+            if (result) { setRepeatError(result); return; }
+          }
+          onSave({ ...draft, text: draft.text.trim(), ...(repeating ? { routineId: routine.id, routineOccurrenceDate: item.planningDate ?? item.weekStartDate } : {}) });
         }}
       >
         <div className="modal-body form-stack">
@@ -672,13 +688,17 @@ export function ItemEditorDialog({
           <div className="form-row">
             <label>Type<select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as "note" | "task" })}><option value="note">Note</option><option value="task">Task</option></select></label>
           </div>
-          <label>When<select value={draft.planningDate ?? "weekly"} onChange={(event) => setDraft({ ...draft, planningDate: event.target.value === "weekly" ? null : event.target.value })}><option value="weekly">This week</option>{weekDates.map((date) => <option value={date} key={date}>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(parseDateOnly(date))}</option>)}</select></label>
+          <label>When<select disabled={repeating} value={draft.planningDate ?? "weekly"} onChange={(event) => setDraft({ ...draft, planningDate: event.target.value === "weekly" ? null : event.target.value })}><option value="weekly">This week</option>{weekDates.map((date) => <option value={date} key={date}>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(parseDateOnly(date))}</option>)}</select></label>
           <label>Reminder<input type="datetime-local" value={draft.reminder ? formatInTimeZone(new Date(draft.reminder.remindAt), timeZone, "yyyy-MM-dd'T'HH:mm") : ""} onChange={(event) => setDraft({ ...draft, reminder: event.target.value ? { id: draft.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: fromZonedTime(event.target.value, timeZone).toISOString() } : null })} /></label>
+          <ChildSelector childProfiles={childProfiles} value={draft.childId ?? null} onChange={(childId) => setDraft({ ...draft, childId })} />
+          {draft.type === "task" && onRepeat && !item.routineId && !item.id.startsWith("draft-") && <section className="item-repeat-control"><label className="all-day-control"><input type="checkbox" checked={repeating} onChange={(event) => setRepeating(event.target.checked)} /><span>Repeat this shared task</span></label>{repeating && <><RoutineFields value={routine} onChange={setRoutine} /><p className="family-muted">This task becomes the first repetition. Each new occurrence has its own completion.</p></>}</section>}
+          {item.routineId && <p className="family-muted">You’re editing one occurrence. Open Routines above the week to change or stop future repetitions.</p>}
+          {repeatError && <p className="family-error" role="alert">{repeatError}</p>}
           {item.createdByName && <p className="attribution-note">Added by {item.createdByName}</p>}
         </div>
         <footer className="modal-footer split-footer">
           <button className="button button-danger-quiet" type="button" onClick={() => onDelete(item)}><Trash2 size={14} /> Delete</button>
-          <span><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit">Save changes</button></span>
+          <span><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit" disabled={savingRepeat}>{savingRepeat ? "Saving routine…" : "Save changes"}</button></span>
         </footer>
       </form>
     </Modal>

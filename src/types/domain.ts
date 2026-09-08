@@ -34,6 +34,9 @@ export interface PlanningItem {
   lastCarriedAt?: string | null;
   saveState?: SaveState;
   reminder?: NotificationReminder | null;
+  childId?: string | null;
+  routineId?: string | null;
+  routineOccurrenceDate?: string | null;
 }
 
 export interface NotificationReminder {
@@ -308,3 +311,69 @@ export interface ActionResult<T = undefined> {
   data?: T;
   error?: string;
 }
+
+export interface ChildProfile {
+  id: string;
+  name: string;
+  color: string;
+  calendarPreferenceIds: string[];
+}
+
+export interface TaskRoutine {
+  id: string;
+  text: string;
+  childId: string | null;
+  frequency: "daily" | "weekly";
+  interval: number;
+  weekdays: number[];
+  startsOn: string;
+  endsOn: string | null;
+  active: boolean;
+}
+
+export interface WeekTemplateItem {
+  dayOffset: number | null;
+  type: PlanningItemType;
+  text: string;
+  childId: string | null;
+}
+
+export interface WeekTemplate {
+  id: string;
+  name: string;
+  items: WeekTemplateItem[];
+  appliedToWeek: boolean;
+}
+
+export interface WeeklyReview {
+  weekStart: string;
+  priorities: string;
+  meals: string;
+  logistics: string;
+  revision: number;
+  reviewedBy: Array<{ userId: string; displayName: string; reviewedAt: string }>;
+}
+
+export interface FamilyPlanningData {
+  weekStart: string;
+  currentUserId: string;
+  canEdit: boolean;
+  children: ChildProfile[];
+  openTasks: PlanningItem[];
+  routines: TaskRoutine[];
+  templates: WeekTemplate[];
+  review: WeeklyReview;
+}
+
+export type FamilyPlanningMutation = { weekStart: string } & (
+  | { action: "saveChild"; child: Omit<ChildProfile, "id"> & { id?: string } }
+  | { action: "deleteChild"; id: string }
+  | { action: "saveRoutine"; sourceItemId?: string; routine: Omit<TaskRoutine, "id" | "childId" | "endsOn"> & { id?: string; childId?: string | null; endsOn?: string | null } }
+  | { action: "deleteRoutine"; id: string }
+  | { action: "saveTemplate"; name: string; id?: string }
+  | { action: "deleteTemplate"; id: string }
+  | { action: "applyTemplate"; id: string }
+  | { action: "saveReview"; priorities: string; meals: string; logistics: string; revision: number }
+  | { action: "markReviewed"; reviewed: boolean; revision?: number }
+  | { action: "assignChild"; itemId: string; childId: string | null }
+);

@@ -94,7 +94,7 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func load(week: String? = nil, quietly: Bool = false) async {
-        if isDemo { data = PreviewData.planner(weekStart: week ?? PreviewData.planner.weekStart); return }
+        if isDemo { data = FamilyPlanningDemo.shared.planner(weekStart: week ?? data?.weekStart ?? PreviewData.planner.weekStart, capturing: data); return }
         guard let user = activeUser else { return }
         if syncInProgress { return }
         let selected = week ?? data?.weekStart ?? WeekDate.string(WeekDate.monday())
@@ -158,12 +158,13 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func toggle(_ item: PlanningItem) async {
+        let visibleWeek = data?.weekStart ?? item.weekStartDate
         mutateItem(id: item.id) { $0.isCompleted.toggle() }
         persistCurrentPlanner()
         guard !isDemo else { return }
         do {
             _ = try await api.toggleItem(id: item.id, completed: !item.isCompleted)
-            await refreshAfterMutation(week: item.weekStartDate)
+            await refreshAfterMutation(week: visibleWeek)
         } catch where APIClient.isConnectivityFailure(error) {
             let mutation = OfflineMutation(kind: .toggleItem, itemId: item.id, completed: !item.isCompleted)
             if await enqueue(mutation) { markSavedOffline() }
@@ -175,6 +176,7 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func saveItem(_ draft: PlanningItemDraft) async -> Bool {
+        let visibleWeek = data?.weekStart ?? draft.weekStartDate
         if isDemo {
             applyDraft(draft, id: draft.id ?? UUID().uuidString, saveState: "saved")
             return true
@@ -185,7 +187,9 @@ final class PlannerViewModel: ObservableObject {
             type: draft.type,
             planningDate: draft.planningDate,
             weekStartDate: draft.weekStartDate,
-            remindAt: draft.remindAt
+            remindAt: draft.remindAt,
+            childId: draft.childId,
+            childAssignmentIsSet: draft.childAssignmentIsSet
         )
         let previous = onlineDraft.id.flatMap(item(withId:))
         applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saving")
@@ -196,7 +200,7 @@ final class PlannerViewModel: ObservableObject {
             applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saved")
             persistCurrentPlanner()
             show(onlineDraft.type == .task ? "Task saved" : "Plan saved")
-            scheduleRefreshAfterMutation(week: draft.weekStartDate)
+            scheduleRefreshAfterMutation(week: visibleWeek)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
             let mutation = OfflineMutation(kind: draft.id == nil ? .createItem : .updateItem, draft: onlineDraft)
@@ -589,7 +593,10 @@ final class PlannerViewModel: ObservableObject {
             carryoverCount: previous?.carryoverCount,
             lastCarriedAt: previous?.lastCarriedAt,
             saveState: saveState,
-            reminder: draft.remindAt.map { NotificationReminder(id: previous?.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: $0) }
+            reminder: draft.remindAt.map { NotificationReminder(id: previous?.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: $0) },
+            childId: draft.childAssignmentIsSet ? draft.childId : previous?.childId,
+            routineId: previous?.routineId,
+            routineOccurrenceDate: previous?.routineOccurrenceDate
         )
         insert(item)
     }

@@ -482,14 +482,14 @@ async function materializeScheduledDigests(now: Date, since: Date) {
           `insert into notification_outbox (
              user_id, household_id, dedupe_key, kind, title, body, deep_link, scheduled_for
            ) values ($1, $2, $3, 'sunday_planning', 'Plan the week together',
-                     'Take a few minutes to look ahead, add household tasks, and make the week visible.',
+                     'Review unfinished tasks, prepare your routines, and make a shared plan for the week.',
                      $4, $5)
            on conflict (dedupe_key) do nothing`,
           [
             row.user_id,
             row.household_id,
             `sunday:${row.user_id}:${occurrence.localDate}`,
-            `/planner?week=${nextWeek}`,
+            `/planner?week=${nextWeek}&review=1`,
             occurrence.scheduledFor,
           ],
         );

@@ -10,6 +10,7 @@ enum PlannerSheet: Identifiable {
     case search
     case notifications
     case settings
+    case familyPlanning
 
     var id: String {
         switch self {
@@ -21,6 +22,7 @@ enum PlannerSheet: Identifiable {
         case .location(let day): "location-\(day.date)"
         case .search: "search"
         case .notifications: "notifications"
+        case .familyPlanning: "family-planning"
         case .settings: "settings"
         }
     }
@@ -102,6 +104,9 @@ struct PlannerView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { BrandMark(compact: true) }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { sheet = .familyPlanning } label: { Image(systemName: "person.2.badge.gearshape") }
+                        .accessibilityLabel("Plan your week")
+                        .accessibilityIdentifier("family-planning-open")
                     Button { sheet = .search } label: { Image(systemName: "magnifyingglass") }
                         .accessibilityLabel("Search")
                     Button { sheet = .notifications } label: {
@@ -153,6 +158,8 @@ struct PlannerView: View {
         guard let data = viewModel.data, data.weekStart == weekStart else { return }
 
         switch destination.target {
+        case .weeklyReview:
+            sheet = .familyPlanning
         case .planningItem(let id):
             if let item = (data.days.flatMap(\.items) + data.weeklyItems).first(where: { $0.id == id }) {
                 selectedDestination = item.type == .task ? .tasks : .plans
@@ -176,6 +183,11 @@ struct PlannerView: View {
     private func openInboxItem(_ item: NotificationInboxItem) async {
         await notifications.markRead(item.id)
         sheet = nil
+        if item.kind == "sunday_planning", let week = item.target?.weekStart ?? NotificationCoordinator.plannerDestination(for: item.deepLink)?.weekStart {
+            await viewModel.move(toWeek: week)
+            if viewModel.data?.weekStart == week { sheet = .familyPlanning }
+            return
+        }
         guard let target = item.target else { return }
         await viewModel.move(toWeek: target.weekStart)
         guard let data = viewModel.data, data.weekStart == target.weekStart else { return }
@@ -459,6 +471,7 @@ struct PlannerView: View {
             case .notifications: NotificationInboxView(coordinator: notifications, onOpen: { item in
                 Task { await openInboxItem(item) }
             })
+            case .familyPlanning: FamilyPlanningView(planner: data, viewModel: viewModel)
             case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth, appleReminders: appleReminders)
             }
         } else {

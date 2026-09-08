@@ -10,6 +10,7 @@ import { postgresErrorCode, query, withTransaction } from "@/lib/server/database
 import { getPlannerData } from "@/lib/server/planner-data";
 import { searchHouseholdCalendarEvents } from "@/lib/server/calendar-data";
 import { queueHouseholdChange, upsertPlanningReminder } from "@/lib/server/notifications";
+import { validateChildForHousehold } from "@/lib/server/family-planning";
 import { carryOverOpenTasks } from "@/lib/server/planning-carryover";
 import type { ActionResult, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
 
@@ -28,6 +29,9 @@ function validTimeZone(value: string): boolean {
 
 interface PlanningRow {
   id: string;
+  child_id: string | null;
+  routine_id: string | null;
+  routine_occurrence_date: string | null;
   planning_date: string | null;
   week_start_date: string;
   type: PlanningItemType;
@@ -62,6 +66,9 @@ function actionError<T = undefined>(error: unknown, fallback: string): ActionRes
 function mappedItem(row: PlanningRow): PlanningItem {
   return {
     id: row.id,
+    childId: row.child_id,
+    routineId: row.routine_id,
+    routineOccurrenceDate: row.routine_occurrence_date,
     planningDate: row.planning_date,
     weekStartDate: row.week_start_date,
     type: row.type,
@@ -156,6 +163,7 @@ export async function createPlanningItemAction(input: {
   planningDate: string | null;
   weekStartDate: string;
   remindAt?: string | null;
+  childId?: string | null;
 }): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
@@ -165,15 +173,18 @@ export async function createPlanningItemAction(input: {
       planningDate: dateOnly.nullable(),
       weekStartDate: dateOnly,
       remindAt: z.string().datetime().nullable().optional(),
+      childId: uuid.nullable().optional(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
+    if (context.role === "viewer") throw new Error("You do not have permission to change this household.");
+    await validateChildForHousehold(context.householdId, parsed.childId);
     const saved = await withTransaction(async (database) => {
       const inserted = await database.query<{ id: string }>(
         `insert into planning_items (
-           id, household_id, created_by, planning_date, week_start_date, type, text
+           id, household_id, created_by, planning_date, week_start_date, type, text, child_id
          )
-         values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4::date, $5::date, $6::planning_item_type, $7)
+         values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4::date, $5::date, $6::planning_item_type, $7, $8)
          on conflict (id) do nothing
          returning id`,
         [
@@ -184,11 +195,12 @@ export async function createPlanningItemAction(input: {
           parsed.weekStartDate,
           parsed.type,
           parsed.text,
+          parsed.childId ?? null,
         ],
       );
       const itemId = inserted.rows[0]?.id ?? parsed.id;
       const result = itemId ? await database.query<PlanningRow>(
-        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -237,6 +249,7 @@ export async function updatePlanningItemAction(input: {
   planningDate: string | null;
   weekStartDate: string;
   remindAt?: string | null;
+  childId?: string | null;
 }): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
@@ -246,14 +259,17 @@ export async function updatePlanningItemAction(input: {
       planningDate: dateOnly.nullable(),
       weekStartDate: dateOnly,
       remindAt: z.string().datetime().nullable().optional(),
+      childId: uuid.nullable().optional(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
+    if (context.role === "viewer") throw new Error("You do not have permission to change this household.");
+    await validateChildForHousehold(context.householdId, parsed.childId);
     let reminder: NotificationReminder | null = null;
     const updated = await query<{ id: string }>(
         `update planning_items set
            text = $3, type = $4::planning_item_type, planning_date = $5::date,
-           week_start_date = $6::date
+           week_start_date = $6::date, child_id = case when $7::boolean then $8::uuid else child_id end
          where id = $1 and household_id = $2
          returning id`,
         [
@@ -263,6 +279,8 @@ export async function updatePlanningItemAction(input: {
           parsed.type,
           parsed.planningDate,
           parsed.weekStartDate,
+          parsed.childId !== undefined,
+          parsed.childId ?? null,
         ],
     );
     if (!updated.rows[0]) throw new Error("That item is not available to this household.");
@@ -283,7 +301,7 @@ export async function updatePlanningItemAction(input: {
       deepLink: plannerNotificationDeepLink({ kind: "planning_item", id: parsed.id, weekStart: parsed.weekStartDate }),
     });
     const saved = await query<PlanningRow>(
-        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -308,6 +326,7 @@ export async function togglePlanningItemAction(id: string, completed: boolean): 
   try {
     const parsedId = uuid.parse(id);
     const context = await requireHouseholdContext();
+    if (context.role === "viewer") throw new Error("You do not have permission to change this household.");
     const now = new Date();
     const household = await query<{ timezone: string }>(
       `select h.timezone
@@ -348,6 +367,7 @@ export async function deletePlanningItemAction(id: string): Promise<ActionResult
   try {
     const parsedId = uuid.parse(id);
     const context = await requireHouseholdContext();
+    if (context.role === "viewer") throw new Error("You do not have permission to change this household.");
     const deleted = await query<{ text: string; type: PlanningItemType }>(
       "delete from planning_items where id = $1 and household_id = $2 returning text, type",
       [parsedId, context.householdId],
@@ -520,7 +540,7 @@ export async function searchPlanningItemsAction(search: string): Promise<ActionR
     const context = await requireHouseholdContext();
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const result = await query<PlanningRow>(
-      `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+      `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
               text, is_completed, sort_order, created_by,
               u.display_name as created_by_name, updated_at,
               pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -547,7 +567,7 @@ export async function searchPlannerAction(search: string): Promise<ActionResult<
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const [planning, events] = await Promise.all([
       query<PlanningRow & { reminder_id: string | null; remind_at: Date | null }>(
-        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
                 pi.carryover_count, pi.last_carried_at,

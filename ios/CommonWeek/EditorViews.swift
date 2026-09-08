@@ -25,6 +25,7 @@ struct ItemEditorView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var appleReminders: AppleRemindersStore
     @Environment(\.dismiss) private var dismiss
+    @State private var childId: String
     @State private var text: String
     @State private var type: PlanningItemType
     @State private var reminderEnabled: Bool
@@ -37,6 +38,7 @@ struct ItemEditorView: View {
     @State private var saveError: String?
     @State private var isSaving = false
     @State private var showingTaskMigration = false
+    @State private var showingRoutine = false
 
     init(
         item: PlanningItem?,
@@ -55,6 +57,7 @@ struct ItemEditorView: View {
         self.appleReminders = appleReminders
         self.allowsAppleReminderDestination = allowsAppleReminderDestination
         self.allowsWeeklyPlacement = allowsWeeklyPlacement
+        _childId = State(initialValue: item?.childId ?? "")
         _text = State(initialValue: item?.text ?? "")
         _type = State(initialValue: item?.type ?? defaultType)
         let existingReminder = item?.reminder.flatMap { WeekDate.iso8601.date(from: $0.remindAt) }
@@ -92,6 +95,12 @@ struct ItemEditorView: View {
                         viewModel: viewModel,
                         onMoved: { dismiss() }
                     )
+                }
+            }
+            .sheet(isPresented: $showingRoutine) {
+                if let item = currentItem {
+                    PlanningItemRoutineView(item: item, planner: data, viewModel: viewModel)
+                        .familyPlanningSheetSize()
                 }
             }
     }
@@ -198,6 +207,9 @@ struct ItemEditorView: View {
         } header: {
             Label("Schedule", systemImage: "calendar.badge.clock")
         }
+        if destination == .weekOfUs {
+            Section("Child") { PlanningChildPicker(planner: data, childId: $childId) }
+        }
         if case .appleReminders = destination {
             AppleReminderRecurrenceEditor(
                 draft: $appleRecurrence,
@@ -214,6 +226,10 @@ struct ItemEditorView: View {
         }
         if let item {
             Section {
+                if item.type == .task {
+                    Button(currentItem?.routineId == nil ? "Repeat this task…" : "Edit repeating routine…") { showingRoutine = true }
+                        .disabled(text != item.text || type != item.type || childId != (item.childId ?? ""))
+                }
                 if item.type == .task, !appleReminders.writableSelectedLists.isEmpty {
                     Button("Move to Apple Reminders…") { showingTaskMigration = true }
                 }
@@ -228,12 +244,16 @@ struct ItemEditorView: View {
         allowsAppleReminderDestination && item == nil && isDailyItem && type == .task && !appleReminders.writableSelectedLists.isEmpty
     }
 
+    private var currentItem: PlanningItem? {
+        guard let item else { return nil }
+        return viewModel.data.flatMap { ($0.weeklyItems + $0.days.flatMap(\.items)).first(where: { $0.id == item.id }) } ?? item
+    }
+
     private var canChooseWeeklyPlacement: Bool {
-        allowsWeeklyPlacement && item == nil && planningDate != nil
+        allowsWeeklyPlacement && (item != nil || planningDate != nil)
     }
 
     private var isDailyItem: Bool {
-        if let item { return item.planningDate != nil }
         return placement == .day
     }
 
@@ -278,7 +298,9 @@ struct ItemEditorView: View {
             type: type,
             planningDate: selectedPlanningDate,
             weekStartDate: selectedPlanningDate.map(WeekDate.weekStart) ?? data.weekStart,
-            remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil
+            remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil,
+            childId: childId.isEmpty ? nil : childId,
+            childAssignmentIsSet: true
         )
         if await viewModel.saveItem(draft) { dismiss() }
     }

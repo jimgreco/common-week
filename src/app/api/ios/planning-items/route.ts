@@ -12,6 +12,7 @@ export const runtime = "nodejs";
 
 const itemSchema = z.object({
   id: z.string().uuid().optional(),
+  childId: z.string().uuid().nullable().optional(),
   text: z.string().trim().min(1).max(1000),
   type: z.enum(["note", "task"]),
   // Swift omits nil Optional values when synthesizing Encodable. Weekly items

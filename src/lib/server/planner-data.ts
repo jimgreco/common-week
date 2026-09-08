@@ -6,6 +6,7 @@ import { canHouseholdMemberWriteGoogleCalendar } from "@/lib/google-calendar-per
 import { query } from "@/lib/server/database";
 import { GOOGLE_CALENDAR_WRITE_SCOPE, hasGoogleScope } from "@/lib/server/google-oauth";
 import { getHouseholdCalendarEvents } from "@/lib/server/calendar-data";
+import { materializeTaskRoutines } from "@/lib/server/family-planning";
 import { carryOverOpenTasks } from "@/lib/server/planning-carryover";
 import { getWeatherForAssignments } from "@/lib/server/weather-data";
 import type {
@@ -40,6 +41,9 @@ interface LocationRow {
 
 interface PlanningRow {
   id: string;
+  child_id: string | null;
+  routine_id: string | null;
+  routine_occurrence_date: string | null;
   planning_date: string | null;
   week_start_date: string;
   type: "note" | "task";
@@ -72,6 +76,9 @@ function mapLocation(row: LocationRow, defaultLocationId: string | null): Househ
 function mapPlanningItem(row: PlanningRow): PlanningItem {
   return {
     id: row.id,
+    childId: row.child_id,
+    routineId: row.routine_id,
+    routineOccurrenceDate: row.routine_occurrence_date,
     planningDate: row.planning_date,
     weekStartDate: row.week_start_date,
     type: row.type,
@@ -108,6 +115,7 @@ export async function getPlannerData(
   const household = householdResult.rows[0];
   if (!household) throw new Error("The household planner could not be loaded.");
 
+  await materializeTaskRoutines(context, weekStart, household.timezone);
   await carryOverOpenTasks({
     householdId: context.householdId,
     timeZone: household.timezone,
@@ -127,7 +135,7 @@ export async function getPlannerData(
         [context.householdId, dates[0], dates[6]],
       ),
       query<PlanningRow>(
-        `select pi.id, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,

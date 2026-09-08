@@ -39,6 +39,14 @@ Apple Reminders is an optional, device-local task source. After granting full Re
 
 For push delivery, enable Push Notifications for `com.jimgreco.commonweek` and use a provisioning profile containing `aps-environment`. The app requests notification permission only when the user enables push, registers the APNs token with the server, and keeps the token associated with the signed-in account.
 
+## Family planning
+
+**Plan your week** opens from the iPhone toolbar and Mac sidebar for the selected week. The four-step review brings together unfinished tasks (including earlier weeks), the week’s calendar commitments, shared priorities/meals/logistics notes, and each household member’s review timestamp. Sunday planning notifications open this guide at their intended week. Saving changed notes invalidates earlier acknowledgements, and revision checks prevent one person from overwriting or acknowledging an unseen version of the shared plan.
+
+The same sheet manages child profiles without email addresses or accounts. Choose calendars for a child’s schedule and tag shared plans/tasks from their iPhone editor or Mac inspector. Routines create shared daily, selected-weekday, or undated weekly tasks with a repeat interval and optional end date. Existing tasks offer **Repeat this task**; existing occurrences offer **Edit repeating routine**. Editing, pausing, or deleting a routine affects future unfinished occurrences while preserving completed tasks and past dates. Week templates capture one-off shared plans/tasks and their child/day placement, and can be applied once per target week.
+
+Family profile, routine, template, and review changes require a connection and retain entered values when a request fails. Shared task edits still use the existing offline queue, including child tags; older queued edits preserve child associations they did not change. The interactive native preview keeps family-planning changes in memory across sheets and week navigation for the current launch.
+
 ## Offline and live synchronization
 
 The app stores account-isolated planner snapshots in Application Support with iOS file protection and excludes them from device backups. Plans, tasks, completion changes, deletion, and saved or searched location assignments are applied immediately and queued durably when the network is unavailable. The queue replays automatically on foregrounding, pull-to-refresh, a live household change, or an iOS background refresh. Native-created item IDs and idempotent deletion make replay safe when the server applied a request but its response was lost.

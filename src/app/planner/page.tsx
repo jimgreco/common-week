@@ -8,19 +8,21 @@ import { getUserContext } from "@/lib/server/auth";
 import { getPlannerData } from "@/lib/server/planner-data";
 import { plannerNotificationTarget } from "@/lib/notification-links";
 import { getNotificationInbox, markNotificationRead, resolvePlannerNotificationTarget } from "@/lib/server/notifications";
+import { loadFamilyPlanningAction } from "@/app/actions/family-planning";
 
 export const metadata: Metadata = { title: "Planner" };
 export const dynamic = "force-dynamic";
 
 export default async function PlannerPage({ searchParams }: PageProps<"/planner">) {
   const params = await searchParams;
+  const initialReview = params.review === "1";
   const notificationTarget = plannerNotificationTarget(params);
   const requestedFromQuery = typeof params.week === "string" && isDateOnly(params.week)
     ? weekStartForDate(params.week)
     : currentWeekStart();
 
   if (isDemoMode) {
-    return <WeeklyPlanner initialData={getDemoPlannerData(notificationTarget?.weekStart ?? requestedFromQuery)} currentUserName="Jim" initialFocus={notificationTarget} initialInbox={{ items: [], unreadCount: 0 }} />;
+    return <WeeklyPlanner initialData={getDemoPlannerData(notificationTarget?.weekStart ?? requestedFromQuery)} currentUserName="Jim" initialFocus={notificationTarget} initialInbox={{ items: [], unreadCount: 0 }} initialReview={initialReview} />;
   }
 
   const context = await getUserContext();
@@ -35,9 +37,10 @@ export default async function PlannerPage({ searchParams }: PageProps<"/planner"
     notificationId ? markNotificationRead(context.userId, notificationId) : null,
   ]);
   const requested = resolvedTarget?.weekStart ?? notificationTarget?.weekStart ?? requestedFromQuery;
-  const [data, inbox] = await Promise.all([
+  const [data, inbox, family] = await Promise.all([
     getPlannerData(plannerContext, requested, { includeExternal: false }),
     getNotificationInbox(context.userId),
+    loadFamilyPlanningAction(requested),
   ]);
-  return <WeeklyPlanner initialData={data} currentUserName={context.displayName} initialFocus={resolvedTarget} initialInbox={inbox} />;
+  return <WeeklyPlanner initialData={data} currentUserName={context.displayName} currentUserId={context.userId} initialFocus={resolvedTarget} initialInbox={inbox} initialReview={initialReview} initialFamily={family.data} />;
 }

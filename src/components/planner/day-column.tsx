@@ -1,12 +1,14 @@
 import { AlertCircle, AlertTriangle, Check, CloudOff, MapPin, Plus, Umbrella } from "lucide-react";
+import { ChildBadge } from "@/components/planner/family-planning-fields";
 import { formatDayName, formatDayNumber, formatEventTime, formatMobileDate, isToday } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { carryoverLabel } from "@/lib/task-carryover";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
-import type { CalendarEvent, DayPlan, PlanningItem, PlannerSourceState } from "@/types/domain";
+import type { CalendarEvent, ChildProfile, DayPlan, PlanningItem, PlannerSourceState } from "@/types/domain";
 
 interface DayColumnProps {
   day: DayPlan;
+  childProfiles?: ChildProfile[];
   timeZone: string;
   temperatureUnit: TemperatureUnit;
   calendarState: PlannerSourceState;
@@ -106,7 +108,9 @@ export function PlanningItemRow({
   onToggle,
   onEdit,
   onRetry,
+  childProfiles = [],
 }: {
+  childProfiles?: ChildProfile[];
   item: PlanningItem;
   onToggle: DayColumnProps["onToggle"];
   onEdit: DayColumnProps["onEdit"];
@@ -130,6 +134,8 @@ export function PlanningItemRow({
       <button className="planning-row-body" type="button" onClick={() => onEdit(item)}>
         <span className="planning-row-text">{item.text}</span>
         {carriedFrom && <span className="carryover-label">{carriedFrom}</span>}
+        <ChildBadge child={childProfiles.find((child) => child.id === item.childId)} />
+        {item.routineId && <span className="routine-item-label">Repeating task</span>}
       </button>
       {item.saveState === "saving" && <span className="save-indicator">Saving</span>}
       {item.saveState === "failed" && (
@@ -143,6 +149,7 @@ export function PlanningItemRow({
 
 export function DayColumn({
   day,
+  childProfiles = [],
   timeZone,
   temperatureUnit,
   calendarState,
@@ -247,7 +254,7 @@ export function DayColumn({
         <h2>Plans</h2>
         <div className="section-content">
           {notes.map((item) => (
-            <PlanningItemRow item={item} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
+            <PlanningItemRow item={item} childProfiles={childProfiles} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
           ))}
           <InlinePlanningAdd date={day.date} type="note" onAdd={onAdd} />
         </div>
@@ -257,7 +264,7 @@ export function DayColumn({
         <h2>Tasks</h2>
         <div className="section-content">
           {tasks.map((item) => (
-            <PlanningItemRow item={item} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
+            <PlanningItemRow item={item} childProfiles={childProfiles} onToggle={onToggle} onEdit={onEdit} onRetry={onRetry} key={item.id} />
           ))}
           <InlinePlanningAdd date={day.date} type="task" onAdd={onAdd} />
         </div>

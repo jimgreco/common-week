@@ -84,6 +84,9 @@ struct PlanningItem: Codable, Identifiable, Hashable {
     var lastCarriedAt: String? = nil
     let saveState: String?
     let reminder: NotificationReminder?
+    var childId: String? = nil
+    var routineId: String? = nil
+    var routineOccurrenceDate: String? = nil
 }
 
 struct NotificationReminder: Codable, Hashable {
@@ -588,6 +591,44 @@ struct PlanningItemDraft: Codable, Equatable {
     let planningDate: String?
     let weekStartDate: String
     let remindAt: String?
+    var childId: String? = nil
+    var childAssignmentIsSet = false
+
+    private enum CodingKeys: String, CodingKey {
+        case id, text, type, planningDate, weekStartDate, remindAt, childId
+    }
+
+    init(id: String?, text: String, type: PlanningItemType, planningDate: String?, weekStartDate: String, remindAt: String?, childId: String? = nil, childAssignmentIsSet: Bool = false) {
+        self.id = id; self.text = text; self.type = type; self.planningDate = planningDate
+        self.weekStartDate = weekStartDate; self.remindAt = remindAt
+        self.childId = childId; self.childAssignmentIsSet = childAssignmentIsSet || childId != nil
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(String.self, forKey: .id)
+        text = try values.decode(String.self, forKey: .text)
+        type = try values.decode(PlanningItemType.self, forKey: .type)
+        planningDate = try values.decodeIfPresent(String.self, forKey: .planningDate)
+        weekStartDate = try values.decode(String.self, forKey: .weekStartDate)
+        remindAt = try values.decodeIfPresent(String.self, forKey: .remindAt)
+        childId = try values.decodeIfPresent(String.self, forKey: .childId)
+        childAssignmentIsSet = values.contains(.childId)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encodeIfPresent(id, forKey: .id)
+        try values.encode(text, forKey: .text)
+        try values.encode(type, forKey: .type)
+        try values.encodeIfPresent(planningDate, forKey: .planningDate)
+        try values.encode(weekStartDate, forKey: .weekStartDate)
+        try values.encodeIfPresent(remindAt, forKey: .remindAt)
+        if childAssignmentIsSet {
+            if let childId { try values.encode(childId, forKey: .childId) }
+            else { try values.encodeNil(forKey: .childId) }
+        }
+    }
 }
 
 enum PlannerSearchResult: Codable, Identifiable {
