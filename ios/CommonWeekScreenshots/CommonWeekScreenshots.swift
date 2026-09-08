@@ -9,6 +9,18 @@ final class CommonWeekScreenshots: XCTestCase {
         app = XCUIApplication()
     }
 
+    func testUnassignedCalendarFilter() throws {
+        launchDemo()
+        let person = app.buttons["person-filter"]
+        XCTAssertTrue(person.waitForExistence(timeout: 10))
+        person.tap()
+        app.buttons["Unassigned"].tap()
+        XCTAssertTrue(person.label.contains("Unassigned"))
+        attachCurrentScreen(named: "Unassigned calendar")
+        app.buttons["Clear calendar filters"].tap()
+        XCTAssertTrue(person.label.contains("Everyone"))
+    }
+
     func testCoverageAndShareWeek() throws {
         launchDemo()
         #if !targetEnvironment(macCatalyst)

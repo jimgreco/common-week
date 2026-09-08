@@ -396,6 +396,7 @@ struct PlannerView: View {
             calendarFilterId = CalendarEventFilter.allCalendars
         }
         if personFilterId != CalendarEventFilter.allPeople,
+           personFilterId != CalendarEventFilter.unassigned,
            !data.members.contains(where: { $0.userId == personFilterId }),
            !(data.childProfiles ?? []).contains(where: { $0.id == personFilterId }) {
             personFilterId = CalendarEventFilter.allPeople

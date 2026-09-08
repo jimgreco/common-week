@@ -781,6 +781,7 @@ struct MacPlannerView: View {
             calendarFilterId = CalendarEventFilter.allCalendars
         }
         if personFilterId != CalendarEventFilter.allPeople,
+           personFilterId != CalendarEventFilter.unassigned,
            !data.members.contains(where: { $0.userId == personFilterId }),
            !(data.childProfiles ?? []).contains(where: { $0.id == personFilterId }) {
             personFilterId = CalendarEventFilter.allPeople
@@ -1437,7 +1438,7 @@ private struct MacPlannerListPane: View {
     }
 
     private func matches(_ item: PlanningItem) -> Bool {
-        (section != .week || personFilterId == CalendarEventFilter.allPeople || (item.assignedMemberIds ?? item.childId.map { [$0] } ?? []).contains(personFilterId)) && (searchText.isEmpty || item.text.localizedCaseInsensitiveContains(searchText))
+        (section != .week || CalendarEventFilter.matches(item, personId: personFilterId)) && (searchText.isEmpty || item.text.localizedCaseInsensitiveContains(searchText))
     }
 
     private func matches(_ event: CalendarEvent) -> Bool {

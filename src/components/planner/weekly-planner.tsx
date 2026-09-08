@@ -26,7 +26,7 @@ import { FamilyPlanningPanel } from "@/components/planner/family-planning";
 import { ChildBadge, type RoutineDraft } from "@/components/planner/family-planning-fields";
 import { emptyFamilyPlanning, loadDemoFamilyPlanning, mutateDemoFamilyPlanning, persistDemoPlanningItems, updateDemoPriorItem } from "@/components/planner/family-planning-demo";
 import { BrandMark } from "@/components/brand-mark";
-import { ALL_CALENDARS, ALL_PEOPLE, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
+import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
 import { NotificationInboxButton } from "@/components/planner/notification-inbox";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { useTheme } from "@/components/theme-provider";
@@ -245,14 +245,14 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     || initialData.visibleCalendars.some((calendar) => calendar.id === calendarFilter)
     ? calendarFilter
     : ALL_CALENDARS;
-  const activePersonFilter = personFilter === ALL_PEOPLE
+  const activePersonFilter = personFilter === ALL_PEOPLE || personFilter === UNASSIGNED
     || initialData.members.some((member) => member.userId === personFilter) || family.children.some((child) => child.id === personFilter)
     ? personFilter
     : ALL_PEOPLE;
   const filteredDays = useMemo(() => days.map((day) => ({
     ...day,
     events: day.events.map((event) => familyEvent(initialData.isDemo ? demoEventMembers(event) : event, family)).filter((event) => calendarEventMatchesFilters(event, activeCalendarFilter, activePersonFilter) && (!childFilter || event.assignedMemberIds?.includes(childFilter))),
-    items: day.items.filter((item) => (activePersonFilter === ALL_PEOPLE || itemMemberIds(item).includes(activePersonFilter)) && (!childFilter || itemMemberIds(item).includes(childFilter))),
+    items: day.items.filter((item) => planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))),
   })), [activeCalendarFilter, activePersonFilter, childFilter, family, days, initialData.isDemo]);
   const thisWeek = currentWeekStart(initialData.household.timezone);
   const previousWeek = addDateDays(initialData.weekStart, -7);
@@ -636,8 +636,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         <section className="weekly-section" aria-label="Weekly notes and tasks">
           <header><span>This week</span><small>Notes and tasks that don’t belong to one day</small></header>
           <div className="weekly-columns">
-            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note" && (activePersonFilter === ALL_PEOPLE || itemMemberIds(item).includes(activePersonFilter)) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
-            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task" && (activePersonFilter === ALL_PEOPLE || itemMemberIds(item).includes(activePersonFilter)) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" onAdd={addItem} /></div>
+            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note" && planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
+            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task" && planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" onAdd={addItem} /></div>
           </div>
         </section>
       </section>

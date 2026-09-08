@@ -1,8 +1,17 @@
 import { CalendarDays, RotateCcw, UserRound } from "lucide-react";
-import type { CalendarEvent, EditableCalendar, HouseholdMember } from "@/types/domain";
+import type { CalendarEvent, EditableCalendar, HouseholdMember, PlanningItem } from "@/types/domain";
 
 export const ALL_CALENDARS = "all-calendars";
 export const ALL_PEOPLE = "all-people";
+export const UNASSIGNED = "unassigned";
+
+function memberIdsMatchPerson(memberIds: string[], personId: string): boolean {
+  return personId === ALL_PEOPLE || (personId === UNASSIGNED ? memberIds.length === 0 : memberIds.includes(personId));
+}
+
+export function planningItemMatchesPerson(item: PlanningItem, personId: string): boolean {
+  return memberIdsMatchPerson(item.assignedMemberIds ?? (item.childId ? [item.childId] : []), personId);
+}
 
 export function calendarEventMatchesFilters(
   event: CalendarEvent,
@@ -11,7 +20,7 @@ export function calendarEventMatchesFilters(
 ): boolean {
   const eventCalendarId = event.calendarPreferenceId ?? event.calendarId;
   return (calendarId === ALL_CALENDARS || eventCalendarId === calendarId)
-    && (personId === ALL_PEOPLE || (event.assignedMemberIds?.includes(personId) ?? event.assignedAdultUserIds?.includes(personId) ?? event.sourceUserId === personId));
+    && memberIdsMatchPerson(event.assignedMemberIds ?? event.assignedAdultUserIds ?? (event.sourceUserId ? [event.sourceUserId] : []), personId);
 }
 
 export function CalendarFilters({
@@ -55,6 +64,7 @@ export function CalendarFilters({
         <span>Person</span>
         <select aria-label="Person filter" value={personId} onChange={(event) => onPerson(event.target.value)}>
           <option value={ALL_PEOPLE}>Everyone</option>
+          <option value={UNASSIGNED}>Unassigned</option>
           {members.map((member) => <option value={member.userId} key={member.userId}>{member.displayName}</option>)}
           {childProfiles.map((child) => <option value={child.id} key={child.id}>{child.name}</option>)}
         </select>

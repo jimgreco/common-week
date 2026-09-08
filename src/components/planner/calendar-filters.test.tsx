@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
-import { ALL_CALENDARS, ALL_PEOPLE, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
+import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
 import { getDemoPlannerData } from "@/lib/demo-data";
 
 function FilterHarness() {
@@ -20,6 +20,39 @@ function FilterHarness() {
 }
 
 describe("CalendarFilters", () => {
+  it("finds unassigned events while preserving explicit empty assignments and calendar filters", () => {
+    const event = getDemoPlannerData().days.flatMap((day) => day.events)[0];
+    const assigned = { ...event, assignedMemberIds: ["child"], assignedAdultUserIds: ["adult"] };
+    expect(calendarEventMatchesFilters(assigned, ALL_CALENDARS, UNASSIGNED)).toBe(false);
+    const cleared = { ...assigned, assignedMemberIds: [] };
+    expect(calendarEventMatchesFilters(cleared, ALL_CALENDARS, UNASSIGNED)).toBe(true);
+    expect(calendarEventMatchesFilters(cleared, "another-calendar", UNASSIGNED)).toBe(false);
+    expect(calendarEventMatchesFilters({ ...assigned, assignedMemberIds: undefined }, ALL_CALENDARS, UNASSIGNED)).toBe(false);
+    expect(calendarEventMatchesFilters({ ...assigned, assignedMemberIds: undefined, assignedAdultUserIds: [] }, ALL_CALENDARS, UNASSIGNED)).toBe(true);
+    expect(calendarEventMatchesFilters({ ...event, assignedMemberIds: undefined, assignedAdultUserIds: undefined, sourceUserId: undefined }, ALL_CALENDARS, UNASSIGNED)).toBe(true);
+    expect(calendarEventMatchesFilters({ ...event, assignedMemberIds: undefined, assignedAdultUserIds: undefined, sourceUserId: "connector" }, ALL_CALENDARS, UNASSIGNED)).toBe(false);
+  });
+
+  it("finds unassigned daily and weekly tasks and notes, regardless of their creator", () => {
+    const data = getDemoPlannerData();
+    for (const item of [...data.weeklyItems, ...data.days.flatMap((day) => day.items)]) {
+      expect(planningItemMatchesPerson({ ...item, assignedMemberIds: undefined, childId: null }, UNASSIGNED)).toBe(true);
+      expect(planningItemMatchesPerson({ ...item, assignedMemberIds: ["adult", "child"] }, UNASSIGNED)).toBe(false);
+      expect(planningItemMatchesPerson({ ...item, assignedMemberIds: undefined, childId: "child" }, UNASSIGNED)).toBe(false);
+      expect(planningItemMatchesPerson({ ...item, assignedMemberIds: [], childId: "child" }, UNASSIGNED)).toBe(true);
+      expect(planningItemMatchesPerson({ ...item, assignedMemberIds: ["child"] }, "child")).toBe(true);
+      expect(planningItemMatchesPerson({ ...item, assignedMemberIds: [] }, ALL_PEOPLE)).toBe(true);
+    }
+  });
+
+  it("lets the user select Unassigned and clear the filter", () => {
+    render(<FilterHarness />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Person filter" }), { target: { value: UNASSIGNED } });
+    expect(screen.getByRole("combobox", { name: "Person filter" })).toHaveValue(UNASSIGNED);
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByRole("combobox", { name: "Person filter" })).toHaveValue(ALL_PEOPLE);
+  });
+
   it("uses explicit adult assignments instead of calendar connection ownership", () => {
     const event = getDemoPlannerData().days.flatMap((day) => day.events)[0];
     const assigned = { ...event, sourceUserId: "connector", assignedAdultUserIds: ["alex", "sam"] };

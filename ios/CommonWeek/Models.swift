@@ -515,11 +515,20 @@ enum CalendarGuestEmails {
 enum CalendarEventFilter {
     static let allCalendars = "all-calendars"
     static let allPeople = "all-people"
+    static let unassigned = "unassigned"
+
+    private static func matches(memberIds: [String], personId: String) -> Bool {
+        personId == allPeople || (personId == unassigned ? memberIds.isEmpty : memberIds.contains(personId))
+    }
+
+    static func matches(_ item: PlanningItem, personId: String) -> Bool {
+        matches(memberIds: item.assignedMemberIds ?? item.childId.map { [$0] } ?? [], personId: personId)
+    }
 
     static func matches(_ event: CalendarEvent, calendarId: String, personId: String) -> Bool {
         let eventCalendarId = event.calendarPreferenceId ?? event.calendarId
         return (calendarId == allCalendars || eventCalendarId == calendarId)
-            && (personId == allPeople || (event.assignedMemberIds?.contains(personId) ?? event.assignedAdultUserIds?.contains(personId) ?? (event.sourceUserId == personId)))
+            && matches(memberIds: event.assignedMemberIds ?? event.assignedAdultUserIds ?? event.sourceUserId.map { [$0] } ?? [], personId: personId)
     }
 
     static func calendars(in data: WeeklyPlannerData) -> [EditableCalendar] {

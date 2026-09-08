@@ -232,6 +232,43 @@ final class WeekDateTests: XCTestCase {
         ))
     }
 
+    func testUnassignedCalendarFilterRespectsExplicitAndLegacyAssignments() throws {
+        var event = try XCTUnwrap(PreviewData.planner.days.first?.events.first)
+        event.assignedMemberIds = ["child"]
+        XCTAssertFalse(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: CalendarEventFilter.unassigned))
+        event.assignedMemberIds = []
+        XCTAssertTrue(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: CalendarEventFilter.unassigned))
+        XCTAssertFalse(CalendarEventFilter.matches(event, calendarId: "another-calendar", personId: CalendarEventFilter.unassigned))
+        event.assignedMemberIds = nil
+        event.assignedAdultUserIds = []
+        XCTAssertTrue(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: CalendarEventFilter.unassigned))
+        event.assignedAdultUserIds = ["adult"]
+        XCTAssertFalse(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: CalendarEventFilter.unassigned))
+        event.assignedAdultUserIds = nil
+        XCTAssertFalse(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: CalendarEventFilter.unassigned))
+        var payload = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(event)) as? [String: Any])
+        payload.removeValue(forKey: "sourceUserId")
+        event = try JSONDecoder().decode(CalendarEvent.self, from: JSONSerialization.data(withJSONObject: payload))
+        XCTAssertTrue(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: CalendarEventFilter.unassigned))
+    }
+
+    func testUnassignedPlanningFilterIncludesDailyAndWeeklyTasksAndNotes() {
+        let data = PreviewData.planner
+        for var item in data.weeklyItems + data.days.flatMap(\.items) {
+            item.assignedMemberIds = nil
+            item.childId = nil
+            XCTAssertTrue(CalendarEventFilter.matches(item, personId: CalendarEventFilter.unassigned))
+            item.childId = "child"
+            XCTAssertFalse(CalendarEventFilter.matches(item, personId: CalendarEventFilter.unassigned))
+            item.assignedMemberIds = []
+            XCTAssertTrue(CalendarEventFilter.matches(item, personId: CalendarEventFilter.unassigned))
+            item.assignedMemberIds = ["adult", "child"]
+            XCTAssertFalse(CalendarEventFilter.matches(item, personId: CalendarEventFilter.unassigned))
+            XCTAssertTrue(CalendarEventFilter.matches(item, personId: "child"))
+            XCTAssertTrue(CalendarEventFilter.matches(item, personId: CalendarEventFilter.allPeople))
+        }
+    }
+
     func testOlderPlannerSnapshotsDeriveFilterCalendars() throws {
         let encoded = try JSONEncoder().encode(PreviewData.planner)
         var payload = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
