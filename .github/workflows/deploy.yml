@@ -119,7 +119,16 @@ jobs:
           chmod 700 "$HOME/.ssh"
           printf '%s\n' "$EC2_SSH_KEY" > "$HOME/.ssh/common-week"
           chmod 600 "$HOME/.ssh/common-week"
-          ssh-keyscan -H "$EC2_HOST" > "$HOME/.ssh/known_hosts"
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 30 -t ed25519 -H "$EC2_HOST" > "$HOME/.ssh/known_hosts"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "EC2 did not respond to SSH host-key discovery after three attempts."
+              exit 1
+            fi
+            sleep 5
+          done
           chmod 600 "$HOME/.ssh/known_hosts"
 
       - name: Transfer application to EC2
