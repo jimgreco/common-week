@@ -1,14 +1,15 @@
 import SwiftUI
 
 private enum FamilyPlanningTab: String, CaseIterable, Identifiable {
-    case review = "Review", children = "Children", routines = "Routines", templates = "Templates"
+    case review = "Review", children = "Family", routines = "Routines", templates = "Templates"
     var id: String { rawValue }
 }
 
 private enum FamilyPlanningSheet: Identifiable {
-    case child(ChildProfile?), routine(TaskRoutine?), item(PlanningItem), event(CalendarEvent)
+    case adult(AdultCalendarAssignment), child(ChildProfile?), routine(TaskRoutine?), item(PlanningItem), event(CalendarEvent)
     var id: String {
         switch self {
+        case .adult(let value): "adult-\(value.userId)"
         case .child(let value): "child-\(value?.id ?? "new")"
         case .routine(let value): "routine-\(value?.id ?? "new")"
         case .item(let value): "item-\(value.id)"
@@ -25,6 +26,7 @@ struct FamilyPlanningView: View {
     @State private var tab = FamilyPlanningTab.review
     @State private var sheet: FamilyPlanningSheet?
     @State private var selectedChildId = ""
+    @State private var selectedAdultId: String?
     @State private var reviewStep = 0
     @State private var priorities = ""
     @State private var meals = ""
@@ -262,11 +264,44 @@ struct FamilyPlanningView: View {
     @ViewBuilder
     private func childrenSections(_ data: FamilyPlanningData) -> some View {
         Section {
+            Text("Assign calendars to each adult. Shared calendars can belong to more than one person’s schedule.").font(.footnote).foregroundStyle(.secondary)
+            ForEach(data.adults ?? []) { adult in
+                HStack {
+                    Button { selectedAdultId = adult.userId } label: {
+                        VStack(alignment: .leading) {
+                            Label(adult.displayName, systemImage: selectedAdultId == adult.userId ? "person.crop.circle.fill" : "person.crop.circle")
+                            Text("\(adult.calendarPreferenceIds.count) assigned calendar\(adult.calendarPreferenceIds.count == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.buttonStyle(.borderless).accessibilityIdentifier("adult-schedule-\(adult.userId)")
+                    Spacer()
+                    Button("Assign calendars") { sheet = .adult(adult) }.disabled(!data.canEdit)
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("adult-calendars-\(adult.userId)")
+                }
+            }
+        } header: { Text("Adults") } footer: { Text("The Person filter uses these assignments. Calendar privacy stays the same. Adult accounts are managed in Settings.") }
+        if let adult = data.adults?.first(where: { $0.userId == selectedAdultId }) {
+            Section("\(adult.displayName)’s week") {
+                let events = currentPlanner.days.flatMap(\.events).filter { adult.calendarPreferenceIds.contains($0.calendarPreferenceId ?? $0.calendarId) }
+                if events.isEmpty { Text("No events from assigned calendars this week.").foregroundStyle(.secondary) }
+                ForEach(currentPlanner.days) { day in
+                    ForEach(day.events.filter { adult.calendarPreferenceIds.contains($0.calendarPreferenceId ?? $0.calendarId) }) { event in
+                        Button { sheet = .event(event) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(WeekDate.shortDay(day.date)).font(.caption).foregroundStyle(.secondary)
+                                Label(event.title, systemImage: "calendar").foregroundStyle(Color(hex: event.calendarColor))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Section {
             Text("Children have their own profile and schedule without an email address or login.").font(.footnote).foregroundStyle(.secondary)
             Button("Add child", systemImage: "person.crop.circle.badge.plus") { sheet = .child(nil) }.disabled(!data.canEdit)
             ForEach(data.children) { child in
                 HStack {
-                    Button { selectedChildId = child.id } label: {
+                    Button { selectedChildId = child.id; selectedAdultId = nil } label: {
                         Label(child.name, systemImage: selectedChildId == child.id ? "person.crop.circle.fill" : "person.crop.circle")
                             .foregroundStyle(Color(hex: child.color))
                     }.buttonStyle(.plain)
@@ -275,7 +310,7 @@ struct FamilyPlanningView: View {
                 }
             }
         } header: { Text("Children") }
-        if let child = data.children.first(where: { $0.id == selectedChildId }) ?? data.children.first {
+        if selectedAdultId == nil, let child = data.children.first(where: { $0.id == selectedChildId }) ?? data.children.first {
             Section("\(child.name)’s week") {
                 Text("Includes plans and tasks tagged for \(child.name), plus events from the calendars selected in their profile.").font(.footnote).foregroundStyle(.secondary)
                 let weekly = ChildSchedule.items(for: child, in: currentPlanner.weeklyItems)
@@ -359,6 +394,7 @@ struct FamilyPlanningView: View {
     @ViewBuilder
     private func editor(_ destination: FamilyPlanningSheet) -> some View {
         switch destination {
+        case .adult(let adult): AdultCalendarEditor(adult: adult, planner: currentPlanner, store: store)
         case .child(let child): ChildProfileEditor(child: child, planner: currentPlanner, store: store)
         case .routine(let routine): TaskRoutineEditor(routine: routine, planner: currentPlanner, store: store, changed: { await viewModel.load(week: planner.weekStart, quietly: true) })
         case .item(let item): ItemEditorView(item: item, planningDate: item.planningDate, defaultType: item.type, data: currentPlanner, viewModel: viewModel, appleReminders: .shared)

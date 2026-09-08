@@ -1,5 +1,52 @@
 import SwiftUI
 
+struct AdultCalendarEditor: View {
+    let adult: AdultCalendarAssignment
+    let planner: WeeklyPlannerData
+    @ObservedObject var store: FamilyPlanningStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected: [String]
+
+    init(adult: AdultCalendarAssignment, planner: WeeklyPlannerData, store: FamilyPlanningStore) {
+        self.adult = adult; self.planner = planner; self.store = store
+        _selected = State(initialValue: adult.calendarPreferenceIds)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    let calendars = CalendarEventFilter.calendars(in: planner)
+                    if calendars.isEmpty { Text("Connect or share a calendar in Settings to assign it here.").foregroundStyle(.secondary) }
+                    ForEach(calendars) { calendar in
+                        Toggle(calendar.name, isOn: Binding(get: { selected.contains(calendar.id) }, set: { enabled in
+                            selected.removeAll { $0 == calendar.id }
+                            if enabled { selected.append(calendar.id) }
+                        })).accessibilityIdentifier("adult-calendar-\(calendar.id)")
+                    }
+                } header: { Text("Calendars for \(adult.displayName)") } footer: {
+                    Text("Selected calendars appear in this adult’s schedule and Person filter. A shared calendar can be assigned to several family members. Sharing permissions stay the same.")
+                }
+                if let error = store.error { Section { Text(error).foregroundStyle(.red) } }
+            }
+            .formStyle(.grouped)
+            .disabled(store.isSaving)
+            .navigationTitle("Assign calendars")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(store.isSaving) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(store.isSaving ? "Saving…" : "Save") {
+                        Task {
+                            if await store.save(.init(action: "saveAdultCalendars", weekStart: planner.weekStart, userId: adult.userId, calendarPreferenceIds: selected)) { dismiss() }
+                        }
+                    }.disabled(store.isSaving)
+                }
+            }
+        }
+    }
+}
+
 struct ChildProfileEditor: View {
     let planner: WeeklyPlannerData
     @ObservedObject var store: FamilyPlanningStore

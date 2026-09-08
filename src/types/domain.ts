@@ -129,6 +129,7 @@ export interface CalendarEvent {
   id: string;
   providerEventId?: string;
   sourceUserId?: string;
+  assignedAdultUserIds?: string[];
   calendarPreferenceId?: string;
   etag?: string;
   recurringEventId?: string;
@@ -319,6 +320,12 @@ export interface ChildProfile {
   calendarPreferenceIds: string[];
 }
 
+export interface AdultCalendarAssignment {
+  userId: string;
+  displayName: string;
+  calendarPreferenceIds: string[];
+}
+
 export interface TaskRoutine {
   id: string;
   text: string;
@@ -359,6 +366,7 @@ export interface FamilyPlanningData {
   currentUserId: string;
   canEdit: boolean;
   children: ChildProfile[];
+  adults: AdultCalendarAssignment[];
   openTasks: PlanningItem[];
   routines: TaskRoutine[];
   templates: WeekTemplate[];
@@ -366,6 +374,7 @@ export interface FamilyPlanningData {
 }
 
 export type FamilyPlanningMutation = { weekStart: string } & (
+  | { action: "saveAdultCalendars"; userId: string; calendarPreferenceIds: string[] }
   | { action: "saveChild"; child: Omit<ChildProfile, "id"> & { id?: string } }
   | { action: "deleteChild"; id: string }
   | { action: "saveRoutine"; sourceItemId?: string; routine: Omit<TaskRoutine, "id" | "childId" | "endsOn"> & { id?: string; childId?: string | null; endsOn?: string | null } }

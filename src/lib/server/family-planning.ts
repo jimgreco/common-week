@@ -70,7 +70,15 @@ export async function materializeTaskRoutines(context: Context, weekStart: strin
 export async function getFamilyPlanningData(context: Context, requestedWeek: string): Promise<FamilyPlanningData> {
   const weekStart = familyWeekSchema.parse(requestedWeek);
   const membership = await access(context, { query });
-  const [children, routines, templates, reviewRows, acknowledgements, openTasks] = await Promise.all([
+  const [adults, children, routines, templates, reviewRows, acknowledgements, openTasks] = await Promise.all([
+    query<FamilyPlanningData["adults"][number]>(
+      `select hm.user_id as "userId",u.display_name as "displayName",
+        coalesce(array_agg(cp.id::text) filter(where cp.id is not null),'{}') as "calendarPreferenceIds"
+       from household_members hm join users u on u.id=hm.user_id
+       left join adult_calendar_links al on al.household_id=hm.household_id and al.user_id=hm.user_id
+       left join calendar_preferences cp on cp.id=al.calendar_preference_id and cp.household_id=hm.household_id
+         and (cp.visibility='share' or (cp.user_id=$2 and cp.visibility='private'))
+       where hm.household_id=$1 group by hm.user_id,u.display_name,hm.created_at order by hm.created_at`, [context.householdId,context.userId]),
     query<FamilyPlanningData["children"][number]>(
       `select c.id,c.name,c.color,coalesce(array_agg(cp.id::text) filter(where cp.id is not null),'{}') as "calendarPreferenceIds"
        from child_profiles c left join child_calendar_links cl on cl.child_id = c.id
@@ -98,7 +106,7 @@ export async function getFamilyPlanningData(context: Context, requestedWeek: str
        order by pi.week_start_date desc,pi.sort_order,pi.created_at limit 100`, [context.householdId, weekStart]),
   ]);
   return {
-    weekStart, currentUserId: context.userId, canEdit: membership.role !== "viewer", children: children.rows,
+    weekStart, currentUserId: context.userId, canEdit: membership.role !== "viewer", adults: adults.rows, children: children.rows,
     routines: routines.rows, templates: templates.rows, openTasks: openTasks.rows.map((item) => ({ ...item, updatedAt: item.updatedAt.toISOString() })),
     review: { weekStart, ...(reviewRows.rows[0] ?? { priorities: "", meals: "", logistics: "", revision: 0 }),
       reviewedBy: acknowledgements.rows.map((ack) => ({ ...ack, reviewedAt: ack.reviewedAt.toISOString() })) },
@@ -149,6 +157,19 @@ export async function mutateFamilyPlanning(context: Context, input: FamilyPlanni
     const membership = await access(context, database, true);
     await lockHousehold(database, context.householdId);
     switch (parsed.action) {
+      case "saveAdultCalendars": {
+        const adult = await database.query("select 1 from household_members where household_id=$1 and user_id=$2 for update", [context.householdId,parsed.userId]);
+        if (!adult.rows[0]) throw new Error("That adult is not a member of this household.");
+        const calendars = await database.query(`select id from calendar_preferences where household_id=$1 and id=any($2::uuid[])
+          and (visibility='share' or (user_id=$3 and visibility='private'))`, [context.householdId,parsed.calendarPreferenceIds,context.userId]);
+        if (calendars.rows.length !== parsed.calendarPreferenceIds.length) throw new Error("Choose calendars visible to you in this household.");
+        // A partial view must not remove links to another adult's private calendars.
+        await database.query(`delete from adult_calendar_links al using calendar_preferences cp
+          where al.household_id=$1 and al.user_id=$2 and cp.id=al.calendar_preference_id
+          and (cp.visibility='share' or (cp.user_id=$3 and cp.visibility='private'))`, [context.householdId,parsed.userId,context.userId]);
+        for (const calendarId of parsed.calendarPreferenceIds) await database.query("insert into adult_calendar_links(household_id,user_id,calendar_preference_id) values($1,$2,$3) on conflict do nothing", [context.householdId,parsed.userId,calendarId]);
+        break;
+      }
       case "saveChild": {
         const child = parsed.child;
         if (child.calendarPreferenceIds.length) {

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight, Circle, Copy, LoaderCircle, Plus, Repeat2, Trash2, Users } from "lucide-react";
 import { Modal } from "@/components/planner/dialogs";
 import { formatMobileDate, formatWeekRange } from "@/lib/date";
-import type { ChildProfile, FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeeklyPlannerData } from "@/types/domain";
+import type { AdultCalendarAssignment, ChildProfile, FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeeklyPlannerData } from "@/types/domain";
 
 import { childColors, weekdays, ChildBadge, RoutineFields, routineDescription, type FamilyMutationHandler } from "@/components/planner/family-planning-fields";
 export { RoutineFields } from "@/components/planner/family-planning-fields";
@@ -22,6 +22,20 @@ function ChildEditor({ child, calendars, onSave, onCancel }: { child?: ChildProf
   </form>;
 }
 
+function AdultCalendarEditor({ adult, calendars, onSave, onCancel }: { adult: AdultCalendarAssignment; calendars: WeeklyPlannerData["visibleCalendars"]; onSave: (ids: string[]) => Promise<string | null>; onCancel: () => void }) {
+  const [selected, setSelected] = useState(adult.calendarPreferenceIds);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return <form className="family-editor form-stack" onSubmit={async (event) => { event.preventDefault(); setBusy(true); setError(null); const result = await onSave(selected); setBusy(false); if (result) setError(result); else onCancel(); }}>
+    <fieldset className="family-calendar-links"><legend>Calendars for {adult.displayName}</legend><p>Choose the calendars that belong in {adult.displayName}’s schedule. A shared calendar can be assigned to several family members. Sharing permissions stay the same.</p>
+      {calendars.map((calendar) => <label key={calendar.id}><input type="checkbox" checked={selected.includes(calendar.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, calendar.id] : selected.filter((id) => id !== calendar.id))} /><i style={{ backgroundColor: calendar.color }} />{calendar.name}</label>)}
+      {!calendars.length && <p className="family-muted">Connect or share a calendar in Settings to assign it here.</p>}
+    </fieldset>
+    {error && <p className="family-error" role="alert">{error}</p>}
+    <div className="family-form-actions"><button type="button" className="button button-secondary" disabled={busy} onClick={onCancel}>Cancel</button><button className="button button-primary" disabled={busy}>{busy ? "Saving…" : "Save calendars"}</button></div>
+  </form>;
+}
+
 function RoutineEditor({ routine, childProfiles, weekStart, onSave, onCancel }: { routine?: TaskRoutine; childProfiles: ChildProfile[]; weekStart: string; onSave: (routine: TaskRoutine) => Promise<string | null>; onCancel: () => void }) {
   const [draft, setDraft] = useState<TaskRoutine>(() => routine ?? { id: crypto.randomUUID(), text: "", childId: null, frequency: "weekly", interval: 1, weekdays: [], startsOn: weekStart, endsOn: null, active: true });
   const [busy, setBusy] = useState(false);
@@ -34,7 +48,7 @@ function RoutineEditor({ routine, childProfiles, weekStart, onSave, onCancel }: 
   </form>;
 }
 
-const steps = ["Carry forward", "Look ahead", "Routines", "Children", "Make a plan", "Review together"];
+const steps = ["Carry forward", "Look ahead", "Routines", "Family", "Make a plan", "Review together"];
 
 export function FamilyPlanningPanel({ family, data, items, onMutation, onClose, onToggle, onEdit, onMove, onEvent, initialStep = 0 }: {
   family: FamilyPlanningData;
@@ -49,6 +63,7 @@ export function FamilyPlanningPanel({ family, data, items, onMutation, onClose, 
   initialStep?: number;
 }) {
   const [step, setStep] = useState(initialStep);
+  const [adultEditor, setAdultEditor] = useState<AdultCalendarAssignment | null>(null);
   const [childEditor, setChildEditor] = useState<ChildProfile | "new" | null>(null);
   const [routineEditor, setRoutineEditor] = useState<TaskRoutine | "new" | null>(null);
   const [templateName, setTemplateName] = useState("");
@@ -111,7 +126,11 @@ export function FamilyPlanningPanel({ family, data, items, onMutation, onClose, 
           <section className="family-template-section"><div className="family-section-heading"><div><h4>A head start from a saved week</h4><p>Templates copy one-off shared notes and tasks. Your routines already repeat; calendar events and reminders stay separate.</p></div><Copy size={18} /></div><div className="family-card-list">{family.templates.map((template) => <article className="family-template" key={template.id}><div><strong>{template.name}</strong><small>{template.items.length} notes and tasks</small></div>{family.canEdit && <><button className="button button-secondary" disabled={Boolean(busy) || template.appliedToWeek} onClick={() => setTemplateConfirm(template.id)}>{template.appliedToWeek ? <><Check size={14} />Added this week</> : "Use this week"}</button><button className="icon-button danger" aria-label={`Delete template ${template.name}`} disabled={Boolean(busy)} onClick={() => void apply({ action: "deleteTemplate", weekStart: data.weekStart, id: template.id })}><Trash2 size={15} /></button></>}{templateConfirm === template.id && <div className="family-template-preview"><strong>Add {template.items.length} items to this week?</strong><ul>{template.items.map((item, index) => <li key={index}>{item.dayOffset === null ? "This week" : weekdays[item.dayOffset]} · {item.text}</li>)}</ul><div className="family-form-actions"><button className="text-button" onClick={() => setTemplateConfirm(null)}>Cancel</button><button className="button button-primary" disabled={Boolean(busy)} onClick={async () => { const result = await apply({ action: "applyTemplate", weekStart: data.weekStart, id: template.id }, "Template added to the week."); if (!result) setTemplateConfirm(null); }}>Add to this week</button></div></div>}</article>)}</div>{family.canEdit && <form className="family-template-save" onSubmit={async (event) => { event.preventDefault(); if (!templateName.trim()) return; const result = await apply({ action: "saveTemplate", weekStart: data.weekStart, name: templateName.trim(), id: templateId }, "Week saved as a reusable template."); if (!result) { setTemplateName(""); setTemplateId(crypto.randomUUID()); } }}><label>Save this week as a template<input value={templateName} maxLength={80} placeholder="A regular school week" onChange={(event) => setTemplateName(event.target.value)} required /></label><button className="button button-secondary" disabled={Boolean(busy) || !templateName.trim() || !items.some((item) => item.weekStartDate === data.weekStart && !item.routineId)}>Save template</button></form>}</section>
         </>}
         {step === 3 && <>
-          <div className="family-section-heading"><div><span className="eyebrow">04 · Children</span><h3>Their week, part of yours.</h3><p>Add a child’s name and color, then link their calendars and tag their shared tasks. No login needed.</p></div><Users size={23} /></div>
+          <div className="family-section-heading"><div><span className="eyebrow">04 · Family</span><h3>Everyone’s week, together.</h3><p>Assign calendars to the adults and children in your household.</p></div><Users size={23} /></div>
+          <h4>Adults</h4>
+          {adultEditor ? <AdultCalendarEditor key={adultEditor.userId} adult={adultEditor} calendars={data.visibleCalendars} onCancel={() => setAdultEditor(null)} onSave={(calendarPreferenceIds) => apply({ action: "saveAdultCalendars", weekStart: data.weekStart, userId: adultEditor.userId, calendarPreferenceIds }, "Adult calendar assignments saved.")} /> : <div className="family-children-grid">{family.adults.map((adult) => <article className="family-child-card" key={adult.userId}><Users size={24} /><div><h4>{adult.displayName}</h4><p>{adult.calendarPreferenceIds.length} assigned calendar{adult.calendarPreferenceIds.length === 1 ? "" : "s"}</p></div>{family.canEdit && <button className="text-button" aria-label={`Assign calendars for ${adult.displayName}`} onClick={() => setAdultEditor(adult)}>Assign calendars</button>}</article>)}</div>}
+          <p className="family-muted">Use the Person filter above the weekly calendar to view an adult’s assigned calendars. Manage adult accounts in Settings.</p>
+          <div className="family-section-heading"><div><h4>Children</h4><p>Add a child’s name and color, then link their calendars and tag their shared tasks. No login needed.</p></div><Users size={23} /></div>
           {childEditor ? <ChildEditor key={typeof childEditor === "string" ? "new" : childEditor.id} child={typeof childEditor === "string" ? undefined : childEditor} calendars={data.visibleCalendars} onSave={(child) => apply({ action: "saveChild", weekStart: data.weekStart, child }, "Child profile saved.")} onCancel={() => setChildEditor(null)} /> : <>
             <div className="family-children-grid">{family.children.map((child) => { const childTasks = items.filter((item) => item.childId === child.id && item.type === "task" && !item.isCompleted); return <article className="family-child-card" key={child.id}><span className="family-child-avatar" style={{ backgroundColor: child.color }}>{child.name.slice(0, 1)}</span><div><h4>{child.name}</h4><p>{child.calendarPreferenceIds.length} linked calendars · {childTasks.length} open tasks</p></div>{family.canEdit && <div className="family-row-actions"><button className="text-button" onClick={() => setChildEditor(child)}>Edit</button><button className="icon-button danger" aria-label={`Remove ${child.name}`} onClick={() => setDeleteChildConfirm(child.id)}><Trash2 size={14} /></button></div>}{deleteChildConfirm === child.id && <div className="family-child-confirm"><p>Remove {child.name}’s profile? Shared tasks and calendars will remain.</p><button className="text-button" onClick={() => setDeleteChildConfirm(null)}>Keep profile</button><button className="button button-danger-quiet" disabled={Boolean(busy)} onClick={async () => { const result = await apply({ action: "deleteChild", weekStart: data.weekStart, id: child.id }, "Child profile removed."); if (!result) setDeleteChildConfirm(null); }}>Remove profile</button></div>}</article>; })}</div>
             {family.canEdit && <button className="button button-secondary family-add-button" onClick={() => setChildEditor("new")}><Plus size={15} />Add a child</button>}

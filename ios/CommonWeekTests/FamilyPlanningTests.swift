@@ -2,6 +2,22 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    @MainActor
+    func testAdultAssignmentsPersistAndDrivePersonFilterWithoutChangingOwnership() throws {
+        let demo = FamilyPlanningDemo()
+        let week = "2026-10-05"
+        _ = try demo.apply(.init(action: "saveAdultCalendars", weekStart: week, userId: "demo-rachel", calendarPreferenceIds: ["calendar-family"]))
+        let event = try XCTUnwrap(demo.planner(weekStart: week).days.first?.events.first)
+        XCTAssertEqual(event.sourceUserId, "demo-jim")
+        XCTAssertTrue(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: "demo-rachel"))
+        XCTAssertEqual(demo.data(weekStart: "2026-10-12").adults?.first { $0.userId == "demo-rachel" }?.calendarPreferenceIds, ["calendar-family"])
+        _ = try demo.apply(.init(action: "saveAdultCalendars", weekStart: week, userId: "demo-jim", calendarPreferenceIds: []))
+        let updated = try XCTUnwrap(demo.planner(weekStart: week).days.first?.events.first)
+        XCTAssertFalse(CalendarEventFilter.matches(updated, calendarId: CalendarEventFilter.allCalendars, personId: "demo-jim"))
+        let cached = try JSONDecoder().decode(CalendarEvent.self, from: JSONEncoder().encode(updated))
+        XCTAssertEqual(cached.assignedAdultUserIds, ["demo-rachel"])
+    }
+
     func testChildAssignmentSurvivesOfflineQueueAndCanBeCleared() throws {
         let assigned = PlanningItemDraft(id: "task", text: "School bag", type: .task, planningDate: nil, weekStartDate: "2026-09-07", remindAt: nil, childId: "child")
         let cleared = PlanningItemDraft(id: "task", text: "School bag", type: .task, planningDate: nil, weekStartDate: "2026-09-07", remindAt: nil, childId: nil, childAssignmentIsSet: true)

@@ -9,6 +9,38 @@ final class CommonWeekScreenshots: XCTestCase {
         app = XCUIApplication()
     }
 
+    func testAdultCalendarAssignments() throws {
+        #if targetEnvironment(macCatalyst)
+        app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
+        app.launch()
+        #else
+        launchDemo()
+        #endif
+        let opener = app.buttons["family-planning-open"]
+        XCTAssertTrue(opener.waitForExistence(timeout: 10)); opener.tap()
+        let tabs = app.segmentedControls["family-planning-tabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 10)); tabs.buttons["Family"].tap()
+        let assign = app.buttons["adult-calendars-demo-rachel"]
+        XCTAssertTrue(assign.waitForExistence(timeout: 5)); assign.tap()
+        #if targetEnvironment(macCatalyst)
+        let calendar = app.checkBoxes["adult-calendar-calendar-family"]
+        XCTAssertTrue(calendar.waitForExistence(timeout: 5)); calendar.tap()
+        #else
+        let calendar = app.switches["adult-calendar-calendar-family"]
+        XCTAssertTrue(calendar.waitForExistence(timeout: 5))
+        calendar.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        #endif
+        XCTAssertEqual(calendar.value as? String, "1")
+        app.buttons["Save"].tap()
+        XCTAssertTrue(assign.waitForExistence(timeout: 5))
+        app.buttons["adult-schedule-demo-rachel"].tap()
+        XCTAssertTrue(app.staticTexts["Rachel’s week"].waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Adult calendar assignment and schedule")
+        assign.tap()
+        XCTAssertTrue(calendar.waitForExistence(timeout: 5))
+        XCTAssertEqual(calendar.value as? String, "1")
+    }
+
     func testFamilyPlanningProfilesRoutinesTemplatesAndReview() throws {
         #if targetEnvironment(macCatalyst)
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
@@ -39,7 +71,7 @@ final class CommonWeekScreenshots: XCTestCase {
         opener.tap()
         let tabs = app.segmentedControls["family-planning-tabs"]
         XCTAssertTrue(tabs.waitForExistence(timeout: 10))
-        tabs.buttons["Children"].tap()
+        tabs.buttons["Family"].tap()
         app.buttons["Add child"].tap()
         let childName = app.textFields["child-name"]
         XCTAssertTrue(childName.waitForExistence(timeout: 5))
@@ -97,7 +129,7 @@ final class CommonWeekScreenshots: XCTestCase {
         attachCurrentScreen(named: "Guided weekly planning review")
         app.buttons["Done"].tap()
         opener.tap()
-        tabs.buttons["Children"].tap()
+        tabs.buttons["Family"].tap()
         XCTAssertTrue(app.buttons["Alex"].waitForExistence(timeout: 5))
     }
 

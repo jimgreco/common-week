@@ -20,6 +20,15 @@ function FilterHarness() {
 }
 
 describe("CalendarFilters", () => {
+  it("uses explicit adult assignments instead of calendar connection ownership", () => {
+    const event = getDemoPlannerData().days.flatMap((day) => day.events)[0];
+    const assigned = { ...event, sourceUserId: "connector", assignedAdultUserIds: ["alex", "sam"] };
+    expect(calendarEventMatchesFilters(assigned, ALL_CALENDARS, "alex")).toBe(true);
+    expect(calendarEventMatchesFilters(assigned, ALL_CALENDARS, "sam")).toBe(true);
+    expect(calendarEventMatchesFilters(assigned, ALL_CALENDARS, "connector")).toBe(false);
+    expect(calendarEventMatchesFilters({ ...assigned, assignedAdultUserIds: [] }, ALL_CALENDARS, "connector")).toBe(false);
+    expect(calendarEventMatchesFilters(assigned, "another-calendar", "alex")).toBe(false);
+  });
   it("filters events by both calendar and source person", () => {
     const data = getDemoPlannerData();
     const familyEvent = data.days.flatMap((day) => day.events).find((event) => event.calendarPreferenceId === "demo-F")!;

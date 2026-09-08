@@ -5,6 +5,7 @@ import Foundation
 final class FamilyPlanningDemo {
     static let shared = FamilyPlanningDemo()
     private var children = [ChildProfile(id: "demo-child", name: "Miriam", color: "#688173", calendarPreferenceIds: ["calendar-family"])]
+    private var adultCalendars: [String: [String]] = [:]
     private var routines: [TaskRoutine] = []
     private var templates: [WeekTemplate] = []
     private var applied = Set<String>()
@@ -28,19 +29,34 @@ final class FamilyPlanningDemo {
                 insert(item, into: &value)
             }
         }
+        for index in value.days.indices {
+            value.days[index].events = value.days[index].events.map { event in
+                var event = event
+                event.assignedAdultUserIds = value.members.filter { member in
+                    adultCalendars[member.userId]?.contains(event.calendarPreferenceId ?? event.calendarId) ?? (event.sourceUserId == member.userId)
+                }.map(\.userId)
+                return event
+            }
+        }
         weeks[weekStart] = value
         return value
     }
 
     func data(weekStart: String) -> FamilyPlanningData {
         let review = reviews[weekStart] ?? .init(weekStart: weekStart, priorities: "Keep Saturday afternoon open", meals: "Dinner at home Monday through Thursday", logistics: "Confirm camp pickup plans", revision: 0, reviewedBy: [])
-        return FamilyPlanningData(weekStart: weekStart, currentUserId: PreviewData.user.userId, canEdit: true, children: children, routines: routines, templates: templates.map { .init(id: $0.id, name: $0.name, items: $0.items, appliedToWeek: applied.contains("\($0.id):\(weekStart)")) }, review: review, openTasks: weeks.values.filter { $0.weekStart < weekStart }.flatMap { $0.weeklyItems + $0.days.flatMap(\.items) }.filter { $0.type == .task && !$0.isCompleted })
+        let planner = weeks[weekStart] ?? PreviewData.planner(weekStart: weekStart)
+        let adults = planner.members.map { member in
+            AdultCalendarAssignment(userId: member.userId, displayName: member.displayName, calendarPreferenceIds: adultCalendars[member.userId] ?? CalendarEventFilter.calendars(in: planner).filter { $0.sourceUserId == member.userId }.map(\.id))
+        }
+        return FamilyPlanningData(weekStart: weekStart, currentUserId: PreviewData.user.userId, canEdit: true, children: children, routines: routines, templates: templates.map { .init(id: $0.id, name: $0.name, items: $0.items, appliedToWeek: applied.contains("\($0.id):\(weekStart)")) }, review: review, openTasks: weeks.values.filter { $0.weekStart < weekStart }.flatMap { $0.weeklyItems + $0.days.flatMap(\.items) }.filter { $0.type == .task && !$0.isCompleted }, adults: adults)
     }
 
     func apply(_ mutation: FamilyPlanningMutation) throws -> FamilyPlanningData {
         let week = mutation.weekStart
         var review = data(weekStart: week).review
         switch mutation.action {
+        case "saveAdultCalendars":
+            if let userId = mutation.userId, let ids = mutation.calendarPreferenceIds { adultCalendars[userId] = ids }
         case "saveChild":
             if let child = mutation.child { children.removeAll { $0.id == child.id }; children.append(child) }
         case "deleteChild":

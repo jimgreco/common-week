@@ -7,6 +7,13 @@ struct ChildProfile: Codable, Identifiable, Hashable {
     var calendarPreferenceIds: [String]
 }
 
+struct AdultCalendarAssignment: Codable, Identifiable, Equatable {
+    var id: String { userId }
+    let userId: String
+    let displayName: String
+    var calendarPreferenceIds: [String]
+}
+
 struct TaskRoutine: Codable, Identifiable, Hashable {
     let id: String
     var text: String
@@ -73,6 +80,7 @@ struct FamilyPlanningData: Codable, Equatable {
     var templates: [WeekTemplate]
     var review: WeeklyReview
     var openTasks: [PlanningItem]? = nil
+    var adults: [AdultCalendarAssignment]? = nil
 }
 
 struct FamilyPlanningMutation: Encodable {
@@ -88,6 +96,8 @@ struct FamilyPlanningMutation: Encodable {
     var revision: Int? = nil
     var reviewed: Bool? = nil
     var sourceItemId: String? = nil
+    var userId: String? = nil
+    var calendarPreferenceIds: [String]? = nil
 }
 
 enum ChildSchedule {

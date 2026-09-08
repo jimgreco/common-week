@@ -4,6 +4,7 @@ import type { FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRout
 
 const storageKey = "week-of-us:family-planning-demo:v1";
 interface DemoStore {
+  adultCalendars?: Record<string, string[]>;
   children: FamilyPlanningData["children"];
   routines: FamilyPlanningData["routines"];
   templates: FamilyPlanningData["templates"];
@@ -17,7 +18,7 @@ function readStore(): DemoStore {
 }
 function writeStore(store: DemoStore) { try { localStorage.setItem(storageKey, JSON.stringify(store)); } catch { /* A private browser can still use the current demo session. */ } }
 export function emptyFamilyPlanning(weekStart: string, currentUserId: string): FamilyPlanningData {
-  return { weekStart, currentUserId, canEdit: true, children: [], routines: [], templates: [], openTasks: [], review: { weekStart, priorities: "", meals: "", logistics: "", revision: 0, reviewedBy: [] } };
+  return { weekStart, currentUserId, canEdit: true, adults: [], children: [], routines: [], templates: [], openTasks: [], review: { weekStart, priorities: "", meals: "", logistics: "", revision: 0, reviewedBy: [] } };
 }
 function newTask(data: WeeklyPlannerData, values: Partial<PlanningItem> & Pick<PlanningItem, "id" | "text" | "planningDate">): PlanningItem {
   return { weekStartDate: data.weekStart, type: "task", isCompleted: false, sortOrder: 0, createdBy: data.members[0]?.userId ?? "demo-user", createdByName: data.members[0]?.displayName ?? "You", updatedAt: new Date().toISOString(), saveState: "saved", ...values };
@@ -33,7 +34,8 @@ function materialize(data: WeeklyPlannerData, store: DemoStore, items: PlanningI
   return next;
 }
 function familyFromStore(data: WeeklyPlannerData, currentUserId: string, store: DemoStore): FamilyPlanningData {
-  return { ...emptyFamilyPlanning(data.weekStart, currentUserId), children: store.children, routines: store.routines, templates: store.templates.map((template) => ({ ...template, appliedToWeek: (store.appliedWeeks[template.id] ?? []).includes(data.weekStart) })), review: store.reviews[data.weekStart] ?? emptyFamilyPlanning(data.weekStart, currentUserId).review, openTasks: Object.entries(store.itemsByWeek).filter(([week]) => week < data.weekStart).flatMap(([, items]) => items).filter((item) => item.type === "task" && !item.isCompleted).slice(-100) };
+  const adults = data.members.map((member) => ({ userId: member.userId, displayName: member.displayName, calendarPreferenceIds: store.adultCalendars?.[member.userId] ?? data.visibleCalendars.filter((calendar) => calendar.sourceUserId === member.userId).map((calendar) => calendar.id) }));
+  return { ...emptyFamilyPlanning(data.weekStart, currentUserId), adults, children: store.children, routines: store.routines, templates: store.templates.map((template) => ({ ...template, appliedToWeek: (store.appliedWeeks[template.id] ?? []).includes(data.weekStart) })), review: store.reviews[data.weekStart] ?? emptyFamilyPlanning(data.weekStart, currentUserId).review, openTasks: Object.entries(store.itemsByWeek).filter(([week]) => week < data.weekStart).flatMap(([, items]) => items).filter((item) => item.type === "task" && !item.isCompleted).slice(-100) };
 }
 export function loadDemoFamilyPlanning(data: WeeklyPlannerData, currentUserId: string): { family: FamilyPlanningData; items: PlanningItem[] } {
   const store = readStore();
@@ -60,6 +62,9 @@ export function mutateDemoFamilyPlanning(data: WeeklyPlannerData, currentUserId:
   store.itemsByWeek[data.weekStart] = items;
   const review = store.reviews[data.weekStart] ?? emptyFamilyPlanning(data.weekStart, currentUserId).review;
   switch (mutation.action) {
+    case "saveAdultCalendars":
+      store.adultCalendars = { ...store.adultCalendars, [mutation.userId]: mutation.calendarPreferenceIds };
+      break;
     case "saveChild": {
       const child = { ...mutation.child, id: mutation.child.id ?? crypto.randomUUID() };
       store.children = [...store.children.filter((candidate) => candidate.id !== child.id), child];

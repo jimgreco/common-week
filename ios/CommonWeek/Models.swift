@@ -280,6 +280,7 @@ struct CalendarEvent: Codable, Identifiable, Hashable {
     let attendees: [CalendarAttendee]?
     let canRespond: Bool?
     let reminder: NotificationReminder?
+    var assignedAdultUserIds: [String]? = nil
 }
 
 struct CalendarAttendee: Codable, Hashable, Identifiable {
@@ -509,7 +510,7 @@ enum CalendarEventFilter {
     static func matches(_ event: CalendarEvent, calendarId: String, personId: String) -> Bool {
         let eventCalendarId = event.calendarPreferenceId ?? event.calendarId
         return (calendarId == allCalendars || eventCalendarId == calendarId)
-            && (personId == allPeople || event.sourceUserId == personId)
+            && (personId == allPeople || (event.assignedAdultUserIds?.contains(personId) ?? (event.sourceUserId == personId)))
     }
 
     static func calendars(in data: WeeklyPlannerData) -> [EditableCalendar] {

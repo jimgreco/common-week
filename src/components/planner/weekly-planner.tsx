@@ -236,9 +236,9 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     : ALL_PEOPLE;
   const filteredDays = useMemo(() => days.map((day) => ({
     ...day,
-    events: day.events.filter((event) => calendarEventMatchesFilters(event, activeCalendarFilter, activePersonFilter) && (!childFilter || (family.children.find((child) => child.id === childFilter)?.calendarPreferenceIds.includes(event.calendarPreferenceId ?? event.calendarId) ?? false))),
+    events: day.events.filter((event) => calendarEventMatchesFilters({ ...event, assignedAdultUserIds: family.adults.length ? family.adults.filter((adult) => adult.calendarPreferenceIds.includes(event.calendarPreferenceId ?? event.calendarId)).map((adult) => adult.userId) : event.assignedAdultUserIds }, activeCalendarFilter, activePersonFilter) && (!childFilter || (family.children.find((child) => child.id === childFilter)?.calendarPreferenceIds.includes(event.calendarPreferenceId ?? event.calendarId) ?? false))),
     items: day.items.filter((item) => !childFilter || item.childId === childFilter),
-  })), [activeCalendarFilter, activePersonFilter, childFilter, family.children, days]);
+  })), [activeCalendarFilter, activePersonFilter, childFilter, family.children, family.adults, days]);
   const thisWeek = currentWeekStart(initialData.household.timezone);
   const previousWeek = addDateDays(initialData.weekStart, -7);
   const nextWeek = addDateDays(initialData.weekStart, 7);
@@ -571,7 +571,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
 
         <section className="family-planning-strip" aria-label="Family planning">
           <div className="family-strip-title"><span className="family-strip-icon"><Sparkles size={20} /></span><div><strong>A little planning, together.</strong><span>{family.review.reviewedBy.length ? `${family.review.reviewedBy.length} of ${initialData.members.filter((member) => member.role !== "viewer").length} adults reviewed this week` : "Make room for the week ahead."}</span></div></div>
-          <div className="family-strip-actions"><button className="text-button" disabled={familyLoading} onClick={() => { setFamilyStep(3); setFamilyOpen(true); }}><Users size={14} />Children{family.children.length > 0 && ` (${family.children.length})`}</button><button className="text-button" disabled={familyLoading} onClick={() => { setFamilyStep(2); setFamilyOpen(true); }}><Repeat2 size={14} />Routines</button><button className="button button-primary" disabled={familyLoading} onClick={() => { setFamilyStep(0); setFamilyOpen(true); }}>{familyLoading ? "Loading…" : "Plan this week"}<ArrowRight size={14} /></button></div>
+          <div className="family-strip-actions"><button className="text-button" disabled={familyLoading} onClick={() => { setFamilyStep(3); setFamilyOpen(true); }}><Users size={14} />Family</button><button className="text-button" disabled={familyLoading} onClick={() => { setFamilyStep(2); setFamilyOpen(true); }}><Repeat2 size={14} />Routines</button><button className="button button-primary" disabled={familyLoading} onClick={() => { setFamilyStep(0); setFamilyOpen(true); }}>{familyLoading ? "Loading…" : "Plan this week"}<ArrowRight size={14} /></button></div>
         </section>
         {family.children.length > 0 && <div className="family-child-filters" aria-label="Child filter"><button className={!childFilter ? "is-active" : ""} aria-pressed={!childFilter} onClick={() => setChildFilter("")}>Everyone</button>{family.children.map((child) => <button key={child.id} className={childFilter === child.id ? "is-active" : ""} aria-pressed={childFilter === child.id} onClick={() => { setChildFilter(child.id); setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); }}><ChildBadge child={child} /></button>)}</div>}
 

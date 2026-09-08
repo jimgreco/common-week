@@ -231,6 +231,11 @@ export async function getPlannerData(
       getWeatherForAssignments(assignments),
     ]);
 
+  const adultLinks = await query<{ calendar_preference_id: string; user_ids: string[] }>(
+    "select calendar_preference_id,array_agg(user_id::text) as user_ids from adult_calendar_links where household_id=$1 group by calendar_preference_id",
+    [context.householdId],
+  );
+  const adultsByCalendar = new Map(adultLinks.rows.map((link) => [link.calendar_preference_id, link.user_ids]));
   const items = planningResult.rows.map(mapPlanningItem);
   const calendarReminders = calendarBundle.events.length
     ? await query<{ id: string; calendar_preference_id: string; provider_event_id: string; remind_at: Date }>(
@@ -297,6 +302,7 @@ export async function getPlannerData(
             (event) => !hiddenEventIds.has(event.id) && eventFallsOnDate(event, date, household.timezone),
           ).map((event) => ({
             ...event,
+            assignedAdultUserIds: adultsByCalendar.get(event.calendarPreferenceId ?? event.calendarId) ?? [],
             canEdit: Boolean(event.calendarPreferenceId && writablePreferenceIds.has(event.calendarPreferenceId)),
             canRespond: event.sourceUserId === context.userId && Boolean(event.attendees?.some((attendee) => attendee.self)),
             reminder: event.calendarPreferenceId && event.providerEventId

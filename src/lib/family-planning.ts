@@ -29,6 +29,7 @@ export const routineSchema = z.object({
 }).refine((value) => !value.endsOn || value.endsOn >= value.startsOn, "End date must follow the start date.");
 const week = { weekStart: familyWeekSchema };
 export const familyMutationSchema = z.discriminatedUnion("action", [
+  z.object({ ...week, action: z.literal("saveAdultCalendars"), userId: uuid, calendarPreferenceIds: z.array(uuid).max(100).transform((ids) => [...new Set(ids)]) }),
   z.object({ ...week, action: z.literal("saveChild"), child: z.object({
     id: uuid.optional(), name: z.string().trim().min(1).max(80), color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     calendarPreferenceIds: z.array(uuid).max(30).transform((ids) => [...new Set(ids)]),

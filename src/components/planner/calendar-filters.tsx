@@ -11,7 +11,7 @@ export function calendarEventMatchesFilters(
 ): boolean {
   const eventCalendarId = event.calendarPreferenceId ?? event.calendarId;
   return (calendarId === ALL_CALENDARS || eventCalendarId === calendarId)
-    && (personId === ALL_PEOPLE || event.sourceUserId === personId);
+    && (personId === ALL_PEOPLE || (event.assignedAdultUserIds?.includes(personId) ?? event.sourceUserId === personId));
 }
 
 export function CalendarFilters({

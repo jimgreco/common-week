@@ -123,6 +123,27 @@ try {
   await rejected(owner.token, { action: "saveChild", child: { ...child, calendarPreferenceIds: [foreignCalendar] } }, "foreign calendars cannot be linked");
   await rejected(owner.token, { action: "saveChild", child: { ...child, calendarPreferenceIds: [hiddenCalendar] } }, "hidden calendars cannot be linked");
 
+  const sharedCalendar = randomUUID();
+  await client.query("insert into calendar_preferences(id,household_id,user_id,google_calendar_id,calendar_name,visibility,is_selected) values($1,$2,$3,$4,'Shared family calendar','share',true)", [sharedCalendar,householdIds[0],owner.userId,`${sharedCalendar}@example.com`]);
+  const adult = async (token, userId) => (await family(token)).adults.find((entry) => entry.userId === userId);
+  assert.ok((await adult(owner.token,owner.userId)).calendarPreferenceIds.includes(sharedCalendar), "new calendars initially belong to the connected adult");
+  const adultMutation = { action: "saveAdultCalendars", userId: partner.userId, calendarPreferenceIds: [privateCalendar,sharedCalendar] };
+  await change(owner.token, adultMutation);
+  await change(owner.token, adultMutation);
+  assert.deepEqual((await adult(partner.token,partner.userId)).calendarPreferenceIds, [sharedCalendar], "assignments do not expose another person's private calendar");
+  await change(partner.token, { ...adultMutation, calendarPreferenceIds: [sharedCalendar] });
+  assert.deepEqual((await adult(owner.token,partner.userId)).calendarPreferenceIds.sort(), [privateCalendar,sharedCalendar].sort(), "editing a visible subset preserves private links");
+  await rejected(viewer.token, adultMutation, "viewers cannot edit adult assignments");
+  await rejected(owner.token, { ...adultMutation, userId: outsider.userId }, "foreign adults cannot be assigned calendars");
+  await rejected(owner.token, { ...adultMutation, calendarPreferenceIds: [foreignCalendar] }, "foreign calendars cannot be assigned to adults");
+  await rejected(partner.token, { ...adultMutation, calendarPreferenceIds: [privateCalendar] }, "another person's private calendar cannot be assigned");
+  await rejected(owner.token, { ...adultMutation, calendarPreferenceIds: [hiddenCalendar] }, "hidden calendars cannot be assigned");
+  await assert.rejects(client.query("insert into adult_calendar_links values($1,$2,$3)", [householdIds[0],outsider.userId,sharedCalendar]), { code: "23503" });
+  await assert.rejects(client.query("insert into adult_calendar_links values($1,$2,$3)", [householdIds[0],owner.userId,foreignCalendar]), { code: "23503" });
+  await change(owner.token, { ...adultMutation, calendarPreferenceIds: [] });
+  assert.deepEqual((await adult(owner.token,partner.userId)).calendarPreferenceIds, [], "all visible assignments can be explicitly cleared");
+  assert.ok((await adult(owner.token,owner.userId)).calendarPreferenceIds.includes(sharedCalendar), "removing one adult's assignment preserves another adult's assignment");
+
   const taskId = randomUUID();
   const taskDraft = { id: taskId, text: "Bring library books", type: "task", weekStartDate: week, planningDate: week, childId: child.id };
   assert.equal((await api(owner.token, "/api/ios/planning-items", taskDraft)).ok, true);

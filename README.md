@@ -71,13 +71,14 @@ The native app lives in [`ios`](ios). Open [`ios/CommonWeek.xcodeproj`](ios/Comm
 
 Open **Plan this week** from the planner, or **Plan next week** to prepare the coming week. The guide brings unfinished tasks, calendar commitments, recurring routines, children, shared notes, and review status into one workflow. The Sunday planning notification opens this guide for the coming week.
 
+- Under **Family → Adults**, assign calendars to existing household members. A calendar can belong to multiple adults’ schedules. The **Person** filter follows these assignments rather than the Google account supplying events. Existing and new calendars initially retain their connected adult; assignments can be changed or cleared without changing sharing or edit permissions.
 - Add children by name and color in the guide. Linking a calendar keeps its existing visibility and editing permissions. Tag a shared task or plan with a child to include it in that child’s week; children do not need an account or email address.
 - Create recurring shared tasks in **Routines**. Each scheduled occurrence has its own completion state. Weekly routines can belong to the whole week or selected weekdays. Custom intervals cover schedules such as every other week.
 - Editing or stopping a routine updates its open future occurrences. Completed tasks, past occurrences, and explicitly deleted occurrences are preserved. Reloading a week cannot recreate a deleted occurrence. Existing unfinished-task carryover continues to preserve task identity.
 - Save a week’s one-off plans and tasks as a named template and apply it to another week. Repeating tasks already come from their routines and are excluded from templates. Applying the same template twice to the same week does not duplicate items.
 - Save shared priorities, meal ideas, and logistics notes, then mark the week reviewed. Each adult reviews for themselves. Changing the shared notes requires a new review; simultaneous edits report a conflict rather than silently replacing another person’s notes.
 
-Apply migration `015_family_planning.sql` before deploying these features. Profile, routine, template, and review changes require a connection; native shared-task editing retains its existing offline support. Recurring tasks are generated when a current or future week is loaded, up to two years ahead; browsing older weeks does not create historical chores.
+Apply migrations `015_family_planning.sql` and `016_adult_calendar_assignments.sql` before deploying these features. Profile, routine, template, and review changes require a connection; native shared-task editing retains its existing offline support. Recurring tasks are generated when a current or future week is loaded, up to two years ahead; browsing older weeks does not create historical chores.
 
 After a production build, `DATABASE_URL=... npm run test:family` starts a local authenticated application and checks the family workflows against PostgreSQL. It creates isolated test households and removes them when finished. Set `FAMILY_TEST_BASE_URL` to test an already running local application instead.
 

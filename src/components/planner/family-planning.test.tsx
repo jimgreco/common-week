@@ -14,6 +14,20 @@ const task: PlanningItem = { id: "task-1", text: "School bag", planningDate: "20
 const callbacks = { onClose: vi.fn(), onToggle: vi.fn().mockResolvedValue(undefined), onEdit: vi.fn(), onMove: vi.fn().mockResolvedValue(null), onEvent: vi.fn() };
 
 describe("FamilyPlanningPanel", () => {
+  it("edits adult calendars and retains selections when saving fails", async () => {
+    const family = { ...base(), adults: [{ userId: "user-1", displayName: "Alex", calendarPreferenceIds: [] }] };
+    const onMutation = vi.fn().mockResolvedValueOnce("Connection interrupted").mockResolvedValue(null);
+    render(<FamilyPlanningPanel family={family} data={data} items={[]} onMutation={onMutation} initialStep={3} {...callbacks} />);
+    fireEvent.click(screen.getByRole("button", { name: "Assign calendars for Alex" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "School" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save calendars" }));
+    await screen.findAllByText("Connection interrupted");
+    expect(screen.getByRole("checkbox", { name: "School" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Save calendars" }));
+    await waitFor(() => expect(onMutation).toHaveBeenCalledTimes(2));
+    expect(onMutation.mock.calls[0][0]).toEqual({ action: "saveAdultCalendars", weekStart: data.weekStart, userId: "user-1", calendarPreferenceIds: ["calendar-1"] });
+    expect(onMutation.mock.calls[1][0]).toEqual(onMutation.mock.calls[0][0]);
+  });
   it("keeps child profile and calendar link edits through a failed save and retries with the same identity", async () => {
     const onMutation = vi.fn().mockResolvedValueOnce("Connection interrupted").mockResolvedValue(null);
     render(<FamilyPlanningPanel family={base()} data={data} items={[]} onMutation={onMutation} initialStep={3} {...callbacks} />);
