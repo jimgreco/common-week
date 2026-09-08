@@ -94,6 +94,28 @@ final class APIClient {
         try await send(path: "/api/ios/planner", query: [URLQueryItem(name: "week", value: week)])
     }
 
+    func taskWorkspace(resource: [String: String] = [:]) async throws -> TaskWorkspacePayload {
+        try await send(path: "/api/task-workspace", query: resource.map { URLQueryItem(name: $0.key, value: $0.value) })
+    }
+
+    func mutateTaskWorkspace(_ body: [String: WorkspaceValue]) async throws {
+        let _: EmptyResponse = try await send(path: "/api/task-workspace", method: "POST", body: body)
+    }
+
+    func workspaceFile(id: String, name: String) async throws -> URL {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/task-workspace"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "file", value: id)]
+        var request = URLRequest(url: components.url!)
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let (bytes, response) = try await session.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw APIError.server("File could not be downloaded.") }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent((name as NSString).lastPathComponent)
+        try bytes.write(to: url)
+        return url
+    }
+
     func familyPlanning(week: String) async throws -> FamilyPlanningData {
         try await send(path: "/api/ios/family-planning", query: [URLQueryItem(name: "week", value: week)])
     }

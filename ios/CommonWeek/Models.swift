@@ -69,6 +69,9 @@ struct HouseholdMember: Codable, Identifiable, Hashable {
 }
 
 struct PlanningItem: Codable, Identifiable, Hashable {
+    var responsibleMemberId: String? = nil
+    var deadline: String? = nil
+    var isBacklog: Bool? = nil
     let id: String
     var planningDate: String?
     var weekStartDate: String

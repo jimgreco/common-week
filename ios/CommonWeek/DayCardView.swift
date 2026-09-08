@@ -381,6 +381,7 @@ struct PlanningItemRow: View {
                         .strikethrough(item.isCompleted)
                         .opacity(item.isCompleted ? 0.55 : 1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if let deadline = item.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(.secondary) }
                     if let carryoverLabel = item.carryoverLabel {
                         Text(carryoverLabel)
                             .font(.caption2.weight(.semibold))

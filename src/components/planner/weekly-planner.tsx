@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { TaskWorkspaceProvider, TaskWorkspaceDialog } from "@/components/planner/task-workspace";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowLeft, ArrowRight, CalendarRange, CloudOff, Menu, Search, Settings, Users, WifiOff, X, Sparkles, Repeat2 } from "lucide-react";
 import { signOut } from "@/app/actions/auth";
@@ -40,6 +41,9 @@ import { saveEventMembersAction } from "@/app/actions/household-assignments";
 
 export function WeeklyPlanner({ initialData, currentUserName, initialFocus = null, initialInbox, initialFamily, initialReview = false, currentUserId }: { initialData: WeeklyPlannerData; currentUserName: string; initialFocus?: PlannerFocusTarget | null; initialInbox: NotificationInbox; initialFamily?: FamilyPlanningData; initialReview?: boolean; currentUserId?: string }) {
   const router = useRouter();
+  const taskParams = useSearchParams();
+  const linkedTaskId = taskParams.get("task");
+  const linkedTasksOpen = taskParams.get("tasks") === "1";
   const focusedItem = initialFocus?.kind === "planning_item"
     ? [...initialData.days.flatMap((day) => day.items), ...initialData.weeklyItems].find((item) => item.id === initialFocus.id) ?? null
     : null;
@@ -62,6 +66,9 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [weeklyItems, setWeeklyItems] = useState(initialData.weeklyItems);
   const familyUserId = initialFamily?.currentUserId ?? currentUserId ?? initialData.members.find((member) => member.displayName === currentUserName)?.userId ?? initialData.members[0]?.userId ?? "demo-user";
   const [family, setFamily] = useState<FamilyPlanningData>(() => initialFamily ?? emptyFamilyPlanning(initialData.weekStart, familyUserId));
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [linkedTask, setLinkedTask] = useState<string | undefined>();
+  useEffect(() => { if(!linkedTasksOpen)return; const timer=setTimeout(()=>{setTasksOpen(true);setLinkedTask(linkedTaskId??undefined);},0);return ()=>clearTimeout(timer); }, [linkedTasksOpen,linkedTaskId]);
   const [familyOpen, setFamilyOpen] = useState(initialReview);
   const [familyStep, setFamilyStep] = useState(0);
   const [childFilter, setChildFilter] = useState("");
@@ -542,12 +549,14 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   }, [allItems, days, initialData.isDemo]);
 
   return (
+    <TaskWorkspaceProvider people={[...initialData.members.map(m=>({id:m.userId,name:m.displayName})),...family.children.map(c=>({id:c.id,name:c.name}))]} userId={familyUserId} canEdit={initialData.isDemo || family.canEdit} week={initialData.weekStart} today={new Intl.DateTimeFormat("en-CA",{timeZone:initialData.household.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())} isDemo={initialData.isDemo} tasks={allItems.map(t=>({...t,responsibleMemberId:t.responsibleMemberId??null,deadline:t.deadline??null,isBacklog:t.isBacklog??false}))} onChange={(task)=>{ if(!initialData.isDemo){router.refresh();return;} if(!task)return; const prior=allItems.find(t=>t.id===task.id);const item:PlanningItem={sortOrder:prior?.sortOrder??0,createdBy:prior?.createdBy??familyUserId,updatedAt:new Date().toISOString(),...prior,...task};setDays(current=>current.map(day=>({...day,items:[...day.items.filter(t=>t.id!==item.id),...(!item.isBacklog&&item.planningDate===day.date ? [item]:[])]})));setWeeklyItems(current=>[...current.filter(t=>t.id!==item.id),...(!item.isBacklog&&!item.planningDate&&item.weekStartDate===initialData.weekStart?[item]:[])]); }}>
     <main className="app-frame">
       <header className="app-topbar">
         <BrandMark compact />
         <div className="topbar-household"><Users size={14} /><span>{initialData.household.name}</span></div>
         <nav className={`topbar-actions ${mobileMenu ? "is-open" : ""}`} aria-label="Account navigation">
           <button className="topbar-link" type="button" onClick={() => { setSearchOpen(true); setMobileMenu(false); }}><Search size={15} /> Search</button>
+          <button className="topbar-link" type="button" onClick={()=>{setTasksOpen(true);setMobileMenu(false);}}>Tasks & backlog</button>
           <NotificationInboxButton initialInbox={initialInbox} timeZone={initialData.household.timezone} />
           <button className="topbar-link" type="button" onClick={toggleTheme} title="Toggle dark mode"><span className="avatar" title={theme === "dark" ? "Dark mode" : "Light mode"}>{theme === "dark" ? "🌙" : "☀️"}</span></button>
           <Link className="topbar-link" href="/settings"><Settings size={15} /> Settings</Link>
@@ -627,6 +636,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         </section>
       </section>
 
+      {tasksOpen && <TaskWorkspaceDialog initialItemId={linkedTask} onClose={()=>{setTasksOpen(false);setLinkedTask(undefined);}} />}
       {familyOpen && !familyLoading && <FamilyPlanningPanel key={initialData.weekStart} family={family} data={{ ...initialData, days, calendarState }} items={guideItems} initialStep={familyStep} onMutation={mutateFamily} onClose={() => setFamilyOpen(false)} onToggle={toggleGuideItem} onMove={moveGuideItem} onEdit={(item) => { setFamilyOpen(false); if (item.weekStartDate !== initialData.weekStart) { router.push(`/planner?week=${item.weekStartDate}&item=${item.id}`); } else setEditingItem(item); }} onEvent={(event) => { setFamilyOpen(false); setSelectedEvent(event); }} />}
       {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} members={initialData.members} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
@@ -634,7 +644,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       {calendarEditor && <CalendarEventEditorDialog date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} locationBias={initialData.locations.find((location) => location.isDefault) ?? initialData.locations[0]} isDemo={initialData.isDemo} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
       {editingItem && <ItemEditorDialog members={initialData.members} childProfiles={family.children} onRepeat={family.canEdit ? repeatTask : undefined} item={editingItem} weekDates={weekDates(initialData.weekStart)} timeZone={initialData.household.timezone} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
       {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} timeZone={initialData.household.timezone} onEvent={(event) => { setSearchOpen(false); setSelectedEvent(event); }} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
-    </main>
+    </main></TaskWorkspaceProvider>
   );
 }
 

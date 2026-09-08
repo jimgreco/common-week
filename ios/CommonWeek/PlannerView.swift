@@ -10,6 +10,7 @@ enum PlannerSheet: Identifiable {
     case search
     case notifications
     case settings
+    case taskWorkspace(String? = nil)
     case familyPlanning
 
     var id: String {
@@ -22,6 +23,7 @@ enum PlannerSheet: Identifiable {
         case .location(let day): "location-\(day.date)"
         case .search: "search"
         case .notifications: "notifications"
+        case .taskWorkspace: "task-workspace"
         case .familyPlanning: "family-planning"
         case .settings: "settings"
         }
@@ -104,6 +106,7 @@ struct PlannerView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { BrandMark(compact: true) }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { sheet = .taskWorkspace() } label: { Image(systemName: "checklist") }.accessibilityLabel("Tasks and backlog")
                     Button { sheet = .familyPlanning } label: { Image(systemName: "person.2.badge.gearshape") }
                         .accessibilityLabel("Plan your week")
                         .accessibilityIdentifier("family-planning-open")
@@ -158,6 +161,8 @@ struct PlannerView: View {
         guard let data = viewModel.data, data.weekStart == weekStart else { return }
 
         switch destination.target {
+        case .taskWorkspace(let id):
+            sheet = .taskWorkspace(id)
         case .weeklyReview:
             sheet = .familyPlanning
         case .planningItem(let id):
@@ -181,6 +186,7 @@ struct PlannerView: View {
     }
 
     private func openInboxItem(_ item: NotificationInboxItem) async {
+        if let destination = NotificationCoordinator.plannerDestination(for: item.deepLink), case .taskWorkspace(let id) = destination.target { await notifications.markRead(item.id); sheet = .taskWorkspace(id); return }
         await notifications.markRead(item.id)
         sheet = nil
         if item.kind == "sunday_planning", let week = item.target?.weekStart ?? NotificationCoordinator.plannerDestination(for: item.deepLink)?.weekStart {
@@ -473,6 +479,7 @@ struct PlannerView: View {
             case .notifications: NotificationInboxView(coordinator: notifications, onOpen: { item in
                 Task { await openInboxItem(item) }
             })
+            case .taskWorkspace(let id): TaskWorkspaceView(planner: data, viewModel: viewModel, initialItemId: id)
             case .familyPlanning: FamilyPlanningView(planner: data, viewModel: viewModel)
             case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth, appleReminders: appleReminders)
             }

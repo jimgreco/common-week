@@ -103,7 +103,7 @@ export async function getFamilyPlanningData(context: Context, requestedWeek: str
        pi.updated_at as "updatedAt",pi.assigned_member_ids as "assignedMemberIds",pi.child_id as "childId",pi.routine_id as "routineId",pi.routine_occurrence_date::text as "routineOccurrenceDate",
        pi.original_planning_date::text as "originalPlanningDate",pi.original_week_start_date::text as "originalWeekStartDate",pi.carryover_count as "carryoverCount"
        from planning_items pi join users u on u.id=pi.created_by
-       where pi.household_id=$1 and pi.type='task' and not pi.is_completed and pi.week_start_date < $2::date
+       where pi.household_id=$1 and pi.type='task' and not pi.is_backlog and not pi.is_completed and pi.week_start_date < $2::date
        order by pi.week_start_date desc,pi.sort_order,pi.created_at limit 100`, [context.householdId, weekStart]),
   ]);
   return {
@@ -258,7 +258,7 @@ export async function mutateFamilyPlanning(context: Context, input: FamilyPlanni
         }
         await enforceLimit(database,"week_templates",context,30);
         const snapshot = await database.query<WeekTemplateItem>(`select (planning_date-week_start_date)::integer as "dayOffset",type,text,assigned_member_ids as "assignedMemberIds",child_id as "childId"
-          from planning_items where household_id=$1 and week_start_date=$2::date and routine_id is null order by sort_order,created_at limit 251`, [context.householdId,parsed.weekStart]);
+          from planning_items where household_id=$1 and week_start_date=$2::date and not is_backlog and routine_id is null order by sort_order,created_at limit 251`, [context.householdId,parsed.weekStart]);
         if (!snapshot.rows.length) throw new Error("Add one-off tasks or plans to this week before saving a template. Routines already repeat automatically.");
         if (snapshot.rows.length > 250) throw new Error("Templates can contain up to 250 tasks and plans.");
         await database.query("insert into week_templates(id,household_id,name,items) values($1,$2,$3,$4::jsonb)", [id,context.householdId,parsed.name,JSON.stringify(snapshot.rows)]);

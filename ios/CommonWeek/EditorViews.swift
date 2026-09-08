@@ -40,6 +40,7 @@ struct ItemEditorView: View {
     @State private var isSaving = false
     @State private var showingTaskMigration = false
     @State private var showingRoutine = false
+    @State private var showingCollaboration = false
 
     init(
         item: PlanningItem?,
@@ -99,6 +100,7 @@ struct ItemEditorView: View {
                     )
                 }
             }
+            .sheet(isPresented: $showingCollaboration) { if let item { ItemCollaborationView(resource: ["itemId": item.id], title: item.text, planner: data, viewModel: viewModel, includePlacement: false).familyPlanningSheetSize() } }
             .sheet(isPresented: $showingRoutine) {
                 if let item = currentItem {
                     PlanningItemRoutineView(item: item, planner: data, viewModel: viewModel)
@@ -228,6 +230,7 @@ struct ItemEditorView: View {
         }
         if let item {
             Section {
+                Button("Responsibility, deadline & shared details") { showingCollaboration = true }
                 if item.type == .task {
                     Button(currentItem?.routineId == nil ? "Repeat this task…" : "Edit repeating routine…") { showingRoutine = true }
                         .disabled(text != item.text || type != item.type || assignedMemberIds != (item.assignedMemberIds ?? item.childId.map { [$0] } ?? []))
@@ -1025,6 +1028,7 @@ struct LocationPickerView: View {
 
 struct EventDetailView: View {
     @State private var assigningMembers = false
+    @State private var showingCollaboration = false
     let event: CalendarEvent
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
@@ -1056,6 +1060,7 @@ struct EventDetailView: View {
                         Divider(); Eyebrow(text: "Notes"); Text(description).font(.body).foregroundStyle(CWTheme.secondaryInk)
                     }
                     if viewModel.canEditHousehold { Button("Assign household members") { assigningMembers = true }.buttonStyle(.bordered).accessibilityIdentifier("event-assign-members") }
+                    if event.calendarPreferenceId != nil && event.providerEventId != nil { Button("Checklist, discussion & files") { showingCollaboration = true }.buttonStyle(.bordered) }
                     guestContent
                     reminderContent
                     Text(event.canEdit == true ? (event.recurringEventId == nil ? "This event can be edited in Week of Us." : "You can update or delete this occurrence or its recurring series.") : "This event is read-only for your Google account. Enable Calendar editing and ask the calendar owner to grant your Google address permission to make changes. You can still hide it from the shared planner.")
@@ -1079,6 +1084,7 @@ struct EventDetailView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 if event.canEdit == true { ToolbarItem(placement: .confirmationAction) { Button("Edit") { editing = true } } }
             }
+            .sheet(isPresented: $showingCollaboration) { if let calendarId = event.calendarPreferenceId, let eventId = event.providerEventId { ItemCollaborationView(resource: ["calendarId": calendarId, "eventId": eventId], title: event.title, planner: data, viewModel: viewModel).familyPlanningSheetSize() } }
             .sheet(isPresented: $assigningMembers) { EventMemberEditor(event: viewModel.data?.days.flatMap(\.events).first(where: { $0.id == event.id }) ?? event, planner: data, viewModel: viewModel).familyPlanningSheetSize() }
             .sheet(isPresented: $editing) { CalendarEventEditorView(event: event, date: String(event.start.prefix(10)), data: data, viewModel: viewModel) }
             .task {

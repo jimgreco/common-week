@@ -41,6 +41,9 @@ interface LocationRow {
 
 interface PlanningRow {
   id: string;
+  responsible_member_id: string | null;
+  deadline: string | null;
+  is_backlog: boolean;
   assigned_member_ids: string[] | null;
   child_id: string | null;
   routine_id: string | null;
@@ -77,6 +80,9 @@ function mapLocation(row: LocationRow, defaultLocationId: string | null): Househ
 function mapPlanningItem(row: PlanningRow): PlanningItem {
   return {
     id: row.id,
+    responsibleMemberId: row.responsible_member_id,
+    deadline: row.deadline,
+    isBacklog: row.is_backlog,
     assignedMemberIds: row.assigned_member_ids,
     childId: row.child_id,
     routineId: row.routine_id,
@@ -137,7 +143,7 @@ export async function getPlannerData(
         [context.householdId, dates[0], dates[6]],
       ),
       query<PlanningRow>(
-        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.responsible_member_id, pi.deadline::text, pi.is_backlog, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -147,7 +153,7 @@ export async function getPlannerData(
            join users u on u.id = pi.created_by
            left join notification_reminders nr
              on nr.planning_item_id = pi.id and nr.user_id = $3 and nr.delivered_at is null
-          where pi.household_id = $1 and pi.week_start_date = $2::date
+          where pi.household_id = $1 and not pi.is_backlog and pi.week_start_date = $2::date
           order by pi.sort_order, pi.created_at`,
         [context.householdId, weekStart, context.userId],
       ),

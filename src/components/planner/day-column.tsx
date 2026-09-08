@@ -133,6 +133,7 @@ export function PlanningItemRow({
       )}
       <button className="planning-row-body" type="button" onClick={() => onEdit(item)}>
         <span className="planning-row-text">{item.text}</span>
+        {item.deadline && <span className="carryover-label">Due {item.deadline}</span>}
         {carriedFrom && <span className="carryover-label">{carriedFrom}</span>}
         <ChildBadge child={childProfiles.find((child) => child.id === item.childId)} />
         {item.routineId && <span className="routine-item-label">Repeating task</span>}

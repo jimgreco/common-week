@@ -31,6 +31,9 @@ function validTimeZone(value: string): boolean {
 
 interface PlanningRow {
   id: string;
+  responsible_member_id: string | null;
+  deadline: string | null;
+  is_backlog: boolean;
   assigned_member_ids: string[] | null;
   child_id: string | null;
   routine_id: string | null;
@@ -69,6 +72,9 @@ function actionError<T = undefined>(error: unknown, fallback: string): ActionRes
 function mappedItem(row: PlanningRow): PlanningItem {
   return {
     id: row.id,
+    responsibleMemberId: row.responsible_member_id,
+    deadline: row.deadline,
+    isBacklog: row.is_backlog,
     assignedMemberIds: row.assigned_member_ids,
     childId: row.child_id,
     routineId: row.routine_id,
@@ -208,7 +214,7 @@ export async function createPlanningItemAction(input: {
       );
       const itemId = inserted.rows[0]?.id ?? parsed.id;
       const result = itemId ? await database.query<PlanningRow>(
-        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.responsible_member_id, pi.deadline::text, pi.is_backlog, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -315,7 +321,7 @@ export async function updatePlanningItemAction(input: {
       deepLink: plannerNotificationDeepLink({ kind: "planning_item", id: parsed.id, weekStart: parsed.weekStartDate }),
     });
     const saved = await query<PlanningRow>(
-        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.responsible_member_id, pi.deadline::text, pi.is_backlog, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -554,7 +560,7 @@ export async function searchPlanningItemsAction(search: string): Promise<ActionR
     const context = await requireHouseholdContext();
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const result = await query<PlanningRow>(
-      `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+      `select pi.id, pi.responsible_member_id, pi.deadline::text, pi.is_backlog, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
               text, is_completed, sort_order, created_by,
               u.display_name as created_by_name, updated_at,
               pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -581,7 +587,7 @@ export async function searchPlannerAction(search: string): Promise<ActionResult<
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const [planning, events] = await Promise.all([
       query<PlanningRow & { reminder_id: string | null; remind_at: Date | null }>(
-        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.responsible_member_id, pi.deadline::text, pi.is_backlog, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
                 pi.carryover_count, pi.last_carried_at,

@@ -7,6 +7,7 @@ struct PlannerNotificationDestination: Hashable {
         case planningItem(String)
         case calendarReminder(String)
         case inbox(String)
+        case taskWorkspace(String)
         case weeklyReview
     }
 
@@ -150,6 +151,7 @@ final class NotificationCoordinator: NSObject, ObservableObject, UNUserNotificat
             return PlannerNotificationDestination(weekStart: validWeek, target: .inbox(notification))
         }
         guard let validWeek else { return nil }
+        if let task = components.queryItems?.first(where: { $0.name == "task" })?.value, UUID(uuidString: task) != nil { return PlannerNotificationDestination(weekStart: validWeek, target: .taskWorkspace(task)) }
         if components.queryItems?.contains(where: { $0.name == "review" && $0.value == "1" }) == true {
             return PlannerNotificationDestination(weekStart: validWeek, target: .weeklyReview)
         }

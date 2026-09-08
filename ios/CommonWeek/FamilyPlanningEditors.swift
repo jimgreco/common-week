@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct AdultCalendarEditor: View {
     let adult: AdultCalendarAssignment
@@ -343,5 +344,178 @@ struct EventMemberEditor: View {
             dismiss()
         } catch { self.error = error.localizedDescription }
         saving = false
+    }
+}
+
+struct TaskWorkspaceView: View {
+    let planner: WeeklyPlannerData
+    @ObservedObject var viewModel: PlannerViewModel
+    var initialItemId: String? = nil
+    @Environment(\.dismiss) private var dismiss
+    @State private var tasks: [WorkspaceTask] = []
+    @State private var filter = "All"
+    @State private var capture = ""
+    @State private var error: String?
+    @State private var busy = false
+    @State private var selected: WorkspaceTask?
+    private var today: String { WeekDate.string(Date(), timeZoneIdentifier: planner.household.timezone) }
+    private var filtered: [WorkspaceTask] { tasks.filter { $0.matches(filter, userId: viewModel.workspaceUserId, today: today) } }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if viewModel.canEditHousehold {
+                    Section("Capture now, plan later") {
+                        TextField("New task", text: $capture).accessibilityIdentifier("backlog-capture")
+                        Button("Add to backlog") { Task { await add() } }.disabled(busy || capture.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                Section {
+                    Picker("Show", selection: $filter) { ForEach(["All", "Mine", "Unassigned", "Backlog", "Overdue", "Completed"], id: \.self) { Text($0).tag($0) } }
+                }
+                if let error { Section { Text(error).foregroundStyle(.red) } }
+                Section("\(filtered.count) tasks") {
+                    ForEach(filtered) { task in
+                        Button { selected = task } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(task.text).foregroundStyle(.primary)
+                                Text("\(person(task.responsibleMemberId)) · \(task.isBacklog ? "Backlog" : task.planningDate ?? "Week of \(task.weekStartDate)")").font(.caption).foregroundStyle(.secondary)
+                                if let deadline = task.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(!task.isCompleted && deadline < today ? .red : .secondary) }
+                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
+                    if filtered.isEmpty { Text("No tasks in this view.").foregroundStyle(.secondary) }
+                }
+            }
+            .navigationTitle("Household tasks")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.fixedSize() } }
+            .task { await reload(); if let initialItemId { selected = tasks.first { $0.id == initialItemId } } }
+            .refreshable { await reload() }
+            .sheet(item: $selected, onDismiss: { Task { await reload(); await viewModel.load(quietly: true) } }) { task in
+                ItemCollaborationView(resource: ["itemId": task.id], title: task.text, planner: planner, viewModel: viewModel).familyPlanningSheetSize()
+            }
+        }
+    }
+    private func person(_ id: String?) -> String { planner.members.first { $0.userId == id }?.displayName ?? planner.childProfiles?.first { $0.id == id }?.name ?? "Unassigned" }
+    private func reload() async {
+        do { tasks = try await WorkspaceAccess.load(planner: planner).tasks; error = nil } catch { self.error = error.localizedDescription }
+    }
+    private func add() async {
+        busy = true; defer { busy = false }
+        do { try await WorkspaceAccess.mutate(["action": .string("capture"), "id": .string(UUID().uuidString), "text": .string(capture.trimmingCharacters(in: .whitespacesAndNewlines))], planner: planner, userId: viewModel.workspaceUserId); capture = ""; filter = "Backlog"; await reload() }
+        catch { self.error = error.localizedDescription }
+    }
+}
+
+struct ItemCollaborationView: View {
+    let resource: [String: String]
+    let title: String
+    let planner: WeeklyPlannerData
+    @ObservedObject var viewModel: PlannerViewModel
+    var includePlacement = true
+    @Environment(\.dismiss) private var dismiss
+    @State private var payload: TaskWorkspacePayload?
+    @State private var error: String?
+    @State private var busy = false
+    @State private var step = ""
+    @State private var comment = ""
+    @State private var importing = false
+    @State private var downloaded: URL?
+    @State private var nameDraft: String?
+    @FocusState private var editingField: String?
+    private var task: WorkspaceTask? { payload?.task }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let error { Section { Text(error).foregroundStyle(.red) } }
+                if payload == nil && error == nil { ProgressView("Loading shared details…") }
+                if let task, task.type == "task" { taskFields(task) }
+                Section("Checklist") {
+                    ForEach(payload?.entries.filter { $0.kind == "checklist" } ?? []) { entry in
+                        Toggle(entry.text, isOn: Binding(get: { entry.completed }, set: { value in Task { await save("check", fields: ["id": .string(entry.id), "completed": .bool(value)]) } }))
+                            .disabled(busy || !viewModel.canEditHousehold)
+                            .swipeActions { if viewModel.canEditHousehold { Button("Delete", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } } } }
+                    }
+                    if viewModel.canEditHousehold {
+                        TextField("Add a step", text: $step).focused($editingField, equals: "step")
+                        Button("Add step") { Task { if await addEntry("checklist", text: step) { step = ""; editingField = nil } } }.disabled(busy || step.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                Section("Discussion") {
+                    ForEach(payload?.entries.filter { $0.kind == "comment" } ?? []) { entry in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(entry.author).font(.caption.bold())
+                            Text(entry.text)
+                            Text(entry.createdAt.prefix(16).replacingOccurrences(of: "T", with: " ")).font(.caption2).foregroundStyle(.secondary)
+                            if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Remove comment", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } }.disabled(busy) }
+                        }
+                    }
+                    if viewModel.canEditHousehold {
+                        TextField("Leave a note for the household", text: $comment, axis: .vertical).lineLimit(3...6).focused($editingField, equals: "comment")
+                        Button("Post comment") { Task { if await addEntry("comment", text: comment) { comment = ""; editingField = nil } } }.disabled(busy || comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                Section {
+                    ForEach(payload?.entries.filter { $0.kind == "file" } ?? []) { entry in
+                        Button(entry.text) { Task { await download(entry) } }
+                            .swipeActions { if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Delete", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } } } }
+                    }
+                    if viewModel.canEditHousehold { Button("Attach a file") { importing = true }.disabled(busy) }
+                    if let downloaded { ShareLink("Open or share downloaded file", item: downloaded) }
+                } header: { Text("Files") } footer: { Text("Shared with people who can view this item. Up to 5 MB per file.") }
+            }
+            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.fixedSize() } }
+            .task { await reload() }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
+                Task {
+                    do {
+                        let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+                        let bytes = try Data(contentsOf: url, options: .mappedIfSafe)
+                        guard !bytes.isEmpty && bytes.count <= 5_242_880 else { throw APIError.server("Choose a file between 1 byte and 5 MB.") }
+                        await save("add", fields: ["id": .string(UUID().uuidString), "kind": .string("file"), "text": .string(url.lastPathComponent), "fileData": .string(bytes.base64EncodedString())])
+                    } catch { self.error = error.localizedDescription }
+                }
+            }
+        }
+    }
+    @ViewBuilder private func taskFields(_ task: WorkspaceTask) -> some View {
+        Section("Responsibility & timing") {
+            if includePlacement {
+                TextField("Task name", text: Binding(get: { nameDraft ?? task.text }, set: { nameDraft = $0 }))
+                if let nameDraft, nameDraft != task.text { Button("Save task name") { Task { await save("task", fields: ["text": .string(nameDraft.trimmingCharacters(in: .whitespacesAndNewlines))]) } }.disabled(nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            }
+            Picker("Responsible person", selection: Binding(get: { task.responsibleMemberId ?? "" }, set: { value in Task { await save("task", fields: ["responsibleMemberId": value.isEmpty ? .null : .string(value)]) } })) {
+                Text("Unassigned").tag("")
+                ForEach(planner.members) { Text($0.displayName).tag($0.userId) }
+                ForEach(planner.childProfiles ?? []) { Text($0.name).tag($0.id) }
+            }.id("responsibility-\(task.responsibleMemberId ?? "unassigned")")
+            if task.responsibleMemberId == nil { Button("I’ll take this") { Task { await save("task", fields: ["claim": .bool(true)]) } } }
+            Toggle("Has a deadline", isOn: Binding(get: { task.deadline != nil }, set: { value in Task { await save("task", fields: ["deadline": value ? .string(planner.weekStart) : .null]) } }))
+            if let deadline = task.deadline {
+                DatePicker("Must be done by", selection: Binding(get: { WeekDate.calendarDate(deadline) }, set: { value in Task { await save("task", fields: ["deadline": .string(WeekDate.string(value, timeZoneIdentifier: TimeZone.current.identifier))]) } }), displayedComponents: .date)
+            }
+            if includePlacement {
+                Picker("Placement", selection: Binding(get: { task.isBacklog ? "backlog" : task.planningDate == nil ? "week" : "day" }, set: { value in Task { await save("task", fields: ["isBacklog": .bool(value == "backlog"), "planningDate": value == "day" ? .string(planner.weekStart) : .null, "weekStartDate": .string(planner.weekStart)]) } })) {
+                    Text("Unscheduled backlog").tag("backlog"); Text("Selected week").tag("week"); Text("Choose a day").tag("day")
+                }
+                if !task.isBacklog, let date = task.planningDate {
+                    DatePicker("Plan to do on", selection: Binding(get: { WeekDate.calendarDate(date) }, set: { value in Task { await save("task", fields: ["planningDate": .string(WeekDate.string(value, timeZoneIdentifier: TimeZone.current.identifier))]) } }), displayedComponents: .date)
+                }
+            }
+            Toggle("Task complete", isOn: Binding(get: { task.isCompleted }, set: { value in Task { await save("task", fields: ["isCompleted": .bool(value)]) } }))
+        }.disabled(busy || !viewModel.canEditHousehold)
+    }
+    private func reload() async { do { payload = try await WorkspaceAccess.load(planner: planner, resource: resource) } catch { self.error = error.localizedDescription } }
+    @discardableResult private func save(_ action: String, fields: [String: WorkspaceValue]) async -> Bool {
+        busy = true; error = nil; defer { busy = false }
+        var body = fields; body["action"] = .string(action); body["resource"] = .object(resource.mapValues { .string($0) })
+        do { try await WorkspaceAccess.mutate(body, planner: planner, userId: viewModel.workspaceUserId); await reload(); if planner.isDemo, let current = viewModel.data { viewModel.data = WorkspaceAccess.applying(to: current) }; return true }
+        catch { self.error = error.localizedDescription; return false }
+    }
+    private func addEntry(_ kind: String, text: String) async -> Bool { await save("add", fields: ["id": .string(UUID().uuidString), "kind": .string(kind), "text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines))]) }
+    private func download(_ entry: WorkspaceEntry) async {
+        do { downloaded = try await WorkspaceAccess.file(entry, planner: planner) } catch { self.error = error.localizedDescription }
     }
 }

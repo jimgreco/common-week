@@ -128,6 +128,7 @@ function eventSchedule(event: CalendarEvent, timeZone: string): string {
   return `${formatMobileDate(eventDate)} · ${formatEventTime(event.start, timeZone)}–${formatEventTime(event.end, timeZone)}`;
 }
 
+import { ItemCollaboration } from "@/components/planner/task-workspace";
 import { HouseholdMemberSelector } from "@/components/planner/family-planning-fields";
 import { itemMemberIds } from "@/lib/household-assignments";
 
@@ -194,6 +195,7 @@ export function EventDetailDialog({
           <div><dt><CalendarDays size={15} /><span className="sr-only">Calendar</span></dt><dd className="event-calendar-detail"><span>{event.calendarAlias}</span>{event.googleUrl && <a href={event.googleUrl} target="_blank" rel="noreferrer">Open in Google <ExternalLink size={12} /></a>}</dd></div>
           {event.isConflict && <div className="event-conflict-detail"><dt><AlertTriangle size={15} /><span className="sr-only">Conflict</span></dt><dd><strong>Time conflict</strong><span>This event overlaps another scheduled event.</span></dd></div>}
         </dl>
+        {event.calendarPreferenceId && event.providerEventId && <details><summary>Checklist, discussion & files</summary><ItemCollaboration resource={{calendarId:event.calendarPreferenceId,eventId:event.providerEventId}} /></details>}
         {onMembers && <section><p>{override ? "Custom assignments for this event." : "Using calendar defaults."} These assignments are shared in Week of Us.</p><fieldset disabled={savingMembers}><HouseholdMemberSelector members={members} childProfiles={childProfiles} value={memberIds} onChange={setMemberIds} /><div className="family-row-actions"><button type="button" className="button button-secondary" onClick={() => void saveMembers(memberIds)}>{savingMembers ? "Saving…" : "Save assignments"}</button><button type="button" className="text-button" onClick={() => void saveMembers(null)}>Use calendar defaults</button></div></fieldset>{event.recurringEventId && <p>Applies to this occurrence.</p>}</section>}
         {event.description && <div className="event-description"><h4>Notes</h4><p>{event.description}</p></div>}
         {event.attendees?.length ? <div className="event-attendees"><h4><Users size={14} />Attendees</h4>{event.attendees.map((attendee) => <span key={attendee.email}><strong>{attendee.displayName || attendee.email}{attendee.self ? " (you)" : ""}</strong><small>{attendee.responseStatus === "needsAction" ? "Awaiting response" : attendee.responseStatus}</small></span>)}</div> : null}
@@ -704,6 +706,7 @@ export function ItemEditorDialog({
           </div>
           <label>When<select disabled={repeating} value={draft.planningDate ?? "weekly"} onChange={(event) => setDraft({ ...draft, planningDate: event.target.value === "weekly" ? null : event.target.value })}><option value="weekly">This week</option>{weekDates.map((date) => <option value={date} key={date}>{new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(parseDateOnly(date))}</option>)}</select></label>
           <label>Reminder<input type="datetime-local" value={draft.reminder ? formatInTimeZone(new Date(draft.reminder.remindAt), timeZone, "yyyy-MM-dd'T'HH:mm") : ""} onChange={(event) => setDraft({ ...draft, reminder: event.target.value ? { id: draft.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: fromZonedTime(event.target.value, timeZone).toISOString() } : null })} /></label>
+          <details><summary>Responsibility, deadline & shared details</summary><ItemCollaboration resource={{itemId:item.id}} includePlacement={false} /></details>
           <HouseholdMemberSelector members={members} childProfiles={childProfiles} value={itemMemberIds(draft)} onChange={(assignedMemberIds) => setDraft({ ...draft, assignedMemberIds, childId: null })} />
           {draft.type === "task" && onRepeat && !item.routineId && !item.id.startsWith("draft-") && <section className="item-repeat-control"><label className="all-day-control"><input type="checkbox" checked={repeating} onChange={(event) => setRepeating(event.target.checked)} /><span>Repeat this shared task</span></label>{repeating && <><RoutineFields members={members} value={routine} onChange={setRoutine} /><p className="family-muted">This task becomes the first repetition. Each new occurrence has its own completion.</p></>}</section>}
           {item.routineId && <p className="family-muted">You’re editing one occurrence. Open Routines above the week to change or stop future repetitions.</p>}

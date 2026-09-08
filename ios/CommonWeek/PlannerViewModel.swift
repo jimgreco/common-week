@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class PlannerViewModel: ObservableObject {
+    var workspaceUserId: String { activeUser?.userId ?? data?.members.first?.userId ?? "demo-user" }
     var canEditHousehold: Bool { data?.isDemo == true || (activeUser != nil && activeUser?.role != "viewer") }
     @Published var data: WeeklyPlannerData?
     @Published var isLoading = false
@@ -95,7 +96,7 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func load(week: String? = nil, quietly: Bool = false) async {
-        if isDemo { data = FamilyPlanningDemo.shared.planner(weekStart: week ?? data?.weekStart ?? PreviewData.planner.weekStart, capturing: data); return }
+        if isDemo { data = WorkspaceAccess.applying(to: FamilyPlanningDemo.shared.planner(weekStart: week ?? data?.weekStart ?? PreviewData.planner.weekStart, capturing: data)); return }
         guard let user = activeUser else { return }
         if syncInProgress { return }
         let selected = week ?? data?.weekStart ?? WeekDate.string(WeekDate.monday())

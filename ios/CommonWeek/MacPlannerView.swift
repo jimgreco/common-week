@@ -99,6 +99,7 @@ private enum MacPlannerSheet: Identifiable {
     case reminder(date: String)
     case event(date: String)
     case search
+    case taskWorkspace(String? = nil)
     case familyPlanning
     case weather(DayPlan)
     case location(DayPlan)
@@ -108,6 +109,7 @@ private enum MacPlannerSheet: Identifiable {
         case .item(let date, let type, _): "item-\(date ?? "weekly")-\(type.rawValue)"
         case .reminder(let date): "reminder-\(date)"
         case .event(let date): "event-\(date)"
+        case .taskWorkspace: "task-workspace"
         case .familyPlanning: "family-planning"
         case .search: "search"
         case .weather(let day): "weather-\(day.date)-\(day.location?.id ?? "household")"
@@ -117,6 +119,7 @@ private enum MacPlannerSheet: Identifiable {
 
     var preferredWidth: CGFloat {
         switch self {
+        case .taskWorkspace: 700
         case .familyPlanning: 700
         case .item: 540
         case .reminder, .location: 600
@@ -127,6 +130,7 @@ private enum MacPlannerSheet: Identifiable {
 
     var preferredHeight: CGFloat {
         switch self {
+        case .taskWorkspace: 780
         case .familyPlanning: 780
         case .item: 450
         case .reminder, .event, .location: 720
@@ -332,6 +336,7 @@ struct MacPlannerView: View {
         VStack(spacing: 0) {
             List(selection: sidebarSelection) {
                 Section("Planner") {
+                    Button { sheet = .taskWorkspace() } label: { Label("Tasks & backlog", systemImage: "checklist") }
                     Button { sheet = .familyPlanning } label: { Label("Plan your week", systemImage: "person.2.badge.gearshape") }
                         .accessibilityIdentifier("family-planning-open")
                     sidebarRow(.week)
@@ -567,6 +572,7 @@ struct MacPlannerView: View {
     private func sheetView(_ sheet: MacPlannerSheet) -> some View {
         if let data = viewModel.data {
             switch sheet {
+            case .taskWorkspace(let id): TaskWorkspaceView(planner: data, viewModel: viewModel, initialItemId: id)
             case .familyPlanning:
                 FamilyPlanningView(planner: data, viewModel: viewModel)
             case .item(let date, let type, let allowsAppleReminderDestination):
@@ -976,6 +982,8 @@ struct MacPlannerView: View {
         await viewModel.move(toWeek: weekStart)
         guard let data = viewModel.data, data.weekStart == weekStart else { return }
         switch destination.target {
+        case .taskWorkspace(let id):
+            sheet = .taskWorkspace(id)
         case .weeklyReview:
             sheet = .familyPlanning
         case .planningItem(let id):
@@ -995,6 +1003,7 @@ struct MacPlannerView: View {
     }
 
     private func openReviewNotification(_ item: NotificationInboxItem) async {
+        if let destination = NotificationCoordinator.plannerDestination(for: item.deepLink), case .taskWorkspace(let id) = destination.target { await notifications.markRead(item.id); sheet = .taskWorkspace(id); return }
         guard let week = item.target?.weekStart ?? NotificationCoordinator.plannerDestination(for: item.deepLink)?.weekStart else { return }
         await notifications.markRead(item.id)
         await viewModel.move(toWeek: week)
@@ -1482,6 +1491,7 @@ private struct MacPlanningItemRow: View {
                 HStack(spacing: 6) {
                     Text(item.createdByName ?? "Week of Us")
                     if item.reminder != nil { Image(systemName: "bell.fill") }
+                    if let deadline = item.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(.secondary) }
                     if let carryoverLabel = item.carryoverLabel { Text("· \(carryoverLabel)") }
                 }
                 .font(.caption2)
@@ -1862,6 +1872,7 @@ private struct MacEventEditorState: Equatable {
 }
 
 private struct MacEventInspector: View {
+    @State private var showingCollaboration = false
     let event: CalendarEvent
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
@@ -2115,6 +2126,8 @@ private struct MacEventInspector: View {
             }
         }
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+        .toolbar { ToolbarItem { Button("Shared details") { showingCollaboration = true } } }
+        .sheet(isPresented: $showingCollaboration) { if let calendarId = event.calendarPreferenceId, let eventId = event.providerEventId { ItemCollaborationView(resource: ["calendarId": calendarId, "eventId": eventId], title: event.title, planner: data, viewModel: viewModel).familyPlanningSheetSize() } }
         .navigationTitle("Event")
         .onAppear { dirtyChanged(isDirty) }
         .task { reminderLoaded = true }
@@ -2278,6 +2291,7 @@ private struct MacReminderEditorState: Equatable {
 }
 
 private struct MacPlanningItemInspector: View {
+    @State private var showingCollaboration = false
     let item: PlanningItem
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
@@ -2416,6 +2430,8 @@ private struct MacPlanningItemInspector: View {
             }
         }
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
+        .toolbar { ToolbarItem { Button("Responsibility & details") { showingCollaboration = true } } }
+        .sheet(isPresented: $showingCollaboration) { ItemCollaborationView(resource: ["itemId": item.id], title: item.text, planner: data, viewModel: viewModel, includePlacement: false).familyPlanningSheetSize() }
         .navigationTitle(item.type.title)
         .onAppear { dirtyChanged(isDirty) }
         .onChange(of: editorState) { _, _ in dirtyChanged(isDirty) }
@@ -3082,7 +3098,7 @@ private struct MacNotificationsView: View {
             } else {
                 List(coordinator.inbox.items) { item in
                     Button {
-                        if item.kind == "sunday_planning" { openReview(item) }
+                        if item.kind == "sunday_planning" || item.deepLink.contains("tasks=1") { openReview(item) }
                         else { Task { await coordinator.markRead(item.id) } }
                     } label: {
                         VStack(alignment: .leading, spacing: 5) {

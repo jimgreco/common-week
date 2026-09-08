@@ -10,6 +10,35 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if !targetEnvironment(macCatalyst)
+    func testTaskWorkspaceCaptureAndDetails() throws {
+        launchDemo()
+        app.buttons["Tasks and backlog"].tap()
+        let name = "Camp checklist \(UUID().uuidString.prefix(5))"
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8)); capture.tap(); capture.typeText(name)
+        app.buttons["Add to backlog"].tap()
+        let task = app.buttons.containing(.staticText, identifier: name).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 8)); task.tap()
+        let claim = app.buttons["I’ll take this"]
+        XCTAssertTrue(claim.waitForExistence(timeout: 8)); claim.tap()
+        let deadline = app.switches["Has a deadline"]
+        XCTAssertTrue(deadline.waitForExistence(timeout: 8)); deadline.tap()
+        let step = app.textFields["Add a step"]
+        XCTAssertTrue(scrollToExistence(step)); step.tap(); step.typeText("Pack towels")
+        app.buttons["Add step"].tap()
+        let checked = app.switches["Pack towels"]
+        XCTAssertTrue(checked.waitForExistence(timeout: 8)); checked.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: checked)], timeout: 5) == .completed)
+        let comment = app.textFields["Leave a note for the household"]
+        XCTAssertTrue(scrollToExistence(comment)); comment.tap(); comment.typeText("I will bring the towels")
+        app.buttons["Post comment"].tap()
+        XCTAssertTrue(app.staticTexts["I will bring the towels"].waitForExistence(timeout: 8))
+        attachCurrentScreen(named: "Task workspace checklist and discussion")
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 8)); task.tap()
+        XCTAssertTrue(scrollToExistence(checked)); XCTAssertEqual(checked.value as? String, "1")
+    }
+
     func testTaskHouseholdAssignments() throws {
         launchDemo()
         app.buttons["Weekly and daily tasks"].tap()
@@ -225,7 +254,9 @@ final class CommonWeekScreenshots: XCTestCase {
         app.launchEnvironment["COMMON_WEEK_API_BASE_URL"] = baseURL
         app.launchEnvironment["COMMON_WEEK_SESSION_TOKEN"] = token
         app.launch()
+        #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = .portrait
+        #endif
 
         XCTAssertTrue(app.staticTexts["WEEKLY PLAN"].waitForExistence(timeout: 20))
 
@@ -327,6 +358,22 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if targetEnvironment(macCatalyst)
+    func testMacTaskWorkspace() throws {
+        launchDemo()
+        let open = app.buttons["Tasks & backlog"]
+        XCTAssertTrue(open.waitForExistence(timeout: 12)); open.tap()
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8)); capture.tap()
+        let name = "Plan camp \(UUID().uuidString.prefix(5))"
+        capture.typeText(name); app.buttons["Add to backlog"].tap()
+        let task = app.buttons.containing(.staticText, identifier: name).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 8)); task.tap()
+        XCTAssertTrue(app.buttons["I’ll take this"].waitForExistence(timeout: 8))
+        app.buttons["I’ll take this"].tap()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Responsible person", "Jim")).firstMatch.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Mac task responsibility and deadline")
+    }
+
     func testMacPlanModalUsesPolishedChrome() throws {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
@@ -410,9 +457,13 @@ final class CommonWeekScreenshots: XCTestCase {
         app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
         app.launchEnvironment["APP_STORE_SCREENSHOTS"] = "1"
         app.launch()
+        #if !targetEnvironment(macCatalyst)
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(app.staticTexts["WEEKLY PLAN"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["Interactive preview · Changes stay on this device"].waitForExistence(timeout: 15))
+        #else
+        XCTAssertTrue(app.buttons["Previous Week"].waitForExistence(timeout: 15))
+        #endif
     }
 
     private func scrollToExistence(_ element: XCUIElement, maxSwipes: Int = 6) -> Bool {

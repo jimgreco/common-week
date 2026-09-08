@@ -47,6 +47,8 @@ For push delivery, enable Push Notifications for `com.jimgreco.commonweek` and u
 
 Family profile, routine, template, and review changes require a connection and retain entered values when a request fails. Shared task edits still use the existing offline queue, including child tags; older queued edits preserve child associations they did not change. The interactive native preview keeps family-planning changes in memory across sheets and week navigation for the current launch.
 
+The **Tasks & backlog** screen is available on iPhone and in the Mac sidebar. Tasks, plans, and event inspectors also open their shared details directly. Responsibilities, deadlines, backlog scheduling, checklists, comments, and file attachments require an online connection; they are not added to the offline replay queue. Failed requests keep the visible input for retry. Downloaded files can be opened or shared through the system sheet.
+
 ## Offline and live synchronization
 
 The app stores account-isolated planner snapshots in Application Support with iOS file protection and excludes them from device backups. Plans, tasks, completion changes, deletion, and saved or searched location assignments are applied immediately and queued durably when the network is unavailable. The queue replays automatically on foregrounding, pull-to-refresh, a live household change, or an iOS background refresh. Native-created item IDs and idempotent deletion make replay safe when the server applied a request but its response was lost.

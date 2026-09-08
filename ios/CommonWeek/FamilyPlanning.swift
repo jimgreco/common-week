@@ -182,3 +182,55 @@ final class FamilyPlanningStore: ObservableObject {
         FamilyPlanningDemo.shared.data(weekStart: weekStart)
     }
 }
+
+struct WorkspaceTask: Codable, Identifiable, Hashable {
+    let id: String
+    var text: String
+    var type: String
+    var responsibleMemberId: String?
+    var deadline: String?
+    var isBacklog: Bool
+    var planningDate: String?
+    var weekStartDate: String
+    var isCompleted: Bool
+
+    func matches(_ filter: String, userId: String, today: String) -> Bool {
+        if filter == "Completed" { return isCompleted }
+        if isCompleted { return false }
+        switch filter {
+        case "Mine": return responsibleMemberId == userId
+        case "Unassigned": return responsibleMemberId == nil
+        case "Backlog": return isBacklog
+        case "Overdue": return deadline.map { $0 < today } ?? false
+        default: return true
+        }
+    }
+}
+struct WorkspaceEntry: Codable, Identifiable {
+    let id: String
+    let kind: String
+    let text: String
+    var completed: Bool
+    let createdBy: String?
+    let author: String
+    let createdAt: String
+}
+struct TaskWorkspacePayload: Codable {
+    var tasks: [WorkspaceTask]
+    var entries: [WorkspaceEntry]
+    var task: WorkspaceTask?
+}
+enum WorkspaceValue: Encodable {
+    case string(String), bool(Bool), null, object([String: WorkspaceValue])
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        case .object(let value): try container.encode(value)
+        }
+    }
+    var stringValue: String? { if case .string(let value) = self { return value }; return nil }
+    var boolValue: Bool? { if case .bool(let value) = self { return value }; return nil }
+}

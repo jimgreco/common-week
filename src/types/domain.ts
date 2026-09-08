@@ -18,6 +18,9 @@ export interface HouseholdMember {
 }
 
 export interface PlanningItem {
+  responsibleMemberId?: string | null;
+  deadline?: string | null;
+  isBacklog?: boolean;
   id: string;
   planningDate: string | null;
   weekStartDate: string;

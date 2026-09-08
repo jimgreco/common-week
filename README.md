@@ -4,6 +4,12 @@ Week of Us is a shared Monday-through-Sunday family planner. It keeps scheduled 
 
 The production application uses the existing self-hosted PostgreSQL 16 service. It does not use DynamoDB or Supabase. With no database configuration, it opens as a polished interactive demo so the product can still be evaluated locally.
 
+## Task responsibilities and shared details
+
+Open **Tasks & backlog** to capture unscheduled tasks, claim a responsibility, assign an adult or child, filter Mine/Unassigned/Overdue, and schedule or defer work. Deadlines are separate from planned dates; backlog tasks are excluded from automatic carryover. Assignment changes notify the responsible adult through the existing inbox/email/push system, respecting notification preferences.
+
+Every task, plan, and visible Google event can have a checklist, discussion, and files (up to 5 MB each). Google-event details belong to a single occurrence in Week of Us and do not change Google attendees or require Google write access. Calendar privacy and household viewer permissions still apply. Files are stored in PostgreSQL and downloaded through authenticated access checks. Apply migration `018_task_workspace.sql` before running this version. These new shared-detail operations require a connection; demo changes are saved locally.
+
 ## What is implemented
 
 - Independent Google sign-in for each member, read-only Calendar by default, and a separate opt-in for event editing

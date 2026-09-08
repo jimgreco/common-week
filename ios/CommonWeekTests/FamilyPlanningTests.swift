@@ -2,6 +2,23 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testWorkspaceResponsibilityAndDeadlineFilters() {
+        var task = WorkspaceTask(id: "task", text: "Pack", type: "task", responsibleMemberId: "adult", deadline: "2026-09-11", isBacklog: true, planningDate: nil, weekStartDate: "2026-09-07", isCompleted: false)
+        XCTAssertTrue(task.matches("Mine", userId: "adult", today: "2026-09-12"))
+        XCTAssertFalse(task.matches("Mine", userId: "other", today: "2026-09-12"))
+        XCTAssertTrue(task.matches("Backlog", userId: "adult", today: "2026-09-12"))
+        XCTAssertFalse(task.matches("Overdue", userId: "adult", today: "2026-09-11"))
+        XCTAssertTrue(task.matches("Overdue", userId: "adult", today: "2026-09-12"))
+        task.isCompleted = true
+        XCTAssertFalse(task.matches("Overdue", userId: "adult", today: "2026-09-12"))
+    }
+    func testWorkspaceExplicitClearsEncodeAsNull() throws {
+        let data = try JSONEncoder().encode(["deadline": WorkspaceValue.null, "responsibleMemberId": .null])
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertTrue(body["deadline"] is NSNull)
+        XCTAssertTrue(body["responsibleMemberId"] is NSNull)
+    }
+
     func testMultipleMembersSurviveOfflineRoundTripAndExplicitClear() throws {
         for ids in [["adult", "child"], []] {
             let draft = PlanningItemDraft(id: "task", text: "Family outing", type: .note, planningDate: nil, weekStartDate: "2026-09-07", remindAt: nil, assignedMemberIds: ids)

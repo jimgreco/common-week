@@ -155,3 +155,87 @@ final class FamilyPlanningDemo {
         }.map(Optional.some)
     }
 }
+
+@MainActor enum WorkspaceAccess {
+    private struct DemoState: Codable {
+        var tasks: [String: WorkspaceTask] = [:]
+        var entries: [String: [WorkspaceEntry]] = [:]
+        var files: [String: Data] = [:]
+        var pendingTasks: [String]? = nil
+    }
+    private static var state: DemoState {
+        get { UserDefaults.standard.data(forKey: "workspace-demo").flatMap { try? JSONDecoder().decode(DemoState.self, from: $0) } ?? DemoState() }
+        set { if let data = try? JSONEncoder().encode(newValue) { UserDefaults.standard.set(data, forKey: "workspace-demo") } }
+    }
+    private static func key(_ resource: [String: String]) -> String { resource.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: "|") }
+    static func load(planner: WeeklyPlannerData, resource: [String: String] = [:]) async throws -> TaskWorkspacePayload {
+        if !planner.isDemo { return try await APIClient.shared.taskWorkspace(resource: resource) }
+        var d = state
+        for item in planner.weeklyItems + planner.days.flatMap(\.items) where d.tasks[item.id] == nil {
+            d.tasks[item.id] = WorkspaceTask(id: item.id, text: item.text, type: item.type.rawValue, responsibleMemberId: nil, deadline: nil, isBacklog: false, planningDate: item.planningDate, weekStartDate: item.weekStartDate, isCompleted: item.isCompleted)
+        }
+        state = d
+        return TaskWorkspacePayload(tasks: resource.isEmpty ? d.tasks.values.filter { $0.type == "task" }.sorted { $0.text < $1.text } : [], entries: d.entries[key(resource)] ?? [], task: resource["itemId"].flatMap { d.tasks[$0] })
+    }
+    static func mutate(_ body: [String: WorkspaceValue], planner: WeeklyPlannerData, userId: String) async throws {
+        if !planner.isDemo { try await APIClient.shared.mutateTaskWorkspace(body); return }
+        var d = state
+        let action = body["action"]?.stringValue ?? ""
+        var resource: [String: String] = [:]
+        if case .object(let values) = body["resource"] { resource = values.compactMapValues(\.stringValue) }
+        let resourceKey = key(resource)
+        let id = body["id"]?.stringValue ?? UUID().uuidString
+        if action == "capture" {
+            d.pendingTasks = Array(Set((d.pendingTasks ?? []) + [id]))
+            d.tasks[id] = WorkspaceTask(id: id, text: body["text"]?.stringValue ?? "", type: "task", responsibleMemberId: nil, deadline: nil, isBacklog: true, planningDate: nil, weekStartDate: planner.weekStart, isCompleted: false)
+        } else if action == "task", let itemId = resource["itemId"], var task = d.tasks[itemId] {
+            d.pendingTasks = Array(Set((d.pendingTasks ?? []) + [itemId]))
+            if let text = body["text"]?.stringValue { task.text = text }
+            if body["claim"]?.boolValue == true { task.responsibleMemberId = userId }
+            if let value = body["responsibleMemberId"] { task.responsibleMemberId = value.stringValue }
+            if let value = body["deadline"] { task.deadline = value.stringValue }
+            if let value = body["isBacklog"]?.boolValue { task.isBacklog = value }
+            if let value = body["planningDate"] { task.planningDate = value.stringValue }
+            if let value = body["weekStartDate"]?.stringValue { task.weekStartDate = value }
+            if let value = body["isCompleted"]?.boolValue { task.isCompleted = value }
+            if task.isBacklog { task.planningDate = nil }
+            else if let date = task.planningDate { task.weekStartDate = WeekDate.weekStart(for: date) }
+            d.tasks[itemId] = task
+        } else if action == "add" {
+            d.entries[resourceKey, default: []].append(WorkspaceEntry(id: id, kind: body["kind"]?.stringValue ?? "comment", text: body["text"]?.stringValue ?? "", completed: false, createdBy: userId, author: planner.members.first { $0.userId == userId }?.displayName ?? "You", createdAt: ISO8601DateFormatter().string(from: Date())))
+            if let raw = body["fileData"]?.stringValue { d.files[id] = Data(base64Encoded: raw) }
+        } else if action == "check", let index = d.entries[resourceKey]?.firstIndex(where: { $0.id == id }) {
+            d.entries[resourceKey]?[index].completed = body["completed"]?.boolValue ?? false
+        } else if action == "remove" { d.entries[resourceKey]?.removeAll { $0.id == id }; d.files[id] = nil }
+        state = d
+    }
+    static func applying(to planner: WeeklyPlannerData) -> WeeklyPlannerData {
+        var result = planner
+        var d = state
+        for var task in d.tasks.values {
+            let existing = (result.weeklyItems + result.days.flatMap(\.items)).first { $0.id == task.id }
+            if let existing, !(d.pendingTasks ?? []).contains(task.id) {
+                task.text = existing.text; task.isCompleted = existing.isCompleted; task.planningDate = existing.planningDate; task.weekStartDate = existing.weekStartDate
+                d.tasks[task.id] = task
+            }
+            var item = existing ?? PlanningItem(id: task.id, planningDate: task.planningDate, weekStartDate: task.weekStartDate, type: task.type == "task" ? .task : .note, text: task.text, isCompleted: task.isCompleted, sortOrder: 0, createdBy: planner.members.first?.userId ?? "demo", createdByName: nil, updatedAt: "", saveState: "saved", reminder: nil)
+            item.text = task.text; item.planningDate = task.planningDate; item.weekStartDate = task.weekStartDate; item.isCompleted = task.isCompleted
+            item.responsibleMemberId = task.responsibleMemberId; item.deadline = task.deadline; item.isBacklog = task.isBacklog
+            result.weeklyItems.removeAll { $0.id == task.id }
+            for index in result.days.indices { result.days[index].items.removeAll { $0.id == task.id } }
+            guard !task.isBacklog && task.weekStartDate == result.weekStart else { continue }
+            if let date = task.planningDate, let index = result.days.firstIndex(where: { $0.date == date }) { result.days[index].items.append(item) }
+            else if task.planningDate == nil { result.weeklyItems.append(item) }
+        }
+        d.pendingTasks = []; state = d
+        return result
+    }
+    static func file(_ entry: WorkspaceEntry, planner: WeeklyPlannerData) async throws -> URL {
+        if !planner.isDemo { return try await APIClient.shared.workspaceFile(id: entry.id, name: entry.text) }
+        guard let data = state.files[entry.id] else { throw APIError.server("File not found.") }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent((entry.text as NSString).lastPathComponent)
+        try data.write(to: url); return url
+    }
+}
