@@ -282,10 +282,10 @@ struct FamilyPlanningView: View {
         } header: { Text("Adults") } footer: { Text("The Person filter uses these assignments. Calendar privacy stays the same. Adult accounts are managed in Settings.") }
         if let adult = data.adults?.first(where: { $0.userId == selectedAdultId }) {
             Section("\(adult.displayName)’s week") {
-                let events = currentPlanner.days.flatMap(\.events).filter { adult.calendarPreferenceIds.contains($0.calendarPreferenceId ?? $0.calendarId) }
+                let events = currentPlanner.days.flatMap(\.events).filter { ($0.assignedMemberIds?.contains(adult.userId) ?? adult.calendarPreferenceIds.contains($0.calendarPreferenceId ?? $0.calendarId)) }
                 if events.isEmpty { Text("No events from assigned calendars this week.").foregroundStyle(.secondary) }
                 ForEach(currentPlanner.days) { day in
-                    ForEach(day.events.filter { adult.calendarPreferenceIds.contains($0.calendarPreferenceId ?? $0.calendarId) }) { event in
+                    ForEach(day.events.filter { ($0.assignedMemberIds?.contains(adult.userId) ?? adult.calendarPreferenceIds.contains($0.calendarPreferenceId ?? $0.calendarId)) }) { event in
                         Button { sheet = .event(event) } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(WeekDate.shortDay(day.date)).font(.caption).foregroundStyle(.secondary)
@@ -326,7 +326,7 @@ struct FamilyPlanningView: View {
                         ForEach(events) { event in
                             Button { sheet = .event(event) } label: {
                                 Label(event.title, systemImage: "calendar").foregroundStyle(.primary)
-                            }
+                            }.accessibilityIdentifier("family-child-event-\(event.id)")
                         }
                         ForEach(items) { item in
                             Button { sheet = .item(item) } label: {

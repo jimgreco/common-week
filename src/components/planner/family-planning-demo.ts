@@ -28,7 +28,7 @@ function materialize(data: WeeklyPlannerData, store: DemoStore, items: PlanningI
   for (const routine of store.routines) {
     for (const occurrence of routineOccurrencesForWeek(routine, data.weekStart)) {
       const id = `demo-routine-${routine.id}-${occurrence.occurrenceDate}`;
-      if (!next.some((item) => item.id === id || (item.routineId === routine.id && item.routineOccurrenceDate === occurrence.occurrenceDate))) next.push(newTask(data, { id, text: routine.text, planningDate: occurrence.planningDate, childId: routine.childId, routineId: routine.id, routineOccurrenceDate: occurrence.occurrenceDate }));
+      if (!next.some((item) => item.id === id || (item.routineId === routine.id && item.routineOccurrenceDate === occurrence.occurrenceDate))) next.push(newTask(data, { id, text: routine.text, planningDate: occurrence.planningDate, childId: routine.childId, assignedMemberIds: routine.assignedMemberIds, routineId: routine.id, routineOccurrenceDate: occurrence.occurrenceDate }));
     }
   }
   return next;
@@ -88,28 +88,28 @@ export function mutateDemoFamilyPlanning(data: WeeklyPlannerData, currentUserId:
         const valid = routine ? routineOccurrencesForWeek(routine, week) : [];
         store.itemsByWeek[week] = store.itemsByWeek[week].flatMap((item) => {
           if (item.routineId !== id || item.isCompleted || (item.routineOccurrenceDate ?? item.planningDate ?? item.weekStartDate) < today) return [item];
-          return valid.some((occurrence) => occurrence.occurrenceDate === item.routineOccurrenceDate) && routine ? [{ ...item, text: routine.text, childId: routine.childId }] : [];
+          return valid.some((occurrence) => occurrence.occurrenceDate === item.routineOccurrenceDate) && routine ? [{ ...item, text: routine.text, assignedMemberIds: routine.assignedMemberIds, childId: routine.childId }] : [];
         });
       }
       if (mutation.action === "saveRoutine" && mutation.sourceItemId && routine) {
         const source = store.itemsByWeek[data.weekStart].find((item) => item.id === mutation.sourceItemId);
         const occurrence = routineOccurrencesForWeek(routine, data.weekStart).find((candidate) => candidate.planningDate === source?.planningDate);
         if (!source || !occurrence) return { family: familyFromStore(data, currentUserId, store), items, error: "Choose a repeat day and start date that include this task’s current placement." };
-        store.itemsByWeek[data.weekStart] = store.itemsByWeek[data.weekStart].map((item) => item.id === source.id ? { ...item, text: routine.text, childId: routine.childId, routineId: routine.id, routineOccurrenceDate: occurrence.occurrenceDate } : item);
+        store.itemsByWeek[data.weekStart] = store.itemsByWeek[data.weekStart].map((item) => item.id === source.id ? { ...item, text: routine.text, childId: routine.childId, assignedMemberIds: routine.assignedMemberIds, routineId: routine.id, routineOccurrenceDate: occurrence.occurrenceDate } : item);
       }
       items = materialize(data, store, store.itemsByWeek[data.weekStart]);
       break;
     }
     case "saveTemplate": {
       const id = mutation.id ?? crypto.randomUUID();
-      if (!store.templates.some((template) => template.id === id)) store.templates.push({ id, name: mutation.name, appliedToWeek: false, items: items.filter((item) => item.weekStartDate === data.weekStart && !item.routineId).map((item) => ({ type: item.type, text: item.text, childId: item.childId ?? null, dayOffset: item.planningDate ? Math.round((Date.parse(item.planningDate) - Date.parse(data.weekStart)) / 86_400_000) : null })) });
+      if (!store.templates.some((template) => template.id === id)) store.templates.push({ id, name: mutation.name, appliedToWeek: false, items: items.filter((item) => item.weekStartDate === data.weekStart && !item.routineId).map((item) => ({ type: item.type, text: item.text, assignedMemberIds: item.assignedMemberIds, childId: item.childId ?? null, dayOffset: item.planningDate ? Math.round((Date.parse(item.planningDate) - Date.parse(data.weekStart)) / 86_400_000) : null })) });
       break;
     }
     case "deleteTemplate": store.templates = store.templates.filter((template) => template.id !== mutation.id); break;
     case "applyTemplate": {
       const template = store.templates.find((candidate) => candidate.id === mutation.id);
       if (template && !(store.appliedWeeks[template.id] ?? []).includes(data.weekStart)) {
-        items.push(...template.items.map((item, index) => newTask(data, { id: `demo-template-${template.id}-${data.weekStart}-${index}`, text: item.text, type: item.type, childId: item.childId, planningDate: item.dayOffset === null ? null : addDateDays(data.weekStart, item.dayOffset) })));
+        items.push(...template.items.map((item, index) => newTask(data, { id: `demo-template-${template.id}-${data.weekStart}-${index}`, text: item.text, type: item.type, assignedMemberIds: item.assignedMemberIds, childId: item.childId, planningDate: item.dayOffset === null ? null : addDateDays(data.weekStart, item.dayOffset) })));
         store.appliedWeeks[template.id] = [...(store.appliedWeeks[template.id] ?? []), data.weekStart];
       }
       break;
@@ -127,4 +127,11 @@ export function mutateDemoFamilyPlanning(data: WeeklyPlannerData, currentUserId:
   store.itemsByWeek[data.weekStart] = items;
   writeStore(store);
   return { family: familyFromStore(data, currentUserId, store), items };
+}
+
+export function saveDemoEventMembers(event: { id: string }, ids: string[] | null) {
+  try { const values = JSON.parse(localStorage.getItem("weekofus-event-members") ?? "{}"); if (ids === null) delete values[event.id]; else values[event.id] = ids; localStorage.setItem("weekofus-event-members", JSON.stringify(values)); } catch { /* Current session remains usable without storage. */ }
+}
+export function demoEventMembers<T extends { id: string; memberOverrideIds?: string[] | null }>(event: T): T {
+  try { const values = JSON.parse(localStorage.getItem("weekofus-event-members") ?? "{}"); return { ...event, memberOverrideIds: values[event.id] ?? null }; } catch { return event; }
 }

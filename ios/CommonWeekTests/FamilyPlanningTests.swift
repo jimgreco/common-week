@@ -2,6 +2,32 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testMultipleMembersSurviveOfflineRoundTripAndExplicitClear() throws {
+        for ids in [["adult", "child"], []] {
+            let draft = PlanningItemDraft(id: "task", text: "Family outing", type: .note, planningDate: nil, weekStartDate: "2026-09-07", remindAt: nil, assignedMemberIds: ids)
+            let queued = OfflineMutation(kind: .updateItem, draft: draft)
+            let restored = try JSONDecoder().decode(OfflineMutation.self, from: JSONEncoder().encode(queued))
+            XCTAssertEqual(restored.draft?.assignedMemberIds, ids)
+        }
+    }
+
+    @MainActor
+    func testChildFilterUsesEventOverrideInsteadOfCalendarDefault() throws {
+        let demo = FamilyPlanningDemo()
+        var planner = demo.planner(weekStart: "2026-10-05")
+        var event = try XCTUnwrap(planner.days.first?.events.first)
+        XCTAssertTrue(CalendarEventFilter.matches(event, calendarId: CalendarEventFilter.allCalendars, personId: "demo-child"))
+        event.memberOverrideIds = []
+        event.assignedMemberIds = []
+        planner.days[0].events[0] = event
+        let overridden = demo.planner(weekStart: planner.weekStart, capturing: planner)
+        XCTAssertFalse(CalendarEventFilter.matches(overridden.days[0].events[0], calendarId: CalendarEventFilter.allCalendars, personId: "demo-child"))
+        XCTAssertEqual(overridden.days[0].events[0].sourceUserId, event.sourceUserId)
+        let cached = try JSONDecoder().decode(WeeklyPlannerData.self, from: JSONEncoder().encode(overridden))
+        XCTAssertEqual(cached.days[0].events[0].memberOverrideIds, [])
+        XCTAssertEqual(cached.childProfiles?.first?.id, "demo-child")
+    }
+
     @MainActor
     func testAdultAssignmentsPersistAndDrivePersonFilterWithoutChangingOwnership() throws {
         let demo = FamilyPlanningDemo()

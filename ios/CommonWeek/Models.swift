@@ -43,6 +43,7 @@ struct WeeklyPlannerData: Codable {
     let calendarState: PlannerSourceState
     let weatherState: PlannerSourceState
     let isDemo: Bool
+    var childProfiles: [ChildProfile]? = nil
 }
 
 struct HouseholdSummary: Codable, Equatable {
@@ -85,6 +86,7 @@ struct PlanningItem: Codable, Identifiable, Hashable {
     let saveState: String?
     let reminder: NotificationReminder?
     var childId: String? = nil
+    var assignedMemberIds: [String]? = nil
     var routineId: String? = nil
     var routineOccurrenceDate: String? = nil
 }
@@ -281,6 +283,9 @@ struct CalendarEvent: Codable, Identifiable, Hashable {
     let canRespond: Bool?
     let reminder: NotificationReminder?
     var assignedAdultUserIds: [String]? = nil
+    var assignedMemberIds: [String]? = nil
+    var defaultMemberIds: [String]? = nil
+    var memberOverrideIds: [String]? = nil
 }
 
 struct CalendarAttendee: Codable, Hashable, Identifiable {
@@ -510,7 +515,7 @@ enum CalendarEventFilter {
     static func matches(_ event: CalendarEvent, calendarId: String, personId: String) -> Bool {
         let eventCalendarId = event.calendarPreferenceId ?? event.calendarId
         return (calendarId == allCalendars || eventCalendarId == calendarId)
-            && (personId == allPeople || (event.assignedAdultUserIds?.contains(personId) ?? (event.sourceUserId == personId)))
+            && (personId == allPeople || (event.assignedMemberIds?.contains(personId) ?? event.assignedAdultUserIds?.contains(personId) ?? (event.sourceUserId == personId)))
     }
 
     static func calendars(in data: WeeklyPlannerData) -> [EditableCalendar] {
@@ -593,15 +598,17 @@ struct PlanningItemDraft: Codable, Equatable {
     let weekStartDate: String
     let remindAt: String?
     var childId: String? = nil
+    var assignedMemberIds: [String]? = nil
     var childAssignmentIsSet = false
 
     private enum CodingKeys: String, CodingKey {
-        case id, text, type, planningDate, weekStartDate, remindAt, childId
+        case id, text, type, planningDate, weekStartDate, remindAt, childId, assignedMemberIds
     }
 
-    init(id: String?, text: String, type: PlanningItemType, planningDate: String?, weekStartDate: String, remindAt: String?, childId: String? = nil, childAssignmentIsSet: Bool = false) {
+    init(id: String?, text: String, type: PlanningItemType, planningDate: String?, weekStartDate: String, remindAt: String?, childId: String? = nil, childAssignmentIsSet: Bool = false, assignedMemberIds: [String]? = nil) {
         self.id = id; self.text = text; self.type = type; self.planningDate = planningDate
         self.weekStartDate = weekStartDate; self.remindAt = remindAt
+        self.assignedMemberIds = assignedMemberIds
         self.childId = childId; self.childAssignmentIsSet = childAssignmentIsSet || childId != nil
     }
 
@@ -614,6 +621,7 @@ struct PlanningItemDraft: Codable, Equatable {
         weekStartDate = try values.decode(String.self, forKey: .weekStartDate)
         remindAt = try values.decodeIfPresent(String.self, forKey: .remindAt)
         childId = try values.decodeIfPresent(String.self, forKey: .childId)
+        assignedMemberIds = try values.decodeIfPresent([String].self, forKey: .assignedMemberIds)
         childAssignmentIsSet = values.contains(.childId)
     }
 
@@ -625,6 +633,7 @@ struct PlanningItemDraft: Codable, Equatable {
         try values.encodeIfPresent(planningDate, forKey: .planningDate)
         try values.encode(weekStartDate, forKey: .weekStartDate)
         try values.encodeIfPresent(remindAt, forKey: .remindAt)
+        try values.encodeIfPresent(assignedMemberIds, forKey: .assignedMemberIds)
         if childAssignmentIsSet {
             if let childId { try values.encode(childId, forKey: .childId) }
             else { try values.encodeNil(forKey: .childId) }

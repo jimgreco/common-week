@@ -128,7 +128,7 @@ struct TaskRoutineEditor: View {
         sourceItemId = sourceItem?.id
         let date = sourceItem?.planningDate ?? planner.weekStart
         let weekdays = sourceItem?.planningDate.map { [WeekDate.daysBetween(WeekDate.weekStart(for: $0), $0)] } ?? []
-        _routine = State(initialValue: routine ?? .init(id: UUID().uuidString, text: sourceItem?.text ?? "", childId: sourceItem?.childId, frequency: "weekly", interval: 1, weekdays: weekdays, startsOn: date, endsOn: nil, active: true))
+        _routine = State(initialValue: routine ?? .init(assignedMemberIds: sourceItem?.assignedMemberIds, id: UUID().uuidString, text: sourceItem?.text ?? "", childId: sourceItem?.childId, frequency: "weekly", interval: 1, weekdays: weekdays, startsOn: date, endsOn: nil, active: true))
         _hasEndDate = State(initialValue: routine?.endsOn != nil)
     }
 
@@ -137,10 +137,7 @@ struct TaskRoutineEditor: View {
             Form {
                 Section("Shared task") {
                     TextField("What needs doing?", text: $routine.text, axis: .vertical).lineLimit(2...4).accessibilityIdentifier("routine-title")
-                    Picker("Child", selection: Binding(get: { routine.childId ?? "" }, set: { routine.childId = $0.isEmpty ? nil : $0 })) {
-                        Text("Whole household").tag("")
-                        ForEach(store.data?.children ?? []) { Text($0.name).tag($0.id) }
-                    }
+                    HouseholdMemberPicker(planner: planner, selection: Binding(get: { routine.assignedMemberIds ?? routine.childId.map { [$0] } ?? [] }, set: { routine.assignedMemberIds = $0; routine.childId = nil }))
                     if existing { Toggle("Active", isOn: $routine.active) }
                 }
                 Section("Repeat schedule") {
@@ -265,5 +262,86 @@ struct PlanningChildPicker: View {
                 error = nil
             } catch { self.error = "Child profiles are unavailable. The current selection is preserved." }
         }
+    }
+}
+
+struct HouseholdMemberPicker: View {
+    let planner: WeeklyPlannerData
+    @Binding var selection: [String]
+    @State private var children: [ChildProfile] = []
+    @State private var loadError: String?
+    private var ids: [String] { planner.members.map(\.userId) + children.map(\.id) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button("Select all") { selection = ids }.buttonStyle(.borderless)
+                Spacer()
+                Button("Clear") { selection = [] }.buttonStyle(.borderless)
+            }
+            ForEach(planner.members) { member in memberToggle(member.displayName, id: member.userId) }
+            ForEach(children) { child in memberToggle(child.name, id: child.id) }
+            if let loadError { Text(loadError).font(.caption).foregroundStyle(.secondary) }
+        }.task {
+            children = planner.childProfiles ?? []
+            do {
+                children = planner.isDemo ? FamilyPlanningStore.demo(weekStart: planner.weekStart).children : try await APIClient.shared.familyPlanning(week: planner.weekStart).children
+            } catch { loadError = "Some household members could not be loaded. Existing selections are preserved." }
+        }
+    }
+    private func memberToggle(_ name: String, id: String) -> some View {
+        Toggle(name, isOn: Binding(get: { selection.contains(id) }, set: { enabled in
+            selection.removeAll { $0 == id }; if enabled { selection.append(id) }
+        })).accessibilityIdentifier("household-member-\(id)")
+    }
+}
+
+struct EventMemberEditor: View {
+    let event: CalendarEvent
+    let planner: WeeklyPlannerData
+    @ObservedObject var viewModel: PlannerViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selection: [String] = []
+    @State private var saving = false
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Household members") { HouseholdMemberPicker(planner: planner, selection: $selection) }
+                Section {
+                    Text("These assignments apply to this event in Week of Us and override the calendar’s defaults.")
+                    if event.recurringEventId != nil { Text("Applies to this occurrence.") }
+                    Button("Use calendar defaults") { Task { await save(nil) } }
+                }
+                if let error { Section { Text(error).foregroundStyle(.red) } }
+            }.disabled(saving)
+            .navigationTitle("Event assignments")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save(selection) } }.disabled(saving) }
+            }
+            .onAppear { selection = event.assignedMemberIds ?? event.assignedAdultUserIds ?? [] }
+        }
+    }
+    private func save(_ ids: [String]?) async {
+        saving = true
+        do {
+            if !planner.isDemo {
+                guard let calendarId = event.calendarPreferenceId, let providerId = event.providerEventId else { throw NSError(domain: "Assignments", code: 1, userInfo: [NSLocalizedDescriptionKey: "Refresh this event and try again."]) }
+                try await APIClient.shared.saveEventMembers(calendarId: calendarId, providerId: providerId, ids: ids)
+            }
+            if var data = viewModel.data {
+                for day in data.days.indices {
+                    for index in data.days[day].events.indices where data.days[day].events[index].id == event.id {
+                        data.days[day].events[index].memberOverrideIds = ids
+                        data.days[day].events[index].assignedMemberIds = ids ?? event.defaultMemberIds ?? []
+                    }
+                }
+                viewModel.data = data
+                if planner.isDemo { FamilyPlanningDemo.shared.capture(data) }
+            }
+            dismiss()
+        } catch { self.error = error.localizedDescription }
+        saving = false
     }
 }

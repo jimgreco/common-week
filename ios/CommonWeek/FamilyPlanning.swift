@@ -15,6 +15,7 @@ struct AdultCalendarAssignment: Codable, Identifiable, Equatable {
 }
 
 struct TaskRoutine: Codable, Identifiable, Hashable {
+    var assignedMemberIds: [String]? = nil
     let id: String
     var text: String
     var childId: String?
@@ -43,6 +44,7 @@ struct WeekTemplate: Codable, Identifiable, Hashable {
         let type: PlanningItemType
         let text: String
         let childId: String?
+        var assignedMemberIds: [String]? = nil
     }
     let id: String
     let name: String
@@ -103,12 +105,12 @@ struct FamilyPlanningMutation: Encodable {
 enum ChildSchedule {
     static func events(for child: ChildProfile, in day: DayPlan) -> [CalendarEvent] {
         day.events.filter { event in
-            event.calendarPreferenceId.map(child.calendarPreferenceIds.contains) ?? false
+            event.assignedMemberIds?.contains(child.id) ?? (event.calendarPreferenceId.map(child.calendarPreferenceIds.contains) ?? false)
         }
     }
 
     static func items(for child: ChildProfile, in items: [PlanningItem]) -> [PlanningItem] {
-        items.filter { $0.childId == child.id }
+        items.filter { ($0.assignedMemberIds ?? $0.childId.map { [$0] } ?? []).contains(child.id) }
     }
 }
 

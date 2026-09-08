@@ -9,6 +9,66 @@ final class CommonWeekScreenshots: XCTestCase {
         app = XCUIApplication()
     }
 
+    #if !targetEnvironment(macCatalyst)
+    func testTaskHouseholdAssignments() throws {
+        launchDemo()
+        app.buttons["Weekly and daily tasks"].tap()
+        let task = app.buttons["Groceries"]
+        XCTAssertTrue(scrollToExistence(task)); task.tap()
+        let all = app.buttons["Select all"]
+        XCTAssertTrue(scrollToExistence(all)); all.tap()
+        app.buttons["Save"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5)); task.tap()
+        let child = app.switches["household-member-demo-child"]
+        XCTAssertTrue(scrollToExistence(child))
+        XCTAssertEqual(child.value as? String, "1")
+        XCTAssertEqual(app.switches["household-member-demo-rachel"].value as? String, "1")
+        attachCurrentScreen(named: "Task household assignments")
+        app.buttons["Clear"].tap()
+        app.buttons["Save"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5)); task.tap()
+        XCTAssertTrue(scrollToExistence(child))
+        XCTAssertEqual(child.value as? String, "0")
+    }
+    #endif
+
+    func testEventHouseholdAssignments() throws {
+        #if targetEnvironment(macCatalyst)
+        app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"
+        app.launch()
+        #else
+        launchDemo()
+        #endif
+        let opener = app.buttons["family-planning-open"]
+        XCTAssertTrue(opener.waitForExistence(timeout: 10)); opener.tap()
+        let tabs = app.segmentedControls["family-planning-tabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 5)); tabs.buttons["Family"].tap()
+        let event = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "family-child-event-")).firstMatch
+        XCTAssertTrue(scrollToExistence(event)); event.tap()
+        let assign = app.buttons["event-assign-members"]
+        XCTAssertTrue(assign.waitForExistence(timeout: 5)); assign.tap()
+        let all = app.buttons["Select all"]
+        XCTAssertTrue(all.waitForExistence(timeout: 5)); all.tap()
+        app.buttons["Save"].tap()
+        XCTAssertTrue(assign.waitForExistence(timeout: 5)); assign.tap()
+        #if targetEnvironment(macCatalyst)
+        let child = app.checkBoxes["household-member-demo-child"]
+        let adult = app.checkBoxes["household-member-demo-rachel"]
+        #else
+        let child = app.switches["household-member-demo-child"]
+        let adult = app.switches["household-member-demo-rachel"]
+        #endif
+        XCTAssertTrue(child.waitForExistence(timeout: 5))
+        XCTAssertEqual(child.value as? String, "1")
+        XCTAssertEqual(adult.value as? String, "1")
+        attachCurrentScreen(named: "Event household assignments")
+        app.buttons["Use calendar defaults"].tap()
+        XCTAssertTrue(assign.waitForExistence(timeout: 5)); assign.tap()
+        XCTAssertTrue(adult.waitForExistence(timeout: 5))
+        XCTAssertEqual(adult.value as? String, "0")
+        XCTAssertEqual(child.value as? String, "1")
+    }
+
     func testAdultCalendarAssignments() throws {
         #if targetEnvironment(macCatalyst)
         app.launchEnvironment["COMMON_WEEK_DEMO"] = "1"

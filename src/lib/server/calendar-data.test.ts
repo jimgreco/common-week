@@ -113,6 +113,7 @@ describe("household calendar privacy", () => {
       }
       if (sql.includes("from calendar_event_cache")) return { rows: [], rowCount: 0 };
       if (sql.includes("insert into calendar_event_cache")) return { rows: [], rowCount: 1 };
+      if (sql.includes("from adult_calendar_links") || sql.includes("from event_member_overrides")) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query in calendar privacy test: ${sql}`);
     });
     mocks.listEvents.mockImplementation(async (
@@ -174,6 +175,7 @@ describe("household calendar privacy", () => {
       };
       if (sql.includes("from calendar_preferences")) return { rows: [shared], rowCount: 1 };
       if (sql.includes("from notification_reminders")) return { rows: [], rowCount: 0 };
+      if (sql.includes("from adult_calendar_links") || sql.includes("from event_member_overrides")) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected search query: ${sql}`);
     });
     mocks.searchEvents.mockResolvedValue([{

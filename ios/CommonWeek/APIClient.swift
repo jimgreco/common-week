@@ -102,6 +102,10 @@ final class APIClient {
         try await send(path: "/api/ios/family-planning", method: "POST", body: mutation)
     }
 
+    func saveEventMembers(calendarId: String, providerId: String, ids: [String]?) async throws {
+        let _: EmptyResponse = try await send(path: "/api/ios/event-members", method: "PUT", body: EventMemberRequest(calendarPreferenceId: calendarId, providerEventId: providerId, memberIds: ids))
+    }
+
     func createItem(_ draft: PlanningItemDraft) async throws -> PlanningItem {
         try await send(path: "/api/ios/planning-items", method: "POST", body: draft)
     }
@@ -455,5 +459,19 @@ private enum KeychainStore {
             kSecAttrService: "com.jimgreco.commonweek",
             kSecAttrAccount: key,
         ] as CFDictionary)
+    }
+}
+
+private struct EventMemberRequest: Encodable {
+    let calendarPreferenceId: String
+    let providerEventId: String
+    let memberIds: [String]?
+    enum CodingKeys: String, CodingKey { case calendarPreferenceId, providerEventId, memberIds }
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(calendarPreferenceId, forKey: .calendarPreferenceId)
+        try values.encode(providerEventId, forKey: .providerEventId)
+        if let memberIds { try values.encode(memberIds, forKey: .memberIds) }
+        else { try values.encodeNil(forKey: .memberIds) }
     }
 }

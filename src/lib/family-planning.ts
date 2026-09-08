@@ -1,3 +1,4 @@
+import { assignedMembersSchema } from "@/lib/household-assignments";
 import { z } from "zod";
 import type { TaskRoutine } from "@/types/domain";
 
@@ -19,6 +20,7 @@ const uuid = z.string().uuid();
 export const routineSchema = z.object({
   id: uuid.optional(),
   text: z.string().trim().min(1).max(1000),
+  assignedMemberIds: assignedMembersSchema.nullable().optional(),
   childId: uuid.nullable().optional().transform((value) => value ?? null),
   frequency: z.enum(["daily", "weekly"]),
   interval: z.number().int().min(1).max(52),

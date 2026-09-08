@@ -1,4 +1,5 @@
 import "server-only";
+import { assignCalendarMembers } from "@/lib/server/household-assignments";
 
 import { createHash } from "node:crypto";
 import { fromZonedTime } from "date-fns-tz";
@@ -216,7 +217,7 @@ export async function getHouseholdCalendarEvents(
     const events = fulfilled.flatMap((result) => result.value.events);
     const failed = settled.some((result) => result.status === "rejected");
     return {
-      events,
+      events: await assignCalendarMembers(householdId, events),
       state: failed
         ? { status: "error", message: "Some calendars could not be refreshed." }
         : connected
@@ -328,10 +329,10 @@ export async function searchHouseholdCalendarEvents(
     `${row.calendar_preference_id}:${row.provider_event_id}`,
     { id: row.id, resourceKind: "calendar_event" as const, remindAt: row.remind_at.toISOString() },
   ]));
-  return events.map((event) => ({
+  return assignCalendarMembers(context.householdId, events.map((event) => ({
     ...event,
     reminder: event.calendarPreferenceId && event.providerEventId
       ? reminderByEvent.get(`${event.calendarPreferenceId}:${event.providerEventId}`) ?? null
       : null,
-  }));
+  })));
 }

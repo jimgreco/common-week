@@ -147,3 +147,5 @@ The server deployment also requires `COMMON_WEEK_RESEND_API_KEY`, both email-fro
 Before the first Mac upload, use **Add Platform** on the existing Week of Us App Store Connect record to add macOS with version `1.1`; do not create a second app record or bundle identifier. Complete the Mac TestFlight description, feedback contact, export-compliance response, and tester-group assignment there. The first external Mac build may require TestFlight App Review; internal testers can use a processed build immediately after it is assigned to their group.
 
 The optional repository variable `IOS_API_BASE_URL` can override the production API URL. Release validation requires the canonical `https://weekofus.com` origin.
+
+Household members can be selected together on plans and tasks, including repeating tasks. The calendar Person menu includes child profiles. Open an event → Assign household members to override its calendar defaults for that occurrence, or choose Use calendar defaults to restore them. Google events use the same flow.

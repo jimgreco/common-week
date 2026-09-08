@@ -10,8 +10,11 @@ import { actionResponse, requireIOSIdentity, unauthorizedResponse } from "@/lib/
 
 export const runtime = "nodejs";
 
+import { assignedMembersSchema } from "@/lib/household-assignments";
+
 const itemSchema = z.object({
   id: z.string().uuid().optional(),
+  assignedMemberIds: assignedMembersSchema.optional(),
   childId: z.string().uuid().nullable().optional(),
   text: z.string().trim().min(1).max(1000),
   type: z.enum(["note", "task"]),

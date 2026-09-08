@@ -23,7 +23,7 @@ export function routineDescription(routine: Pick<TaskRoutine, "frequency" | "int
   return `${cadence}${routine.weekdays.length ? ` · ${routine.weekdays.map((day) => weekdays[day]).join(", ")}` : routine.frequency === "weekly" ? " · any day" : ""}`;
 }
 
-export function RoutineFields({ value, onChange, childProfiles = [] }: { value: RoutineDraft; onChange: (value: RoutineDraft) => void; childProfiles?: ChildProfile[] }) {
+export function RoutineFields({ value, onChange, childProfiles = [], members = [] }: { members?: { userId: string; displayName: string }[]; value: RoutineDraft; onChange: (value: RoutineDraft) => void; childProfiles?: ChildProfile[] }) {
   const preset = value.frequency === "daily" ? "daily" : value.weekdays.join(",") === "0,1,2,3,4" && value.interval === 1 ? "weekdays" : value.interval === 2 ? "alternate" : "weekly";
   return <div className="routine-fields form-stack">
     <label>Repeat<select value={preset} onChange={(event) => {
@@ -33,6 +33,11 @@ export function RoutineFields({ value, onChange, childProfiles = [] }: { value: 
     <label>Repeat every<input type="number" min={1} max={52} required value={value.interval} onChange={(event) => onChange({ ...value, interval: Number(event.target.value) })} /><small>{value.frequency === "weekly" ? "weeks" : "days"}</small></label>
     <fieldset className="family-weekdays"><legend>Days <small>{value.frequency === "weekly" ? "Leave empty for an undated weekly task" : "Leave empty to include every day"}</small></legend><div>{weekdays.map((day, index) => <label key={day}><input type="checkbox" checked={value.weekdays.includes(index)} onChange={(event) => onChange({ ...value, weekdays: event.target.checked ? [...value.weekdays, index].sort() : value.weekdays.filter((candidate) => candidate !== index) })} /><span>{day}</span></label>)}</div></fieldset>
     <div className="form-row"><label>Starts<input type="date" required value={value.startsOn} onChange={(event) => onChange({ ...value, startsOn: event.target.value })} /></label><label>Ends <small>Optional</small><input type="date" min={value.startsOn} value={value.endsOn ?? ""} onChange={(event) => onChange({ ...value, endsOn: event.target.value || null })} /></label></div>
-    <ChildSelector childProfiles={childProfiles} value={value.childId} onChange={(childId) => onChange({ ...value, childId })} />
+    <HouseholdMemberSelector members={members} childProfiles={childProfiles} value={value.assignedMemberIds ?? (value.childId ? [value.childId] : [])} onChange={(assignedMemberIds) => onChange({ ...value, assignedMemberIds, childId: null })} />
   </div>;
+}
+
+export function HouseholdMemberSelector({ members, childProfiles, value, onChange }: { members: { userId: string; displayName: string }[]; childProfiles: ChildProfile[]; value: string[]; onChange: (ids: string[]) => void }) {
+  const people = [...members.map((member) => ({ id: member.userId, name: member.displayName })), ...childProfiles];
+  return <fieldset className="household-member-selector"><legend>Household members</legend><div className="family-row-actions"><button type="button" className="text-button" onClick={() => onChange(people.map((person) => person.id))}>Select all</button><button type="button" className="text-button" onClick={() => onChange([])}>Clear</button></div>{people.map((person) => <label key={person.id}><input type="checkbox" checked={value.includes(person.id)} onChange={(event) => onChange(event.target.checked ? [...value, person.id] : value.filter((id) => id !== person.id))} />{person.name}</label>)}</fieldset>;
 }

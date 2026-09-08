@@ -356,6 +356,7 @@ struct PlannerView: View {
         CalendarFilterControls(
             calendars: CalendarEventFilter.calendars(in: data),
             members: data.members,
+            children: data.childProfiles ?? [],
             calendarId: $calendarFilterId,
             personId: $personFilterId
         )
@@ -374,7 +375,8 @@ struct PlannerView: View {
             calendarFilterId = CalendarEventFilter.allCalendars
         }
         if personFilterId != CalendarEventFilter.allPeople,
-           !data.members.contains(where: { $0.userId == personFilterId }) {
+           !data.members.contains(where: { $0.userId == personFilterId }),
+           !(data.childProfiles ?? []).contains(where: { $0.id == personFilterId }) {
             personFilterId = CalendarEventFilter.allPeople
         }
     }

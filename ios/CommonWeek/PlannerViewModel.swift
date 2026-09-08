@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class PlannerViewModel: ObservableObject {
+    var canEditHousehold: Bool { data?.isDemo == true || (activeUser != nil && activeUser?.role != "viewer") }
     @Published var data: WeeklyPlannerData?
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -33,7 +34,7 @@ final class PlannerViewModel: ObservableObject {
     init(api: APIClient = .shared, offlineStore: OfflineStore = OfflineStore()) {
         self.api = api
         self.offlineStore = offlineStore
-        if isDemo { data = PreviewData.planner }
+        if isDemo { data = FamilyPlanningDemo.shared.planner(weekStart: PreviewData.planner.weekStart) }
     }
 
     func activate(user: SessionIdentity) async {
@@ -189,7 +190,8 @@ final class PlannerViewModel: ObservableObject {
             weekStartDate: draft.weekStartDate,
             remindAt: draft.remindAt,
             childId: draft.childId,
-            childAssignmentIsSet: draft.childAssignmentIsSet
+            childAssignmentIsSet: draft.childAssignmentIsSet,
+            assignedMemberIds: draft.assignedMemberIds
         )
         let previous = onlineDraft.id.flatMap(item(withId:))
         applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saving")
@@ -595,6 +597,7 @@ final class PlannerViewModel: ObservableObject {
             saveState: saveState,
             reminder: draft.remindAt.map { NotificationReminder(id: previous?.reminder?.id ?? "pending", resourceKind: "planning_item", remindAt: $0) },
             childId: draft.childAssignmentIsSet ? draft.childId : previous?.childId,
+            assignedMemberIds: draft.assignedMemberIds ?? previous?.assignedMemberIds,
             routineId: previous?.routineId,
             routineOccurrenceDate: previous?.routineOccurrenceDate
         )

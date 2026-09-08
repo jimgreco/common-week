@@ -144,6 +144,29 @@ try {
   assert.deepEqual((await adult(owner.token,partner.userId)).calendarPreferenceIds, [], "all visible assignments can be explicitly cleared");
   assert.ok((await adult(owner.token,owner.userId)).calendarPreferenceIds.includes(sharedCalendar), "removing one adult's assignment preserves another adult's assignment");
 
+  // Multi-member assignments and local Google event overrides share household authorization.
+  const assignedId = randomUUID();
+  const assignedInput = { id: assignedId, text: "Family outing", type: "note", planningDate: null, weekStartDate: week, assignedMemberIds: [owner.userId, partner.userId, child.id] };
+  const assignedResult = await api(owner.token, "/api/ios/planning-items", assignedInput);
+  assert.equal(assignedResult.ok, true, assignedResult.error);
+  assert.deepEqual(assignedResult.data.assignedMemberIds, assignedInput.assignedMemberIds);
+  assert.deepEqual(items(await planner(partner.token)).find((item) => item.id === assignedId).assignedMemberIds, assignedInput.assignedMemberIds);
+  assert.equal((await api(owner.token, "/api/ios/planning-items", { ...assignedInput, assignedMemberIds: [outsider.userId] }, "PATCH")).ok, false);
+  assert.equal((await api(viewer.token, "/api/ios/planning-items", assignedInput, "PATCH")).ok, false);
+  assert.equal((await api(owner.token, "/api/ios/planning-items", { ...assignedInput, assignedMemberIds: [] }, "PATCH")).ok, true);
+  assert.deepEqual(items(await planner(owner.token)).find((item) => item.id === assignedId).assignedMemberIds, []);
+  const overrideInput = { calendarPreferenceId: sharedCalendar, providerEventId: "google-occurrence-id", memberIds: [partner.userId, child.id] };
+  assert.equal((await api(owner.token, "/api/ios/event-members", overrideInput, "PUT")).ok, true);
+  assert.deepEqual((await client.query("select assigned_member_ids from event_member_overrides where calendar_preference_id=$1", [sharedCalendar])).rows[0].assigned_member_ids, overrideInput.memberIds);
+  for (const [token, input] of [[viewer.token, overrideInput], [outsider.token, overrideInput], [partner.token, { ...overrideInput, calendarPreferenceId: privateCalendar }], [owner.token, { ...overrideInput, calendarPreferenceId: hiddenCalendar }], [owner.token, { ...overrideInput, memberIds: [outsider.userId] }]]) {
+    assert.equal((await api(token, "/api/ios/event-members", input, "PUT")).ok, false, "event assignments enforce membership and calendar visibility");
+  }
+  assert.equal((await api(partner.token, "/api/ios/event-members", { ...overrideInput, memberIds: [] }, "PUT")).ok, true);
+  assert.deepEqual((await client.query("select assigned_member_ids from event_member_overrides where calendar_preference_id=$1", [sharedCalendar])).rows[0].assigned_member_ids, []);
+  assert.equal((await api(partner.token, "/api/ios/event-members", { ...overrideInput, memberIds: null }, "PUT")).ok, true);
+  assert.equal((await client.query("select * from event_member_overrides where calendar_preference_id=$1", [sharedCalendar])).rowCount, 0);
+  await api(owner.token, "/api/ios/planning-items", { id: assignedId }, "DELETE");
+
   const taskId = randomUUID();
   const taskDraft = { id: taskId, text: "Bring library books", type: "task", weekStartDate: week, planningDate: week, childId: child.id };
   assert.equal((await api(owner.token, "/api/ios/planning-items", taskDraft)).ok, true);
@@ -204,10 +227,11 @@ try {
   assert.ok(items(await planner(owner.token, nextWeek)).some((item) => item.id === moved.id), "stopping a routine keeps an intentionally rescheduled occurrence");
   await rejected(outsider.token, { action: "deleteRoutine", id: alternate.id }, "routine deletion is household scoped");
 
-  const adopted = { id: randomUUID(), text: "Bring both library books", childId: child.id, frequency: "weekly", interval: 1, weekdays: [0], startsOn: week, endsOn: null, active: true };
+  const adopted = { id: randomUUID(), text: "Bring both library books", assignedMemberIds: [owner.userId, child.id], childId: child.id, frequency: "weekly", interval: 1, weekdays: [0], startsOn: week, endsOn: null, active: true };
   await change(owner.token, { action: "saveRoutine", sourceItemId: taskId, routine: adopted });
   const firstAdopted = items(await planner(owner.token)).filter((item) => item.routineId === adopted.id);
   assert.equal(firstAdopted.length, 1, "repeating an existing task does not duplicate its first occurrence");
+  assert.deepEqual(firstAdopted[0].assignedMemberIds, [owner.userId, child.id]);
   assert.equal(firstAdopted[0].id, taskId, "the source task keeps its identity when made recurring");
   await change(owner.token, { action: "saveRoutine", sourceItemId: taskId, routine: adopted });
   assert.deepEqual(items(await planner(owner.token)).filter((item) => item.routineId === adopted.id).map((item) => item.id), [taskId], "retrying source-task adoption does not duplicate it");
@@ -215,7 +239,7 @@ try {
   // Templates copy only one-off plans/tasks. Recurring tasks continue through
   // their schedules and must not be duplicated by a template application.
   const templateNoteId = randomUUID();
-  assert.equal((await api(owner.token, "/api/ios/planning-items", { id: templateNoteId, text: "Quiet Saturday afternoon", type: "note", weekStartDate: week, planningDate: addDays(week, 5), childId: child.id })).ok, true);
+  assert.equal((await api(owner.token, "/api/ios/planning-items", { id: templateNoteId, text: "Quiet Saturday afternoon", assignedMemberIds: [owner.userId, child.id], type: "note", weekStartDate: week, planningDate: addDays(week, 5), childId: child.id })).ok, true);
 
   const templateRequestId = randomUUID();
   let state = await change(owner.token, { action: "saveTemplate", id: templateRequestId, name: `School week ${suffix}` });
@@ -226,6 +250,7 @@ try {
   assert.equal((await family(owner.token)).templates.length, 1, "template creation retries preserve one template");
   const templateWeek = addDays(week, 28);
   await change(owner.token, { action: "applyTemplate", id: template.id }, templateWeek);
+  assert.deepEqual(items(await planner(owner.token, templateWeek)).find((item) => item.text === "Quiet Saturday afternoon").assignedMemberIds, [owner.userId, child.id], "templates retain all associated members");
   const appliedCount = items(await planner(owner.token, templateWeek)).length;
   await change(partner.token, { action: "applyTemplate", id: template.id }, templateWeek);
   assert.equal(items(await planner(owner.token, templateWeek)).length, appliedCount, "template retries cannot duplicate a week");

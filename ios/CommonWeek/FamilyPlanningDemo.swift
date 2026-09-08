@@ -25,16 +25,19 @@ final class FamilyPlanningDemo {
                 let identity = "\(routine.id):\(occurrence ?? weekStart)"
                 guard !generated.contains(identity) else { continue }
                 generated.insert(identity)
-                let item = PlanningItem(id: identity, planningDate: occurrence, weekStartDate: weekStart, type: .task, text: routine.text, isCompleted: false, sortOrder: 0, createdBy: PreviewData.user.userId, createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved", reminder: nil, childId: routine.childId, routineId: routine.id, routineOccurrenceDate: occurrence ?? weekStart)
+                let item = PlanningItem(id: identity, planningDate: occurrence, weekStartDate: weekStart, type: .task, text: routine.text, isCompleted: false, sortOrder: 0, createdBy: PreviewData.user.userId, createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved", reminder: nil, childId: routine.childId, assignedMemberIds: routine.assignedMemberIds, routineId: routine.id, routineOccurrenceDate: occurrence ?? weekStart)
                 insert(item, into: &value)
             }
         }
+        value.childProfiles = children
         for index in value.days.indices {
             value.days[index].events = value.days[index].events.map { event in
                 var event = event
                 event.assignedAdultUserIds = value.members.filter { member in
                     adultCalendars[member.userId]?.contains(event.calendarPreferenceId ?? event.calendarId) ?? (event.sourceUserId == member.userId)
                 }.map(\.userId)
+                event.defaultMemberIds = (event.assignedAdultUserIds ?? []) + children.filter { $0.calendarPreferenceIds.contains(event.calendarPreferenceId ?? event.calendarId) }.map(\.id)
+                event.assignedMemberIds = event.memberOverrideIds ?? event.defaultMemberIds
                 return event
             }
         }
@@ -83,6 +86,7 @@ final class FamilyPlanningDemo {
                         updated.routineId = routine.id
                         updated.routineOccurrenceDate = item.planningDate ?? item.weekStartDate
                         updated.childId = routine.childId
+                        updated.assignedMemberIds = routine.assignedMemberIds
                         generated.insert("\(routine.id):\(updated.routineOccurrenceDate!)")
                         return updated
                     }
@@ -91,7 +95,7 @@ final class FamilyPlanningDemo {
         case "saveTemplate":
             let snapshot = planner(weekStart: week)
             let items = (snapshot.weeklyItems + snapshot.days.flatMap(\.items)).filter { $0.routineId == nil }.map {
-                WeekTemplate.Item(dayOffset: $0.planningDate.map { WeekDate.daysBetween(week, $0) }, type: $0.type, text: $0.text, childId: $0.childId)
+                WeekTemplate.Item(dayOffset: $0.planningDate.map { WeekDate.daysBetween(week, $0) }, type: $0.type, text: $0.text, childId: $0.childId, assignedMemberIds: $0.assignedMemberIds)
             }
             guard !items.isEmpty else { throw APIError.server("Add a plan or one-off task to save as a template.") }
             let id = mutation.id ?? UUID().uuidString
@@ -106,7 +110,7 @@ final class FamilyPlanningDemo {
             if !applied.contains(key) {
                 var value = planner(weekStart: week)
                 for (index, item) in template.items.enumerated() {
-                    insert(.init(id: "\(key):\(index)", planningDate: item.dayOffset.map { WeekDate.addDays($0, to: week) }, weekStartDate: week, type: item.type, text: item.text, isCompleted: false, sortOrder: index, createdBy: PreviewData.user.userId, createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved", reminder: nil, childId: item.childId), into: &value)
+                    insert(.init(id: "\(key):\(index)", planningDate: item.dayOffset.map { WeekDate.addDays($0, to: week) }, weekStartDate: week, type: item.type, text: item.text, isCompleted: false, sortOrder: index, createdBy: PreviewData.user.userId, createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved", reminder: nil, childId: item.childId, assignedMemberIds: item.assignedMemberIds), into: &value)
                 }
                 weeks[week] = value; applied.insert(key)
             }

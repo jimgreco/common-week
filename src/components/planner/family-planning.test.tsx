@@ -114,3 +114,20 @@ describe("Repeating shared-task editor", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ interval: 4, weekdays: [2] }));
   });
 });
+
+describe("Household member selections", () => {
+  const childProfiles = [{ id: "child-1", name: "Miriam", color: "#688173", calendarPreferenceIds: [] }];
+  it("saves all adults and children on a planning item and allows explicit clearing", () => {
+    const onSave = vi.fn();
+    const props = { item: task, members: data.members, childProfiles, weekDates: [data.weekStart], timeZone: "UTC", onClose: vi.fn(), onSave, onDelete: vi.fn() };
+    const view = render(<ItemEditorDialog {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ assignedMemberIds: ["user-1", "child-1"] }));
+    view.unmount();
+    render(<ItemEditorDialog {...props} item={{ ...task, assignedMemberIds: ["user-1", "child-1"] }} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Clear$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ assignedMemberIds: [] }));
+  });
+});

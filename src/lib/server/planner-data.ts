@@ -41,6 +41,7 @@ interface LocationRow {
 
 interface PlanningRow {
   id: string;
+  assigned_member_ids: string[] | null;
   child_id: string | null;
   routine_id: string | null;
   routine_occurrence_date: string | null;
@@ -76,6 +77,7 @@ function mapLocation(row: LocationRow, defaultLocationId: string | null): Househ
 function mapPlanningItem(row: PlanningRow): PlanningItem {
   return {
     id: row.id,
+    assignedMemberIds: row.assigned_member_ids,
     childId: row.child_id,
     routineId: row.routine_id,
     routineOccurrenceDate: row.routine_occurrence_date,
@@ -135,7 +137,7 @@ export async function getPlannerData(
         [context.householdId, dates[0], dates[6]],
       ),
       query<PlanningRow>(
-        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -236,6 +238,7 @@ export async function getPlannerData(
     [context.householdId],
   );
   const adultsByCalendar = new Map(adultLinks.rows.map((link) => [link.calendar_preference_id, link.user_ids]));
+  const childProfiles = await query<{ id: string; name: string; color: string; calendarPreferenceIds: string[] }>(`select c.id,c.name,c.color,coalesce(array_agg(cp.id::text) filter(where cp.id is not null),'{}') as "calendarPreferenceIds" from child_profiles c left join child_calendar_links cl on cl.child_id=c.id left join calendar_preferences cp on cp.id=cl.calendar_preference_id and (cp.visibility='share' or (cp.visibility='private' and cp.user_id=$2)) where c.household_id=$1 group by c.id`, [context.householdId,context.userId]);
   const items = planningResult.rows.map(mapPlanningItem);
   const calendarReminders = calendarBundle.events.length
     ? await query<{ id: string; calendar_preference_id: string; provider_event_id: string; remind_at: Date }>(
@@ -280,6 +283,7 @@ export async function getPlannerData(
       temperatureUnit: household.temperature_unit,
     },
     members,
+    childProfiles: childProfiles.rows,
     weekStart,
     days: dates.map((date) => {
       const memberLocations = assignments.filter((assignment) => assignment.date === date).map(({ member, location }) => ({

@@ -14,6 +14,8 @@ import { validateChildForHousehold } from "@/lib/server/family-planning";
 import { carryOverOpenTasks } from "@/lib/server/planning-carryover";
 import type { ActionResult, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
 
+import { assignedMembersSchema, validateAssignedMembers } from "@/lib/server/household-assignments";
+
 const uuid = z.string().uuid();
 const itemText = z.string().trim().min(1).max(1000);
 const dateOnly = z.string().refine(isDateOnly, "Invalid date.");
@@ -29,6 +31,7 @@ function validTimeZone(value: string): boolean {
 
 interface PlanningRow {
   id: string;
+  assigned_member_ids: string[] | null;
   child_id: string | null;
   routine_id: string | null;
   routine_occurrence_date: string | null;
@@ -66,6 +69,7 @@ function actionError<T = undefined>(error: unknown, fallback: string): ActionRes
 function mappedItem(row: PlanningRow): PlanningItem {
   return {
     id: row.id,
+    assignedMemberIds: row.assigned_member_ids,
     childId: row.child_id,
     routineId: row.routine_id,
     routineOccurrenceDate: row.routine_occurrence_date,
@@ -164,6 +168,7 @@ export async function createPlanningItemAction(input: {
   weekStartDate: string;
   remindAt?: string | null;
   childId?: string | null;
+  assignedMemberIds?: string[];
 }): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
@@ -174,17 +179,19 @@ export async function createPlanningItemAction(input: {
       weekStartDate: dateOnly,
       remindAt: z.string().datetime().nullable().optional(),
       childId: uuid.nullable().optional(),
+      assignedMemberIds: assignedMembersSchema.optional(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
     if (context.role === "viewer") throw new Error("You do not have permission to change this household.");
     await validateChildForHousehold(context.householdId, parsed.childId);
+    await validateAssignedMembers(context.householdId, parsed.assignedMemberIds);
     const saved = await withTransaction(async (database) => {
       const inserted = await database.query<{ id: string }>(
         `insert into planning_items (
-           id, household_id, created_by, planning_date, week_start_date, type, text, child_id
+           id, household_id, created_by, planning_date, week_start_date, type, text, child_id, assigned_member_ids
          )
-         values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4::date, $5::date, $6::planning_item_type, $7, $8)
+         values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4::date, $5::date, $6::planning_item_type, $7, $8, $9::uuid[])
          on conflict (id) do nothing
          returning id`,
         [
@@ -196,11 +203,12 @@ export async function createPlanningItemAction(input: {
           parsed.type,
           parsed.text,
           parsed.childId ?? null,
+          parsed.assignedMemberIds ?? null,
         ],
       );
       const itemId = inserted.rows[0]?.id ?? parsed.id;
       const result = itemId ? await database.query<PlanningRow>(
-        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -250,6 +258,7 @@ export async function updatePlanningItemAction(input: {
   weekStartDate: string;
   remindAt?: string | null;
   childId?: string | null;
+  assignedMemberIds?: string[];
 }): Promise<ActionResult<PlanningItem>> {
   try {
     const parsed = z.object({
@@ -260,16 +269,19 @@ export async function updatePlanningItemAction(input: {
       weekStartDate: dateOnly,
       remindAt: z.string().datetime().nullable().optional(),
       childId: uuid.nullable().optional(),
+      assignedMemberIds: assignedMembersSchema.optional(),
     }).parse(input);
     validateWeek(parsed.planningDate, parsed.weekStartDate);
     const context = await requireHouseholdContext();
     if (context.role === "viewer") throw new Error("You do not have permission to change this household.");
     await validateChildForHousehold(context.householdId, parsed.childId);
+    await validateAssignedMembers(context.householdId, parsed.assignedMemberIds);
     let reminder: NotificationReminder | null = null;
     const updated = await query<{ id: string }>(
         `update planning_items set
            text = $3, type = $4::planning_item_type, planning_date = $5::date,
-           week_start_date = $6::date, child_id = case when $7::boolean then $8::uuid else child_id end
+           week_start_date = $6::date, child_id = case when $7::boolean then $8::uuid else child_id end,
+           assigned_member_ids = case when $9::boolean then $10::uuid[] else assigned_member_ids end
          where id = $1 and household_id = $2
          returning id`,
         [
@@ -281,6 +293,8 @@ export async function updatePlanningItemAction(input: {
           parsed.weekStartDate,
           parsed.childId !== undefined,
           parsed.childId ?? null,
+          parsed.assignedMemberIds !== undefined,
+          parsed.assignedMemberIds ?? null,
         ],
     );
     if (!updated.rows[0]) throw new Error("That item is not available to this household.");
@@ -301,7 +315,7 @@ export async function updatePlanningItemAction(input: {
       deepLink: plannerNotificationDeepLink({ kind: "planning_item", id: parsed.id, weekStart: parsed.weekStartDate }),
     });
     const saved = await query<PlanningRow>(
-        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,
                 u.display_name as created_by_name, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -540,7 +554,7 @@ export async function searchPlanningItemsAction(search: string): Promise<ActionR
     const context = await requireHouseholdContext();
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const result = await query<PlanningRow>(
-      `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+      `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
               text, is_completed, sort_order, created_by,
               u.display_name as created_by_name, updated_at,
               pi.original_planning_date::text, pi.original_week_start_date::text,
@@ -567,7 +581,7 @@ export async function searchPlannerAction(search: string): Promise<ActionResult<
     const escaped = parsed.replace(/[\\%_]/g, "\\$&");
     const [planning, events] = await Promise.all([
       query<PlanningRow & { reminder_id: string | null; remind_at: Date | null }>(
-        `select pi.id, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
+        `select pi.id, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by, pi.updated_at,
                 pi.original_planning_date::text, pi.original_week_start_date::text,
                 pi.carryover_count, pi.last_carried_at,

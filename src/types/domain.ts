@@ -34,6 +34,7 @@ export interface PlanningItem {
   lastCarriedAt?: string | null;
   saveState?: SaveState;
   reminder?: NotificationReminder | null;
+  assignedMemberIds?: string[] | null;
   childId?: string | null;
   routineId?: string | null;
   routineOccurrenceDate?: string | null;
@@ -130,6 +131,9 @@ export interface CalendarEvent {
   providerEventId?: string;
   sourceUserId?: string;
   assignedAdultUserIds?: string[];
+  assignedMemberIds?: string[];
+  defaultMemberIds?: string[];
+  memberOverrideIds?: string[] | null;
   calendarPreferenceId?: string;
   etag?: string;
   recurringEventId?: string;
@@ -265,6 +269,7 @@ export interface PlannerSourceState {
 }
 
 export interface WeeklyPlannerData {
+  childProfiles?: ChildProfile[];
   household: HouseholdSummary;
   members: HouseholdMember[];
   weekStart: string;
@@ -327,6 +332,7 @@ export interface AdultCalendarAssignment {
 }
 
 export interface TaskRoutine {
+  assignedMemberIds?: string[] | null;
   id: string;
   text: string;
   childId: string | null;
@@ -339,6 +345,7 @@ export interface TaskRoutine {
 }
 
 export interface WeekTemplateItem {
+  assignedMemberIds?: string[] | null;
   dayOffset: number | null;
   type: PlanningItemType;
   text: string;

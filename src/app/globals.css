@@ -1296,3 +1296,8 @@ textarea:focus-visible {
   .family-guide-footer .button { font-size: 11px; }
   .family-plan-summary { gap: 6px; }
 }
+
+.household-member-selector { border: 1px solid var(--rule-strong); border-radius: 12px; padding: 14px; display: grid; gap: 10px; }
+.household-member-selector legend { font-weight: 600; padding: 0 6px; }
+.household-member-selector label { display: flex; flex-direction: row; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; min-height: 32px; }
+.household-member-selector input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 0; flex: 0 0 auto; accent-color: var(--accent); }

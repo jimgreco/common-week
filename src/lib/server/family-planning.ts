@@ -1,4 +1,5 @@
 import "server-only";
+import { validateAssignedMembers } from "@/lib/server/household-assignments";
 
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
@@ -8,7 +9,7 @@ import { query, withTransaction } from "@/lib/server/database";
 import type { FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeekTemplateItem } from "@/types/domain";
 
 type Context = { householdId: string; userId: string };
-const routineColumns = `id, text, child_id as "childId", frequency, interval, weekdays,
+const routineColumns = `id, text, assigned_member_ids as "assignedMemberIds", child_id as "childId", frequency, interval, weekdays,
   starts_on::text as "startsOn", ends_on::text as "endsOn", active`;
 
 async function access(context: Context, database: { query: typeof query }, edit = false) {
@@ -48,9 +49,9 @@ async function materialize(database: PoolClient, context: Context, weekStart: st
       );
       if (!claimed.rows[0]) continue;
       const item = await database.query<{ id: string }>(
-        `insert into planning_items (household_id,created_by,planning_date,week_start_date,type,text,child_id,routine_id,routine_occurrence_date)
-         values ($1,$2,$3::date,$4::date,'task',$5,$6,$7,$8::date) returning id`,
-        [context.householdId, routine.createdBy, occurrence.planningDate, weekStart, routine.text, routine.childId, routine.id, occurrence.occurrenceDate],
+        `insert into planning_items (household_id,created_by,planning_date,week_start_date,type,text,child_id,routine_id,routine_occurrence_date,assigned_member_ids)
+         values ($1,$2,$3::date,$4::date,'task',$5,$6,$7,$8::date,$9::uuid[]) returning id`,
+        [context.householdId, routine.createdBy, occurrence.planningDate, weekStart, routine.text, routine.childId, routine.id, occurrence.occurrenceDate, routine.assignedMemberIds ?? null],
       );
       await database.query("update task_routine_occurrences set item_id = $3 where routine_id = $1 and occurrence_date = $2::date",
         [routine.id, occurrence.occurrenceDate, item.rows[0].id]);
@@ -99,7 +100,7 @@ export async function getFamilyPlanningData(context: Context, requestedWeek: str
     query<Omit<PlanningItem, "updatedAt"> & { updatedAt: Date }>(
       `select pi.id,pi.planning_date::text as "planningDate",pi.week_start_date::text as "weekStartDate",pi.type,pi.text,
        pi.is_completed as "isCompleted",pi.sort_order as "sortOrder",pi.created_by as "createdBy",u.display_name as "createdByName",
-       pi.updated_at as "updatedAt",pi.child_id as "childId",pi.routine_id as "routineId",pi.routine_occurrence_date::text as "routineOccurrenceDate",
+       pi.updated_at as "updatedAt",pi.assigned_member_ids as "assignedMemberIds",pi.child_id as "childId",pi.routine_id as "routineId",pi.routine_occurrence_date::text as "routineOccurrenceDate",
        pi.original_planning_date::text as "originalPlanningDate",pi.original_week_start_date::text as "originalWeekStartDate",pi.carryover_count as "carryoverCount"
        from planning_items pi join users u on u.id=pi.created_by
        where pi.household_id=$1 and pi.type='task' and not pi.is_completed and pi.week_start_date < $2::date
@@ -130,6 +131,7 @@ async function removeFutureRoutineItems(database: PoolClient, context: Context, 
     `select pi.id,pi.routine_occurrence_date::text as occurrence_date,pi.planning_date::text
      from planning_items pi join task_routines r on r.id=pi.routine_id
      where pi.household_id=$1 and pi.routine_id=$2 and not pi.is_completed and pi.type='task'
+      and pi.assigned_member_ids is not distinct from r.assigned_member_ids
       and pi.text=r.text and pi.child_id is not distinct from r.child_id
       and ((pi.planning_date=pi.routine_occurrence_date and pi.planning_date > $3::date)
        or (pi.planning_date is null and pi.week_start_date=pi.routine_occurrence_date and pi.week_start_date > $4::date))
@@ -143,7 +145,7 @@ async function removeFutureRoutineItems(database: PoolClient, context: Context, 
     if (matching) {
       // Keep occurrence IDs and reminders when the date still belongs to the
       // edited series. Repeated reads and retries can then use the same ledger.
-      await database.query("update planning_items set text=$3,child_id=$4 where id=$1 and household_id=$2", [item.id,context.householdId,replacement!.text,replacement!.childId]);
+      await database.query("update planning_items set text=$3,child_id=$4,assigned_member_ids=$5::uuid[] where id=$1 and household_id=$2", [item.id,context.householdId,replacement!.text,replacement!.childId,replacement!.assignedMemberIds ?? null]);
     } else removed.push(item.id);
   }
   if (!removed.length) return;
@@ -200,24 +202,25 @@ export async function mutateFamilyPlanning(context: Context, input: FamilyPlanni
       case "saveRoutine": {
         const routine = parsed.routine;
         await validateChildForHousehold(context.householdId, routine.childId, database);
+        await validateAssignedMembers(context.householdId, routine.assignedMemberIds ?? undefined, database);
         const id = routine.id ?? randomUUID();
         const existing = await database.query<TaskRoutine & { household_id: string }>(`select ${routineColumns}, household_id from task_routines where id=$1`, [id]);
         if (existing.rows[0] && existing.rows[0].household_id !== context.householdId) throw new Error("That routine is not available to this household.");
         if (!existing.rows[0]) await enforceLimit(database, "task_routines", context, 100);
         if (existing.rows[0]) {
           const previous = existing.rows[0];
-          const unchanged = previous.text === routine.text && previous.childId === routine.childId
+          const unchanged = JSON.stringify(previous.assignedMemberIds ?? null) === JSON.stringify(routine.assignedMemberIds ?? null) && previous.text === routine.text && previous.childId === routine.childId
             && previous.frequency === routine.frequency && previous.interval === routine.interval
             && JSON.stringify(previous.weekdays) === JSON.stringify(routine.weekdays)
             && previous.startsOn === routine.startsOn && previous.endsOn === routine.endsOn && previous.active === routine.active;
           if (unchanged && !parsed.sourceItemId) break;
           if (!unchanged) await removeFutureRoutineItems(database, context, id, todayInTimeZone(membership.timezone), parsed.sourceItemId, { ...routine, id });
         }
-        await database.query(`insert into task_routines(id,household_id,created_by,text,child_id,frequency,interval,weekdays,starts_on,ends_on,active)
-          values($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11) on conflict(id) do update set
-          text=excluded.text,child_id=excluded.child_id,frequency=excluded.frequency,interval=excluded.interval,weekdays=excluded.weekdays,
+        await database.query(`insert into task_routines(id,household_id,created_by,text,child_id,frequency,interval,weekdays,starts_on,ends_on,active,assigned_member_ids)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12::uuid[]) on conflict(id) do update set
+          text=excluded.text,child_id=excluded.child_id,assigned_member_ids=excluded.assigned_member_ids,frequency=excluded.frequency,interval=excluded.interval,weekdays=excluded.weekdays,
           starts_on=excluded.starts_on,ends_on=excluded.ends_on,active=excluded.active where task_routines.household_id=excluded.household_id`,
-          [id,context.householdId,context.userId,routine.text,routine.childId,routine.frequency,routine.interval,routine.weekdays,routine.startsOn,routine.endsOn,routine.active]);
+          [id,context.householdId,context.userId,routine.text,routine.childId,routine.frequency,routine.interval,routine.weekdays,routine.startsOn,routine.endsOn,routine.active,routine.assignedMemberIds ?? null]);
         if (parsed.sourceItemId) {
           const source = await database.query<{ planning_date: string | null; week_start_date: string; routine_id: string | null; routine_occurrence_date: string | null }>(
             `select planning_date::text,week_start_date::text,routine_id,routine_occurrence_date::text from planning_items
@@ -233,7 +236,7 @@ export async function mutateFamilyPlanning(context: Context, input: FamilyPlanni
             on conflict(routine_id,occurrence_date) do update set item_id=excluded.item_id
             where task_routine_occurrences.item_id=excluded.item_id returning routine_id`, [id,occurrence.occurrenceDate,parsed.sourceItemId]);
           if (!claimed.rows[0]) throw new Error("That routine occurrence already exists. Choose the existing occurrence instead.");
-          await database.query("update planning_items set routine_id=$3,routine_occurrence_date=$4::date,child_id=$5,text=$6 where id=$1 and household_id=$2", [parsed.sourceItemId,context.householdId,id,occurrence.occurrenceDate,routine.childId,routine.text]);
+          await database.query("update planning_items set routine_id=$3,routine_occurrence_date=$4::date,child_id=$5,text=$6,assigned_member_ids=$7::uuid[] where id=$1 and household_id=$2", [parsed.sourceItemId,context.householdId,id,occurrence.occurrenceDate,routine.childId,routine.text,routine.assignedMemberIds ?? null]);
         }
         break;
       }
@@ -254,7 +257,7 @@ export async function mutateFamilyPlanning(context: Context, input: FamilyPlanni
           break;
         }
         await enforceLimit(database,"week_templates",context,30);
-        const snapshot = await database.query<WeekTemplateItem>(`select (planning_date-week_start_date)::integer as "dayOffset",type,text,child_id as "childId"
+        const snapshot = await database.query<WeekTemplateItem>(`select (planning_date-week_start_date)::integer as "dayOffset",type,text,assigned_member_ids as "assignedMemberIds",child_id as "childId"
           from planning_items where household_id=$1 and week_start_date=$2::date and routine_id is null order by sort_order,created_at limit 251`, [context.householdId,parsed.weekStart]);
         if (!snapshot.rows.length) throw new Error("Add one-off tasks or plans to this week before saving a template. Routines already repeat automatically.");
         if (snapshot.rows.length > 250) throw new Error("Templates can contain up to 250 tasks and plans.");
@@ -275,8 +278,8 @@ export async function mutateFamilyPlanning(context: Context, input: FamilyPlanni
         const template = await database.query<{ items: WeekTemplateItem[] }>("select items from week_templates where id=$1 and household_id=$2", [parsed.id,context.householdId]);
         for (const item of template.rows[0].items) {
           await validateChildForHousehold(context.householdId,item.childId,database);
-          await database.query(`insert into planning_items(household_id,created_by,planning_date,week_start_date,type,text,child_id)
-            values($1,$2,$3::date,$4::date,$5::planning_item_type,$6,$7)`, [context.householdId,context.userId,item.dayOffset===null?null:familyDateOffset(parsed.weekStart,item.dayOffset),parsed.weekStart,item.type,item.text,item.childId]);
+          await database.query(`insert into planning_items(household_id,created_by,planning_date,week_start_date,type,text,child_id,assigned_member_ids)
+            values($1,$2,$3::date,$4::date,$5::planning_item_type,$6,$7,$8::uuid[])`, [context.householdId,context.userId,item.dayOffset===null?null:familyDateOffset(parsed.weekStart,item.dayOffset),parsed.weekStart,item.type,item.text,item.childId,item.assignedMemberIds ?? null]);
         }
         break;
       }

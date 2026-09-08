@@ -25,6 +25,7 @@ struct ItemEditorView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var appleReminders: AppleRemindersStore
     @Environment(\.dismiss) private var dismiss
+    @State private var assignedMemberIds: [String]
     @State private var childId: String
     @State private var text: String
     @State private var type: PlanningItemType
@@ -58,6 +59,7 @@ struct ItemEditorView: View {
         self.allowsAppleReminderDestination = allowsAppleReminderDestination
         self.allowsWeeklyPlacement = allowsWeeklyPlacement
         _childId = State(initialValue: item?.childId ?? "")
+        _assignedMemberIds = State(initialValue: item?.assignedMemberIds ?? item?.childId.map { [$0] } ?? [])
         _text = State(initialValue: item?.text ?? "")
         _type = State(initialValue: item?.type ?? defaultType)
         let existingReminder = item?.reminder.flatMap { WeekDate.iso8601.date(from: $0.remindAt) }
@@ -208,7 +210,7 @@ struct ItemEditorView: View {
             Label("Schedule", systemImage: "calendar.badge.clock")
         }
         if destination == .weekOfUs {
-            Section("Child") { PlanningChildPicker(planner: data, childId: $childId) }
+            Section("Household members") { HouseholdMemberPicker(planner: data, selection: $assignedMemberIds) }
         }
         if case .appleReminders = destination {
             AppleReminderRecurrenceEditor(
@@ -228,7 +230,7 @@ struct ItemEditorView: View {
             Section {
                 if item.type == .task {
                     Button(currentItem?.routineId == nil ? "Repeat this task…" : "Edit repeating routine…") { showingRoutine = true }
-                        .disabled(text != item.text || type != item.type || childId != (item.childId ?? ""))
+                        .disabled(text != item.text || type != item.type || assignedMemberIds != (item.assignedMemberIds ?? item.childId.map { [$0] } ?? []))
                 }
                 if item.type == .task, !appleReminders.writableSelectedLists.isEmpty {
                     Button("Move to Apple Reminders…") { showingTaskMigration = true }
@@ -299,8 +301,9 @@ struct ItemEditorView: View {
             planningDate: selectedPlanningDate,
             weekStartDate: selectedPlanningDate.map(WeekDate.weekStart) ?? data.weekStart,
             remindAt: reminderEnabled ? WeekDate.iso8601.string(from: reminderDate) : nil,
-            childId: childId.isEmpty ? nil : childId,
-            childAssignmentIsSet: true
+            childId: nil,
+            childAssignmentIsSet: true,
+            assignedMemberIds: assignedMemberIds
         )
         if await viewModel.saveItem(draft) { dismiss() }
     }
@@ -1021,6 +1024,7 @@ struct LocationPickerView: View {
 }
 
 struct EventDetailView: View {
+    @State private var assigningMembers = false
     let event: CalendarEvent
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
@@ -1051,6 +1055,7 @@ struct EventDetailView: View {
                     if let description = event.description, !description.isEmpty {
                         Divider(); Eyebrow(text: "Notes"); Text(description).font(.body).foregroundStyle(CWTheme.secondaryInk)
                     }
+                    if viewModel.canEditHousehold { Button("Assign household members") { assigningMembers = true }.buttonStyle(.bordered).accessibilityIdentifier("event-assign-members") }
                     guestContent
                     reminderContent
                     Text(event.canEdit == true ? (event.recurringEventId == nil ? "This event can be edited in Week of Us." : "You can update or delete this occurrence or its recurring series.") : "This event is read-only for your Google account. Enable Calendar editing and ask the calendar owner to grant your Google address permission to make changes. You can still hide it from the shared planner.")
@@ -1074,6 +1079,7 @@ struct EventDetailView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 if event.canEdit == true { ToolbarItem(placement: .confirmationAction) { Button("Edit") { editing = true } } }
             }
+            .sheet(isPresented: $assigningMembers) { EventMemberEditor(event: viewModel.data?.days.flatMap(\.events).first(where: { $0.id == event.id }) ?? event, planner: data, viewModel: viewModel).familyPlanningSheetSize() }
             .sheet(isPresented: $editing) { CalendarEventEditorView(event: event, date: String(event.start.prefix(10)), data: data, viewModel: viewModel) }
             .task {
                 reminderSelection = reminderValue

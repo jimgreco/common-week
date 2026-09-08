@@ -10,8 +10,8 @@ struct DayCardView: View {
     let personFilterId: String
 
     private var isToday: Bool { WeekDate.isToday(day.date, timeZoneIdentifier: data.household.timezone) }
-    private var plans: [PlanningItem] { day.items.filter { $0.type == .note } }
-    private var tasks: [PlanningItem] { day.items.filter { $0.type == .task } }
+    private var plans: [PlanningItem] { day.items.filter { $0.type == .note && (personFilterId == CalendarEventFilter.allPeople || ($0.assignedMemberIds ?? $0.childId.map { [$0] } ?? []).contains(personFilterId)) } }
+    private var tasks: [PlanningItem] { day.items.filter { $0.type == .task && (personFilterId == CalendarEventFilter.allPeople || ($0.assignedMemberIds ?? $0.childId.map { [$0] } ?? []).contains(personFilterId)) } }
     private var reminderTasks: [AppleReminderTask] { appleReminders.tasks(for: day.date) }
     private var visibleEvents: [CalendarEvent] {
         day.events.filter {
@@ -192,6 +192,7 @@ struct DayCardView: View {
 struct CalendarFilterControls: View {
     let calendars: [EditableCalendar]
     let members: [HouseholdMember]
+    var children: [ChildProfile] = []
     @Binding var calendarId: String
     @Binding var personId: String
 
@@ -206,6 +207,7 @@ struct CalendarFilterControls: View {
     }
 
     private var selectedPersonTitle: String {
+        if let child = children.first(where: { $0.id == personId }) { return child.name }
         guard personId != CalendarEventFilter.allPeople,
               let member = members.first(where: { $0.userId == personId }) else { return "Everyone" }
         return member.displayName
@@ -234,6 +236,7 @@ struct CalendarFilterControls: View {
 
             Menu {
                 Button("Everyone") { personId = CalendarEventFilter.allPeople }
+                ForEach(children) { child in Button(child.name) { personId = child.id } }
                 Divider()
                 ForEach(members) { member in
                     Button {

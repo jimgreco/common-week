@@ -34,6 +34,10 @@ import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, FamilyP
 
 type PlannerFocusTarget = PlannerNotificationTarget | ResolvedPlannerNotificationTarget;
 
+import { saveDemoEventMembers, demoEventMembers } from "@/components/planner/family-planning-demo";
+import { familyEvent, itemMemberIds } from "@/lib/household-assignments";
+import { saveEventMembersAction } from "@/app/actions/household-assignments";
+
 export function WeeklyPlanner({ initialData, currentUserName, initialFocus = null, initialInbox, initialFamily, initialReview = false, currentUserId }: { initialData: WeeklyPlannerData; currentUserName: string; initialFocus?: PlannerFocusTarget | null; initialInbox: NotificationInbox; initialFamily?: FamilyPlanningData; initialReview?: boolean; currentUserId?: string }) {
   const router = useRouter();
   const focusedItem = initialFocus?.kind === "planning_item"
@@ -231,14 +235,14 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     ? calendarFilter
     : ALL_CALENDARS;
   const activePersonFilter = personFilter === ALL_PEOPLE
-    || initialData.members.some((member) => member.userId === personFilter)
+    || initialData.members.some((member) => member.userId === personFilter) || family.children.some((child) => child.id === personFilter)
     ? personFilter
     : ALL_PEOPLE;
   const filteredDays = useMemo(() => days.map((day) => ({
     ...day,
-    events: day.events.filter((event) => calendarEventMatchesFilters({ ...event, assignedAdultUserIds: family.adults.length ? family.adults.filter((adult) => adult.calendarPreferenceIds.includes(event.calendarPreferenceId ?? event.calendarId)).map((adult) => adult.userId) : event.assignedAdultUserIds }, activeCalendarFilter, activePersonFilter) && (!childFilter || (family.children.find((child) => child.id === childFilter)?.calendarPreferenceIds.includes(event.calendarPreferenceId ?? event.calendarId) ?? false))),
-    items: day.items.filter((item) => !childFilter || item.childId === childFilter),
-  })), [activeCalendarFilter, activePersonFilter, childFilter, family.children, family.adults, days]);
+    events: day.events.map((event) => familyEvent(initialData.isDemo ? demoEventMembers(event) : event, family)).filter((event) => calendarEventMatchesFilters(event, activeCalendarFilter, activePersonFilter) && (!childFilter || event.assignedMemberIds?.includes(childFilter))),
+    items: day.items.filter((item) => (activePersonFilter === ALL_PEOPLE || itemMemberIds(item).includes(activePersonFilter)) && (!childFilter || itemMemberIds(item).includes(childFilter))),
+  })), [activeCalendarFilter, activePersonFilter, childFilter, family, days, initialData.isDemo]);
   const thisWeek = currentWeekStart(initialData.household.timezone);
   const previousWeek = addDateDays(initialData.weekStart, -7);
   const nextWeek = addDateDays(initialData.weekStart, 7);
@@ -293,6 +297,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       planningDate: item.planningDate,
       weekStartDate: item.weekStartDate,
       childId: item.childId ?? null,
+      assignedMemberIds: item.assignedMemberIds ?? undefined,
     });
     if (result.ok && result.data) placeItem(result.data, item.id);
     else placeItem({ ...item, saveState: "failed" });
@@ -322,6 +327,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       weekStartDate: item.weekStartDate,
       remindAt: item.reminder?.remindAt ?? null,
       childId: item.childId ?? null,
+      assignedMemberIds: item.assignedMemberIds ?? undefined,
     });
     if (!result.ok) {
       placeItem({ ...optimistic, saveState: "failed" });
@@ -510,7 +516,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     const moved = { ...item, planningDate: null, weekStartDate: initialData.weekStart };
     if (initialData.isDemo) updateDemoPriorItem(moved);
     else {
-      const result = await updatePlanningItemAction({ id: moved.id, text: moved.text, type: moved.type, planningDate: null, weekStartDate: moved.weekStartDate, childId: moved.childId ?? null });
+      const result = await updatePlanningItemAction({ id: moved.id, text: moved.text, type: moved.type, planningDate: null, weekStartDate: moved.weekStartDate, childId: moved.childId ?? null, assignedMemberIds: moved.assignedMemberIds ?? undefined });
       if (!result.ok) return result.error ?? "Task could not be moved.";
     }
     placeItem(moved);
@@ -577,12 +583,12 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
 
         <CalendarFilters
           calendars={initialData.visibleCalendars}
-          members={initialData.members}
+          members={initialData.members} childProfiles={family.children}
           calendarId={activeCalendarFilter}
           personId={activePersonFilter}
           onCalendar={setCalendarFilter}
-          onPerson={setPersonFilter}
-          onClear={() => { setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); }}
+          onPerson={(id) => { setPersonFilter(id); setChildFilter(""); }}
+          onClear={() => { setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); setChildFilter(""); }}
         />
 
         {calendarState.status === "error" && <div className="source-alert" role="status"><CalendarRange size={14} />{calendarState.message}</div>}
@@ -615,8 +621,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         <section className="weekly-section" aria-label="Weekly notes and tasks">
           <header><span>This week</span><small>Notes and tasks that don’t belong to one day</small></header>
           <div className="weekly-columns">
-            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note" && (!childFilter || item.childId === childFilter)).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
-            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task" && (!childFilter || item.childId === childFilter)).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" onAdd={addItem} /></div>
+            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note" && (activePersonFilter === ALL_PEOPLE || itemMemberIds(item).includes(activePersonFilter)) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
+            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task" && (activePersonFilter === ALL_PEOPLE || itemMemberIds(item).includes(activePersonFilter)) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" onAdd={addItem} /></div>
           </div>
         </section>
       </section>
@@ -624,9 +630,9 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       {familyOpen && !familyLoading && <FamilyPlanningPanel key={initialData.weekStart} family={family} data={{ ...initialData, days, calendarState }} items={guideItems} initialStep={familyStep} onMutation={mutateFamily} onClose={() => setFamilyOpen(false)} onToggle={toggleGuideItem} onMove={moveGuideItem} onEdit={(item) => { setFamilyOpen(false); if (item.weekStartDate !== initialData.weekStart) { router.push(`/planner?week=${item.weekStartDate}&item=${item.id}`); } else setEditingItem(item); }} onEvent={(event) => { setFamilyOpen(false); setSelectedEvent(event); }} />}
       {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} members={initialData.members} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
-      {selectedEvent && <EventDetailDialog event={selectedEvent} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onDelete={deleteCalendarEvent} onRespond={respondToCalendarEvent} onReminder={setCalendarReminder} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
+      {selectedEvent && <EventDetailDialog members={initialData.members} childProfiles={family.children} onMembers={family.canEdit ? async (memberIds) => { if (!initialData.isDemo) { if (!selectedEvent.calendarPreferenceId || !selectedEvent.providerEventId) return "Refresh this event and try again."; const result = await saveEventMembersAction({ calendarPreferenceId: selectedEvent.calendarPreferenceId, providerEventId: selectedEvent.providerEventId, memberIds }); if (!result.ok) return result.error ?? "Assignments could not be saved."; } else { saveDemoEventMembers(selectedEvent, memberIds); } const updated = familyEvent({ ...selectedEvent, memberOverrideIds: memberIds }, family); setDays((days) => days.map((day) => ({ ...day, events: day.events.map((event) => event.id === updated.id ? updated : event) }))); setSelectedEvent(updated); return null; } : undefined} event={familyEvent(selectedEvent, family)} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onDelete={deleteCalendarEvent} onRespond={respondToCalendarEvent} onReminder={setCalendarReminder} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
       {calendarEditor && <CalendarEventEditorDialog date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} locationBias={initialData.locations.find((location) => location.isDefault) ?? initialData.locations[0]} isDemo={initialData.isDemo} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
-      {editingItem && <ItemEditorDialog childProfiles={family.children} onRepeat={family.canEdit ? repeatTask : undefined} item={editingItem} weekDates={weekDates(initialData.weekStart)} timeZone={initialData.household.timezone} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
+      {editingItem && <ItemEditorDialog members={initialData.members} childProfiles={family.children} onRepeat={family.canEdit ? repeatTask : undefined} item={editingItem} weekDates={weekDates(initialData.weekStart)} timeZone={initialData.household.timezone} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
       {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} timeZone={initialData.household.timezone} onEvent={(event) => { setSearchOpen(false); setSelectedEvent(event); }} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
     </main>
   );

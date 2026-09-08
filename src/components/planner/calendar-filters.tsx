@@ -11,12 +11,13 @@ export function calendarEventMatchesFilters(
 ): boolean {
   const eventCalendarId = event.calendarPreferenceId ?? event.calendarId;
   return (calendarId === ALL_CALENDARS || eventCalendarId === calendarId)
-    && (personId === ALL_PEOPLE || (event.assignedAdultUserIds?.includes(personId) ?? event.sourceUserId === personId));
+    && (personId === ALL_PEOPLE || (event.assignedMemberIds?.includes(personId) ?? event.assignedAdultUserIds?.includes(personId) ?? event.sourceUserId === personId));
 }
 
 export function CalendarFilters({
   calendars,
   members,
+  childProfiles = [],
   calendarId,
   personId,
   onCalendar,
@@ -25,6 +26,7 @@ export function CalendarFilters({
 }: {
   calendars: EditableCalendar[];
   members: HouseholdMember[];
+  childProfiles?: { id: string; name: string }[];
   calendarId: string;
   personId: string;
   onCalendar: (calendarId: string) => void;
@@ -54,6 +56,7 @@ export function CalendarFilters({
         <select aria-label="Person filter" value={personId} onChange={(event) => onPerson(event.target.value)}>
           <option value={ALL_PEOPLE}>Everyone</option>
           {members.map((member) => <option value={member.userId} key={member.userId}>{member.displayName}</option>)}
+          {childProfiles.map((child) => <option value={child.id} key={child.id}>{child.name}</option>)}
         </select>
       </label>
       {active && <button type="button" onClick={onClear}><RotateCcw size={12} aria-hidden="true" />Clear filters</button>}

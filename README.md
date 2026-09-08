@@ -109,3 +109,5 @@ Key paths:
 ## Recommended next feature
 
 After both household accounts complete production acceptance, add operator-facing notification delivery metrics so repeated provider failures are visible before a household reports them.
+
+Household assignments: the Person filter includes adults and children. Plans, tasks, routines, and week templates retain any selected combination of household members. Event details let editors save an occurrence-specific household assignment or restore calendar defaults; these Week of Us associations also work for Google events without changing Google attendees. Migration `017_household_assignments.sql` is required.
