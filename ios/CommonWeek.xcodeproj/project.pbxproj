@@ -41,7 +41,9 @@
 		ABBF21B3FECAC509CDA072BA /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C0A1C1EF92830FC77DB828 /* WidgetSnapshot.swift */; };
 		AD26AC3ED9C99D8F23587974 /* AppleRemindersStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 061CAC11D7B6F3AA77E48F58 /* AppleRemindersStoreTests.swift */; };
 		B5B29713E342A3F05A6FF98F /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194B7E6770649ECF980A47F1 /* APIClient.swift */; };
+		C0BF14966BC36925E059B6C4 /* CalendarTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77F14EEC6BC0252324828E47 /* CalendarTimelineView.swift */; };
 		C452C1A3ECFC0FCB44393F8F /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 966E7B5827AF770CFD268416 /* Models.swift */; };
+		C631DB720F6227CCBBFFB8F4 /* CalendarTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BEB89E7AE8C61C9C8EE3596 /* CalendarTimelineTests.swift */; };
 		C9AA2CB9167CE6EFAE2D52C5 /* AppleRemindersClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4460E961C4CD945D28F9DA2B /* AppleRemindersClient.swift */; };
 		D5EF93696546C88F02D480AC /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83231BA8632DDC33D6A60E5A /* DesignSystem.swift */; };
 		D64C4B2C7F21A9FA87564205 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4AD6D78689E7F9DFED0B9E /* SignInView.swift */; };
@@ -112,6 +114,7 @@
 		6CD089507C2BBCC80062FBFC /* WeekWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekWidgets.swift; sourceTree = "<group>"; };
 		73103BD7E542B3780C527683 /* CommonWeekScreenshots.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CommonWeekScreenshots.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		741EB27C0B29673F259D35F9 /* FamilyPlanningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanningTests.swift; sourceTree = "<group>"; };
+		77F14EEC6BC0252324828E47 /* CalendarTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarTimelineView.swift; sourceTree = "<group>"; };
 		78E742DE5970A5A51F2F8406 /* EditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorViews.swift; sourceTree = "<group>"; };
 		7E10508B41CFE7191055B03B /* WeekWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = WeekWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		83231BA8632DDC33D6A60E5A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
@@ -120,6 +123,7 @@
 		957BF1AB37F7A9234D49080C /* WeekWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WeekWidgets.entitlements; sourceTree = "<group>"; };
 		966E7B5827AF770CFD268416 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		9BC17D905558E2E286D0D86E /* WeekTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekTools.swift; sourceTree = "<group>"; };
+		9BEB89E7AE8C61C9C8EE3596 /* CalendarTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarTimelineTests.swift; sourceTree = "<group>"; };
 		A81BDE7C63D0FEDCF44F50D2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefresh.swift; sourceTree = "<group>"; };
 		ABF657900C4FFE9A5A8E859F /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
@@ -187,6 +191,7 @@
 			isa = PBXGroup;
 			children = (
 				061CAC11D7B6F3AA77E48F58 /* AppleRemindersStoreTests.swift */,
+				9BEB89E7AE8C61C9C8EE3596 /* CalendarTimelineTests.swift */,
 				741EB27C0B29673F259D35F9 /* FamilyPlanningTests.swift */,
 				15D280453135ABCB20247AFB /* WeekDateTests.swift */,
 				CC523FDAFABD3C14E7572B34 /* WeekToolsTests.swift */,
@@ -212,6 +217,7 @@
 				66D3F14C98728A22A430B035 /* Assets.xcassets */,
 				ABF657900C4FFE9A5A8E859F /* AuthStore.swift */,
 				AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */,
+				77F14EEC6BC0252324828E47 /* CalendarTimelineView.swift */,
 				E75F905F402D3487A486607C /* CommonWeek-iOS.entitlements */,
 				54C2671E9B1E8A76FE122356 /* CommonWeek.entitlements */,
 				2E8618295C4BEC334961F6E0 /* CommonWeekApp.swift */,
@@ -405,6 +411,7 @@
 				C9AA2CB9167CE6EFAE2D52C5 /* AppleRemindersClient.swift in Sources */,
 				3902C8073C4B9AD59BF3AF8B /* AuthStore.swift in Sources */,
 				7A8583A7642567A6496565A0 /* BackgroundRefresh.swift in Sources */,
+				C0BF14966BC36925E059B6C4 /* CalendarTimelineView.swift in Sources */,
 				8CB7268C1D33378B37229A52 /* CommonWeekApp.swift in Sources */,
 				3A1E0BE7211680E4FC0BB640 /* DayCardView.swift in Sources */,
 				D5EF93696546C88F02D480AC /* DesignSystem.swift in Sources */,
@@ -445,6 +452,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AD26AC3ED9C99D8F23587974 /* AppleRemindersStoreTests.swift in Sources */,
+				C631DB720F6227CCBBFFB8F4 /* CalendarTimelineTests.swift in Sources */,
 				96517295FE6D3D77B8E97C51 /* FamilyPlanningTests.swift in Sources */,
 				580BDC3D8A7E9AF082365A28 /* WeekDateTests.swift in Sources */,
 				7DC0D0A367D873EF73D5016A /* WeekToolsTests.swift in Sources */,

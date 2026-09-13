@@ -29,9 +29,10 @@ import { BrandMark } from "@/components/brand-mark";
 import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
 import { NotificationInboxButton } from "@/components/planner/notification-inbox";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
+import { CalendarTimeline } from "@/components/planner/calendar-timeline";
 import { useTheme } from "@/components/theme-provider";
 import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
-import { addDateDays, currentWeekStart, formatWeekRange, weekDates } from "@/lib/date";
+import { addDateDays, currentWeekStart, formatMobileDate, formatWeekRange, todayInTimeZone, weekDates } from "@/lib/date";
 import type { PlannerNotificationTarget, ResolvedPlannerNotificationTarget } from "@/lib/notification-links";
 import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, FamilyPlanningData, FamilyPlanningMutation, DayPlan, HouseholdLocation, NotificationInbox, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
@@ -86,6 +87,10 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent } | null>(null);
   const [calendarFilter, setCalendarFilter] = useState(ALL_CALENDARS);
   const [personFilter, setPersonFilter] = useState(ALL_PEOPLE);
+  const [calendarView, setCalendarView] = useState<"planner" | "day" | "week">("planner");
+  const [lastTimelineView, setLastTimelineView] = useState<"day" | "week">("week");
+  const [timelineDate, setTimelineDate] = useState(() => todayInTimeZone(initialData.household.timezone));
+  const activeTimelineDate = days.some((day) => day.date === timelineDate) ? timelineDate : days[0]?.date;
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlannerSearchResult[]>([]);
@@ -610,7 +615,19 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         {calendarState.status === "not-connected" && <div className="source-alert"><CalendarRange size={14} />{calendarState.message}<Link href="/settings">Connect</Link></div>}
         {weatherState.status === "error" && <div className="source-alert" role="status"><CloudOff size={14} />{weatherState.message}</div>}
 
-        <div className="week-grid">
+        <div className="calendar-view-toolbar">
+          <div className="calendar-view-picker" role="group" aria-label="View">
+            <button aria-pressed={calendarView === "planner"} onClick={() => setCalendarView("planner")}>List</button>
+            <button aria-pressed={calendarView !== "planner"} onClick={() => setCalendarView(lastTimelineView)}>Calendar</button>
+          </div>
+          {calendarView !== "planner" && <div className="calendar-view-picker" role="group" aria-label="Calendar range">{(["day", "week"] as const).map((view) => <button key={view} aria-pressed={calendarView === view} onClick={() => { setCalendarView(view); setLastTimelineView(view); }}>{view === "day" ? "Day" : "Week"}</button>)}</div>}
+          {calendarView === "day" && <label className="timeline-date-picker">Day <select value={activeTimelineDate} onChange={(event) => setTimelineDate(event.target.value)}>{days.map((day) => <option key={day.date} value={day.date}>{formatMobileDate(day.date)}</option>)}</select></label>}
+          {calendarView === "week" && <span className="timeline-week-hint">Select a day for a closer look</span>}
+        </div>
+
+        {calendarView !== "planner" && <CalendarTimeline days={calendarView === "day" ? filteredDays.filter((day) => day.date === activeTimelineDate) : filteredDays} timeZone={initialData.household.timezone} sourceState={calendarState} onEvent={setSelectedEvent} onDay={(date) => { setTimelineDate(date); setCalendarView("day"); setLastTimelineView("day"); }} />}
+
+        {calendarView === "planner" && <div className="week-grid">
           {filteredDays.map((day) => (
             <DayColumn
               day={day}
@@ -631,7 +648,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
               key={day.date}
             />
           ))}
-        </div>
+        </div>}
 
         <section className="weekly-section" aria-label="Weekly notes and tasks">
           <header><span>This week</span><small>Notes and tasks that don’t belong to one day</small></header>

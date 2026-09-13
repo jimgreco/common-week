@@ -76,6 +76,7 @@ struct PlannerView: View {
     let user: SessionIdentity
     @State private var sheet: PlannerSheet?
     @State private var selectedDayDate = ""
+    @State private var calendarPresentation: CalendarPresentation = .planner
     @State private var dayMoveDirection = 1
     @State private var selectedDestination: PlannerDestination = .calendar
     @State private var calendarFilterId = CalendarEventFilter.allCalendars
@@ -296,7 +297,12 @@ struct PlannerView: View {
         case .calendar:
             VStack(spacing: 12) {
                 calendarFilters(data)
-                dayPager(data)
+                CalendarPresentationPicker(selection: $calendarPresentation)
+                if calendarPresentation == .week {
+                    calendarTimeline(data, days: data.days)
+                } else {
+                    dayPager(data)
+                }
             }
         case .events:
             VStack(spacing: 12) {
@@ -341,23 +347,41 @@ struct PlannerView: View {
 
             ZStack(alignment: .top) {
                 let day = selectedDay(in: data)
-                DayCardView(
-                    day: day,
-                    data: data,
-                    viewModel: viewModel,
-                    appleReminders: appleReminders,
-                    sheet: $sheet,
-                    calendarFilterId: calendarFilterId,
-                    personFilterId: personFilterId
-                )
-                    .id(day.date)
-                    .offset(x: dayDragOffset)
-                    .transition(dayTransition)
+                if calendarPresentation == .day {
+                    calendarTimeline(data, days: [day])
+                } else {
+                    DayCardView(
+                        day: day,
+                        data: data,
+                        viewModel: viewModel,
+                        appleReminders: appleReminders,
+                        sheet: $sheet,
+                        calendarFilterId: calendarFilterId,
+                        personFilterId: personFilterId
+                    )
+                        .id(day.date)
+                        .offset(x: dayDragOffset)
+                        .transition(dayTransition)
+                }
             }
             .contentShape(Rectangle())
             .simultaneousGesture(daySwipeGesture(in: data))
             .animation(.snappy(duration: 0.3), value: selectedDayDate)
         }
+    }
+
+    private func calendarTimeline(_ data: WeeklyPlannerData, days: [DayPlan]) -> some View {
+        CalendarTimelineView(
+            days: days.map { day in
+                var filtered = day
+                filtered.events = day.events.filter { CalendarEventFilter.matches($0, calendarId: calendarFilterId, personId: personFilterId) }
+                return filtered
+            },
+            timezone: data.household.timezone,
+            sourceState: data.calendarState,
+            onEvent: { sheet = .event($0) },
+            onDay: { selectedDayDate = $0; calendarPresentation = .day }
+        )
     }
 
     private func selectedDay(in data: WeeklyPlannerData) -> DayPlan {

@@ -9,6 +9,32 @@ final class CommonWeekScreenshots: XCTestCase {
         app = XCUIApplication()
     }
 
+    func testCalendarDayAndWeekTimelines() throws {
+        launchDemo()
+        let picker = app.segmentedControls["calendar-view-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        picker.buttons["Calendar"].tap()
+        let range = app.segmentedControls["calendar-range-picker"]
+        range.buttons["Week"].tap()
+        let firstEvent = app.buttons["timeline-event-event-0"]
+        XCTAssertTrue(firstEvent.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Week calendar timeline")
+        firstEvent.tap()
+        #if targetEnvironment(macCatalyst)
+        XCTAssertTrue(app.textFields["Title"].firstMatch.waitForExistence(timeout: 5))
+        #else
+        XCTAssertTrue(app.staticTexts["Camp"].firstMatch.waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        #endif
+        range.buttons["Day"].tap()
+        XCTAssertTrue(app.scrollViews["calendar-timeline-scroll"].firstMatch.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Day calendar timeline")
+        picker.buttons["List"].tap()
+        XCTAssertFalse(app.scrollViews["calendar-timeline-scroll"].firstMatch.exists)
+        picker.buttons["Calendar"].tap()
+        XCTAssertTrue(range.buttons["Day"].isSelected)
+    }
+
     func testUnassignedCalendarFilter() throws {
         launchDemo()
         let person = app.buttons["person-filter"]

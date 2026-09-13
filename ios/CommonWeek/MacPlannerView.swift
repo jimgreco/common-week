@@ -176,6 +176,7 @@ struct MacPlannerView: View {
     @State private var sheet: MacPlannerSheet?
     @State private var deletionTarget: MacDeletionTarget?
     @State private var searchText = ""
+    @State private var calendarPresentation: CalendarPresentation = .planner
     @State private var hasCapturedAppStoreScreenshot = false
     @FocusState private var searchFocused: Bool
     @Environment(\.openWindow) private var openWindow
@@ -471,6 +472,8 @@ struct MacPlannerView: View {
                     dropOnDay: reschedule(_:to:)
                 )
                 if navigation.section == .week || navigation.section == .events {
+                    CalendarPresentationPicker(selection: $calendarPresentation)
+                        .padding(.horizontal, 16).padding(.top, 10)
                     CalendarFilterControls(
                         calendars: CalendarEventFilter.calendars(in: data),
                         members: data.members,
@@ -503,23 +506,41 @@ struct MacPlannerView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(uiColor: .secondarySystemBackground))
                 }
-                MacPlannerListPane(
-                    data: data,
-                    section: navigation.section,
-                    selectedDay: navigation.selectedDay,
-                    selections: Binding(
-                        get: { navigation.selections },
-                        set: { request(.selections($0)) }
-                    ),
-                    searchText: searchText,
-                    calendarFilterId: calendarFilterId,
-                    personFilterId: personFilterId,
-                    toggleItem: { item in Task { await viewModel.toggle(item) } },
-                    reminders: appleReminders,
-                    deleteItem: { deletionTarget = .planningItem($0) },
-                    deleteReminder: { deletionTarget = .reminder($0) },
-                    reschedule: reschedule(_:to:)
-                )
+                if (navigation.section == .week || navigation.section == .events) && calendarPresentation != .planner {
+                    CalendarTimelineView(
+                        days: data.days.filter { calendarPresentation == .week || $0.date == navigation.selectedDay }.map { day in
+                            var filtered = day
+                            filtered.events = day.events.filter {
+                                CalendarEventFilter.matches($0, calendarId: calendarFilterId, personId: personFilterId)
+                                && (searchText.isEmpty || $0.title.localizedCaseInsensitiveContains(searchText) || $0.calendarAlias.localizedCaseInsensitiveContains(searchText))
+                            }
+                            return filtered
+                        },
+                        timezone: data.household.timezone,
+                        sourceState: data.calendarState,
+                        onEvent: { request(.selections([.event($0.id)])) },
+                        onDay: { request(.day($0)); calendarPresentation = .day }
+                    ).padding(16)
+                    Spacer(minLength: 0)
+                } else {
+                    MacPlannerListPane(
+                        data: data,
+                        section: navigation.section,
+                        selectedDay: navigation.selectedDay,
+                        selections: Binding(
+                            get: { navigation.selections },
+                            set: { request(.selections($0)) }
+                        ),
+                        searchText: searchText,
+                        calendarFilterId: calendarFilterId,
+                        personFilterId: personFilterId,
+                        toggleItem: { item in Task { await viewModel.toggle(item) } },
+                        reminders: appleReminders,
+                        deleteItem: { deletionTarget = .planningItem($0) },
+                        deleteReminder: { deletionTarget = .reminder($0) },
+                        reschedule: reschedule(_:to:)
+                    )
+                }
             }
             .navigationTitle(navigation.section.title)
         }

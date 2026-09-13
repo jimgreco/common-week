@@ -1,5 +1,36 @@
 @import "tailwindcss";
 
+.calendar-view-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin: 18px 0 14px; }
+.calendar-view-picker { display: inline-flex; padding: 4px; background: var(--paper-deep); border: 1px solid var(--rule); border-radius: 12px; }
+.calendar-view-picker button { border: 0; background: transparent; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 650; }
+.calendar-view-picker button[aria-pressed="true"] { background: var(--white); color: var(--accent-strong); box-shadow: var(--shadow-sm); }
+.timeline-date-picker { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-soft); }
+.timeline-date-picker select { border: 1px solid var(--rule); border-radius: 8px; padding: 8px; background: var(--white); color: var(--ink); max-width: 250px; }
+.timeline-week-hint { font-size: 12px; color: var(--ink-soft); }
+.calendar-timeline { overflow: hidden; border: 1px solid var(--rule); border-radius: 16px; background: var(--white); }
+.timeline-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 16px; color: var(--ink-soft); font-size: 12px; border-bottom: 1px solid var(--rule); }
+.timeline-status { margin: 0; padding: 10px 16px; font-size: 13px; color: var(--ink-soft); background: var(--accent-wash); }
+.timeline-scroll { overflow: auto; height: min(680px, 72vh); min-height: 360px; overscroll-behavior: contain; }
+.timeline-grid { display: grid; grid-template-columns: 58px repeat(var(--day-count), minmax(0, 1fr)); align-items: stretch; }
+.timeline-head { position: sticky; top: 0; z-index: 4; padding: 10px 5px 6px; background: var(--white); border-bottom: 1px solid var(--rule-strong); border-left: 1px solid var(--rule); }
+.timeline-head.is-today { background: var(--accent-wash); }
+.timeline-head.is-today .timeline-day-label { color: var(--accent-strong); }
+.timeline-day-label { width: 100%; padding: 0 0 8px; background: none; border: 0; cursor: pointer; font-size: 13px; font-weight: 700; text-align: center; }
+.timeline-corner { left: 0; z-index: 6; display: flex; align-items: end; justify-content: center; font-size: 10px; color: var(--ink-soft); border-left: 0; }
+.timeline-all-day { display: grid; gap: 3px; min-height: 22px; }
+.timeline-all-day button { border: 0; border-left: 3px solid; border-radius: 4px; background: var(--paper-deep); padding: 4px; text-align: left; font-size: 11px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timeline-hours { position: sticky; left: 0; z-index: 3; background: var(--white); color: var(--ink-soft); }
+.timeline-hours span { position: absolute; right: 8px; padding-top: 3px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.timeline-day { position: relative; border-left: 1px solid var(--rule); overflow: hidden; }
+.timeline-hour-rule { position: absolute; left: 0; right: 0; border-top: 1px solid var(--rule); pointer-events: none; }
+.timeline-hour-rule::after { position: absolute; content: ""; top: 50%; left: 0; right: 0; border-top: 1px dotted var(--rule); }
+.timeline-event { position: absolute; z-index: 1; display: flex; flex-direction: column; gap: 2px; overflow: hidden; padding: 3px 5px; border: 0; border-left: 3px solid var(--event-color); border-radius: 5px; background: color-mix(in srgb, var(--event-color) 17%, var(--white)); color: var(--ink); text-align: left; cursor: pointer; font-size: 11px; line-height: 1.25; }
+.timeline-event strong { font-size: 12px; line-height: 1.2; }
+.timeline-event span { color: var(--ink-soft); }
+.timeline-event:hover, .timeline-event:focus-visible { z-index: 2; box-shadow: inset 0 0 0 1px var(--event-color); }
+.timeline-now { position: absolute; z-index: 2; left: 0; right: 0; border-top: 2px solid #df4848; pointer-events: none; }
+.timeline-now i { position: absolute; left: -3px; top: -4px; height: 6px; width: 6px; border-radius: 50%; background: #df4848; }
+
 :root {
   --ink: #17231f;
   --ink-soft: #52615b;
