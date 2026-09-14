@@ -106,12 +106,13 @@ enum CalendarTimelineLayout {
     }
 }
 
-struct CalendarTimelineView: View {
+struct CalendarTimelineView<Footer: View>: View {
     let days: [DayPlan]
     let timezone: String
     let sourceState: PlannerSourceState
     let onEvent: (CalendarEvent) -> Void
     let onDay: (String) -> Void
+    @ViewBuilder var footer: () -> Footer
     private let hourHeight: CGFloat = 72
     private let axisWidth: CGFloat = 48
     private var headerHeight: CGFloat { 42 + CGFloat(max(1, days.map { $0.events.filter(\.allDay).count }.max() ?? 1)) * 26 }
@@ -129,37 +130,40 @@ struct CalendarTimelineView: View {
                 Text("No events in this view. Your visible calendars leave this time open.")
                     .font(.caption).foregroundStyle(CWTheme.secondaryInk)
             }
-            GeometryReader { geometry in
-                let dayWidth = max(days.count == 1 ? 0 : 136, (geometry.size.width - axisWidth) / CGFloat(max(1, days.count)))
-                ScrollView(.horizontal) {
-                    VStack(spacing: 0) {
-                        HStack(alignment: .top, spacing: 0) {
-                            Text("All day").font(.system(size: 10)).foregroundStyle(CWTheme.secondaryInk)
-                                .frame(width: axisWidth, height: headerHeight, alignment: .bottom).padding(.bottom, 4)
-                            ForEach(days) { day in dayHeader(day, width: dayWidth) }
-                        }
-                        .frame(height: headerHeight)
-                        Divider()
-                        ScrollViewReader { proxy in
-                            ScrollView(.vertical) {
-                                HStack(alignment: .top, spacing: 0) {
-                                    VStack(spacing: 0) {
-                                        ForEach(0..<24) { hour in
-                                            Text(hourLabel(hour)).font(.system(size: 10)).foregroundStyle(CWTheme.secondaryInk)
-                                                .frame(width: axisWidth, height: hourHeight, alignment: .topTrailing)
-                                                .id(hour)
-                                        }
-                                    }.padding(.trailing, 6).frame(width: axisWidth)
-                                    ForEach(days) { day in dayColumn(day, width: dayWidth) }
-                                }
+            VStack(spacing: 0) {
+                GeometryReader { geometry in
+                    let dayWidth = max(days.count == 1 ? 0 : 136, (geometry.size.width - axisWidth) / CGFloat(max(1, days.count)))
+                    ScrollView(.horizontal) {
+                        VStack(spacing: 0) {
+                            HStack(alignment: .top, spacing: 0) {
+                                Text("All day").font(.system(size: 10)).foregroundStyle(CWTheme.secondaryInk)
+                                    .frame(width: axisWidth, height: headerHeight, alignment: .bottom).padding(.bottom, 4)
+                                ForEach(days) { day in dayHeader(day, width: dayWidth) }
                             }
-                            .onAppear { proxy.scrollTo(7, anchor: .top) }
-                            .onChange(of: days.map(\.date)) { _, _ in proxy.scrollTo(7, anchor: .top) }
-                            .accessibilityIdentifier("calendar-timeline-scroll")
+                            .frame(height: headerHeight)
+                            Divider()
+                            ScrollViewReader { proxy in
+                                ScrollView(.vertical) {
+                                    HStack(alignment: .top, spacing: 0) {
+                                        VStack(spacing: 0) {
+                                            ForEach(0..<24) { hour in
+                                                Text(hourLabel(hour)).font(.system(size: 10)).foregroundStyle(CWTheme.secondaryInk)
+                                                    .frame(width: axisWidth, height: hourHeight, alignment: .topTrailing)
+                                                    .id(hour)
+                                            }
+                                        }.padding(.trailing, 6).frame(width: axisWidth)
+                                        ForEach(days) { day in dayColumn(day, width: dayWidth) }
+                                    }
+                                }
+                                .onAppear { proxy.scrollTo(7, anchor: .top) }
+                                .onChange(of: days.map(\.date)) { _, _ in proxy.scrollTo(7, anchor: .top) }
+                                .accessibilityIdentifier("calendar-timeline-scroll")
+                            }
                         }
+                        .frame(width: axisWidth + dayWidth * CGFloat(days.count))
                     }
-                    .frame(width: axisWidth + dayWidth * CGFloat(days.count))
                 }
+                footer()
             }
             .frame(height: 540)
             .background(Color(uiColor: .secondarySystemGroupedBackground))

@@ -37,6 +37,7 @@
 		96B40FA463F1498F8111690C /* PlatformCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17AE84A55F77B2E94AAB5770 /* PlatformCopy.swift */; };
 		A4B9F540A8BBDDC3DECAA190 /* CommonWeekScreenshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED8331B2E2EC2CFC6ADBA542 /* CommonWeekScreenshots.swift */; };
 		A5017F6AC2B1F3907CDD5535 /* EditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78E742DE5970A5A51F2F8406 /* EditorViews.swift */; };
+		A9A7EB2A425717625A53D7A1 /* CalendarPlanningPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76B0F53CC811A164F33D4CA /* CalendarPlanningPane.swift */; };
 		A9BC2CB65D4DA11765D861AC /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3014EBACE5446E3C9F0BB9EE /* DetailViews.swift */; };
 		ABBF21B3FECAC509CDA072BA /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8C0A1C1EF92830FC77DB828 /* WidgetSnapshot.swift */; };
 		AD26AC3ED9C99D8F23587974 /* AppleRemindersStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 061CAC11D7B6F3AA77E48F58 /* AppleRemindersStoreTests.swift */; };
@@ -134,6 +135,7 @@
 		DAE7F4C4D203BD0712A9E033 /* MacPlannerNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPlannerNavigation.swift; sourceTree = "<group>"; };
 		DB4AD6D78689E7F9DFED0B9E /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 		E75F905F402D3487A486607C /* CommonWeek-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "CommonWeek-iOS.entitlements"; sourceTree = "<group>"; };
+		E76B0F53CC811A164F33D4CA /* CalendarPlanningPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarPlanningPane.swift; sourceTree = "<group>"; };
 		EAA864FC8098B23F5DEEEA40 /* SnapshotHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHelper.swift; sourceTree = "<group>"; };
 		EB945B3DAB17D185AC34288A /* FamilyPlanning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanning.swift; sourceTree = "<group>"; };
 		ED8331B2E2EC2CFC6ADBA542 /* CommonWeekScreenshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonWeekScreenshots.swift; sourceTree = "<group>"; };
@@ -217,6 +219,7 @@
 				66D3F14C98728A22A430B035 /* Assets.xcassets */,
 				ABF657900C4FFE9A5A8E859F /* AuthStore.swift */,
 				AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */,
+				E76B0F53CC811A164F33D4CA /* CalendarPlanningPane.swift */,
 				77F14EEC6BC0252324828E47 /* CalendarTimelineView.swift */,
 				E75F905F402D3487A486607C /* CommonWeek-iOS.entitlements */,
 				54C2671E9B1E8A76FE122356 /* CommonWeek.entitlements */,
@@ -411,6 +414,7 @@
 				C9AA2CB9167CE6EFAE2D52C5 /* AppleRemindersClient.swift in Sources */,
 				3902C8073C4B9AD59BF3AF8B /* AuthStore.swift in Sources */,
 				7A8583A7642567A6496565A0 /* BackgroundRefresh.swift in Sources */,
+				A9A7EB2A425717625A53D7A1 /* CalendarPlanningPane.swift in Sources */,
 				C0BF14966BC36925E059B6C4 /* CalendarTimelineView.swift in Sources */,
 				8CB7268C1D33378B37229A52 /* CommonWeekApp.swift in Sources */,
 				3A1E0BE7211680E4FC0BB640 /* DayCardView.swift in Sources */,

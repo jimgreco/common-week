@@ -47,6 +47,52 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(person.label.contains("Everyone"))
     }
 
+    #if !targetEnvironment(macCatalyst)
+    func testCalendarPlanningPane() throws {
+        launchDemo()
+        let viewPicker = app.segmentedControls["calendar-view-picker"]
+        XCTAssertTrue(viewPicker.waitForExistence(timeout: 10))
+        viewPicker.buttons["Calendar"].tap()
+        let toggle = app.buttons["calendar-planning-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        XCTAssertEqual(toggle.value as? String, "Collapsed")
+        let collapsedY = toggle.frame.minY
+        app.segmentedControls["calendar-range-picker"].buttons["Week"].tap()
+        let monday = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Show Monday,")).firstMatch
+        XCTAssertTrue(monday.waitForExistence(timeout: 5)); monday.tap()
+        toggle.tap()
+        let pane = app.scrollViews["calendar-planning-scroll"]
+        XCTAssertTrue(pane.waitForExistence(timeout: 5))
+        let groceries = pane.buttons["Groceries"]
+        XCTAssertTrue(groceries.waitForExistence(timeout: 5))
+        pane.buttons["Complete"].firstMatch.tap()
+        XCTAssertTrue(pane.buttons["Mark incomplete"].firstMatch.waitForExistence(timeout: 5))
+        groceries.tap()
+        let editor = app.textFields.matching(NSPredicate(format: "value == %@", "Groceries")).firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, "Groceries")
+        app.buttons["Cancel"].firstMatch.tap()
+        pane.swipeUp()
+        let weeklyAdd = app.buttons["calendar-planning-add-week"]
+        XCTAssertTrue(weeklyAdd.waitForExistence(timeout: 5)); weeklyAdd.tap()
+        app.buttons["Add note"].tap()
+        let note = app.textFields["What are you planning?"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5)); note.tap(); note.typeText("Calendar pane weekly note")
+        app.buttons["Save"].firstMatch.tap()
+        XCTAssertTrue(pane.waitForExistence(timeout: 5))
+        pane.swipeUp()
+        XCTAssertTrue(pane.buttons["Calendar pane weekly note"].waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Calendar tasks and notes pane")
+        toggle.tap()
+        let settled = NSPredicate { _, _ in abs(toggle.frame.minY - collapsedY) < 1 }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5), .completed)
+        app.scrollViews["calendar-timeline-scroll"].firstMatch.swipeUp()
+        XCTAssertEqual(toggle.frame.minY, collapsedY, accuracy: 1)
+        XCTAssertEqual(toggle.value as? String, "Collapsed")
+        attachCurrentScreen(named: "Compact calendar planning pane")
+    }
+    #endif
+
     func testCoverageAndShareWeek() throws {
         launchDemo()
         #if !targetEnvironment(macCatalyst)

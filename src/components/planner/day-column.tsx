@@ -109,7 +109,9 @@ export function PlanningItemRow({
   onEdit,
   onRetry,
   childProfiles = [],
+  canEdit = true,
 }: {
+  canEdit?: boolean;
   childProfiles?: ChildProfile[];
   item: PlanningItem;
   onToggle: DayColumnProps["onToggle"];
@@ -124,6 +126,7 @@ export function PlanningItemRow({
           className={`task-checkbox ${item.isCompleted ? "checked" : ""}`}
           type="button"
           onClick={() => onToggle(item, !item.isCompleted)}
+          disabled={!canEdit}
           aria-label={`${item.isCompleted ? "Mark incomplete" : "Complete"}: ${item.text}`}
         >
           {item.isCompleted && <Check size={11} strokeWidth={3} aria-hidden="true" />}

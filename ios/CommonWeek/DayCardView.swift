@@ -360,6 +360,7 @@ struct CalendarEventRow: View {
 struct PlanningItemRow: View {
     let item: PlanningItem
     @ObservedObject var viewModel: PlannerViewModel
+    var canEdit = true
     let action: () -> Void
 
     var body: some View {
@@ -372,6 +373,7 @@ struct PlanningItemRow: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(item.isCompleted ? "Mark incomplete" : "Complete")
+                .disabled(!canEdit)
             } else {
                 Circle().fill(Color(hex: "#7B8983")).frame(width: 7, height: 7).padding(.top, 7).padding(.horizontal, 6)
             }

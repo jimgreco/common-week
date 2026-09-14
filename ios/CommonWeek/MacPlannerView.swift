@@ -520,7 +520,17 @@ struct MacPlannerView: View {
                         sourceState: data.calendarState,
                         onEvent: { request(.selections([.event($0.id)])) },
                         onDay: { request(.day($0)); calendarPresentation = .day }
-                    ).padding(16)
+                    ) {
+                        CalendarPlanningPane(
+                            days: data.days.filter { calendarPresentation == .week || $0.date == navigation.selectedDay },
+                            weeklyItems: data.weeklyItems, personId: personFilterId,
+                            currentUserId: user.userId, canEdit: user.role != "viewer", searchText: searchText,
+                            viewModel: viewModel, appleReminders: appleReminders,
+                            onEdit: { request(.selections([.planningItem($0.id)])) },
+                            onAdd: { sheet = .item(date: $0, type: $1, allowsAppleReminderDestination: $0 != nil && $1 == .task) },
+                            onReminder: { request(.selections([.appleReminder($0.id)])) }
+                        )
+                    }.padding(16)
                     Spacer(minLength: 0)
                 } else {
                     MacPlannerListPane(

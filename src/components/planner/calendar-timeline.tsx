@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { formatDayName, formatDayNumber, todayInTimeZone } from "@/lib/date";
 import { layoutTimelineEvents, minuteInTimeZone, timelineEventLabel } from "@/lib/calendar-timeline";
 import type { CalendarEvent, DayPlan, PlannerSourceState } from "@/types/domain";
@@ -9,7 +9,8 @@ const hourHeight = 72;
 const hours = Array.from({ length: 24 }, (_, hour) => hour);
 const hourLabel = (hour: number) => `${hour % 12 || 12} ${hour < 12 ? "AM" : "PM"}`;
 
-export function CalendarTimeline({ days, timeZone, sourceState, onEvent, onDay }: {
+export function CalendarTimeline({ days, timeZone, sourceState, onEvent, onDay, children }: {
+  children: ReactNode;
   days: DayPlan[];
   timeZone: string;
   sourceState: PlannerSourceState;
@@ -34,6 +35,7 @@ export function CalendarTimeline({ days, timeZone, sourceState, onEvent, onDay }
     <div className="timeline-caption"><span>Times in {timeZone.replaceAll("_", " ")}</span><span>Blank space is open time · Overlaps appear side by side</span></div>
     {sourceState.status !== "ready" ? <p className="timeline-status" role="status">{sourceState.message ?? "Loading calendar…"} Open time may be incomplete.</p>
       : count === 0 && <p className="timeline-status" role="status">No events in this view. Your visible calendars leave this time open.</p>}
+    <div className="timeline-workspace">
     <div className="timeline-scroll" ref={scroll}>
       <div className="timeline-grid" style={{ "--day-count": days.length, minWidth: days.length === 1 ? undefined : 1040 } as CSSProperties}>
         <div className="timeline-head timeline-corner">All day</div>
@@ -61,6 +63,8 @@ export function CalendarTimeline({ days, timeZone, sourceState, onEvent, onDay }
           {day.date === today && now && <div className="timeline-now" aria-label="Current time" style={{ top: minuteInTimeZone(now, timeZone) * hourHeight / 60 }}><i /></div>}
         </div>)}
       </div>
+    </div>
+    {children}
     </div>
   </section>;
 }

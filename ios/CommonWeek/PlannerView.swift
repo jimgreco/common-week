@@ -77,6 +77,7 @@ struct PlannerView: View {
     @State private var sheet: PlannerSheet?
     @State private var selectedDayDate = ""
     @State private var calendarPresentation: CalendarPresentation = .planner
+    @State private var calendarPlanningExpansion = 0
     @State private var dayMoveDirection = 1
     @State private var selectedDestination: PlannerDestination = .calendar
     @State private var calendarFilterId = CalendarEventFilter.allCalendars
@@ -103,8 +104,13 @@ struct PlannerView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if viewModel.data != nil {
-                    PlannerGlassTabBar(selection: $selectedDestination)
+                if let data = viewModel.data {
+                    VStack(spacing: 0) {
+                        if selectedDestination == .calendar && calendarPresentation != .planner {
+                            calendarPlanningPane(data, days: calendarPresentation == .week ? data.days : [selectedDay(in: data)])
+                        }
+                        PlannerGlassTabBar(selection: $selectedDestination)
+                    }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -241,53 +247,58 @@ struct PlannerView: View {
             ContentUnavailableView("The planner didn’t load", systemImage: "calendar.badge.exclamationmark", description: Text(error))
                 .overlay(alignment: .bottom) { Button("Try again") { Task { await viewModel.load() } }.buttonStyle(.borderedProminent).padding(.bottom, 80) }
         } else if let data = viewModel.data {
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    weekHeader(data)
-                    if data.isDemo {
-                        Label("Interactive preview · Changes stay on this device", systemImage: "sparkles")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(CWTheme.accentStrong)
-                            .padding(.horizontal, 14).padding(.vertical, 10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(CWTheme.mint.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        weekHeader(data)
+                        if data.isDemo {
+                            Label("Interactive preview · Changes stay on this device", systemImage: "sparkles")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(CWTheme.accentStrong)
+                                .padding(.horizontal, 14).padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(CWTheme.mint.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        if let syncStatus = viewModel.syncStatusText {
+                            Label(syncStatus, systemImage: viewModel.isOffline ? "wifi.slash" : "arrow.triangle.2.circlepath")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(viewModel.isOffline ? Color.orange : CWTheme.secondaryInk)
+                                .padding(.horizontal, 14).padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                                .accessibilityLabel(syncStatus)
+                        }
+                        destinationContent(data)
                     }
-                    if let syncStatus = viewModel.syncStatusText {
-                        Label(syncStatus, systemImage: viewModel.isOffline ? "wifi.slash" : "arrow.triangle.2.circlepath")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(viewModel.isOffline ? Color.orange : CWTheme.secondaryInk)
-                            .padding(.horizontal, 14).padding(.vertical, 10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
-                            .accessibilityLabel(syncStatus)
-                    }
-                    destinationContent(data)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 18)
+                    .padding(.bottom, 24)
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 18)
-                .padding(.bottom, 24)
+                .id(selectedDestination)
+                .transition(.opacity)
+                .refreshable {
+                    async let plannerRefresh: Void = viewModel.load(week: data.weekStart, quietly: true)
+                    async let remindersRefresh: Void = appleReminders.refresh(
+                        weekStart: data.weekStart,
+                        timeZoneIdentifier: data.household.timezone
+                    )
+                    _ = await (plannerRefresh, remindersRefresh)
+                }
+                .task(id: "\(user.userId):\(data.weekStart):\(data.household.timezone)") {
+                    await appleReminders.activate(
+                        userId: user.userId,
+                        weekStart: data.weekStart,
+                        timeZoneIdentifier: data.household.timezone
+                    )
+                }
+                .onAppear { synchronizeSelectedDay(with: data) }
+                .onChange(of: data.weekStart) { _, _ in synchronizeSelectedDay(with: data) }
+                .task(id: filterRevision(data)) { normalizeFilters(in: data) }
+                .animation(.easeInOut(duration: 0.2), value: selectedDestination)
+                .onChange(of: calendarPlanningExpansion) { _, _ in
+                    proxy.scrollTo("calendar-timeline", anchor: .top)
+                }
             }
-            .id(selectedDestination)
-            .transition(.opacity)
-            .refreshable {
-                async let plannerRefresh: Void = viewModel.load(week: data.weekStart, quietly: true)
-                async let remindersRefresh: Void = appleReminders.refresh(
-                    weekStart: data.weekStart,
-                    timeZoneIdentifier: data.household.timezone
-                )
-                _ = await (plannerRefresh, remindersRefresh)
-            }
-            .task(id: "\(user.userId):\(data.weekStart):\(data.household.timezone)") {
-                await appleReminders.activate(
-                    userId: user.userId,
-                    weekStart: data.weekStart,
-                    timeZoneIdentifier: data.household.timezone
-                )
-            }
-            .onAppear { synchronizeSelectedDay(with: data) }
-            .onChange(of: data.weekStart) { _, _ in synchronizeSelectedDay(with: data) }
-            .task(id: filterRevision(data)) { normalizeFilters(in: data) }
-            .animation(.easeInOut(duration: 0.2), value: selectedDestination)
         }
     }
 
@@ -381,6 +392,21 @@ struct PlannerView: View {
             sourceState: data.calendarState,
             onEvent: { sheet = .event($0) },
             onDay: { selectedDayDate = $0; calendarPresentation = .day }
+        ) {
+            EmptyView()
+        }
+        .id("calendar-timeline")
+    }
+
+    private func calendarPlanningPane(_ data: WeeklyPlannerData, days: [DayPlan]) -> some View {
+        CalendarPlanningPane(
+            days: days, weeklyItems: data.weeklyItems, personId: personFilterId,
+            currentUserId: user.userId, canEdit: user.role != "viewer",
+            viewModel: viewModel, appleReminders: appleReminders,
+            onEdit: { sheet = .item($0, date: $0.planningDate, type: $0.type) },
+            onAdd: { sheet = .item(nil, date: $0, type: $1) },
+            onReminder: { sheet = .appleReminder($0) },
+            onExpand: { calendarPlanningExpansion += 1 }
         )
     }
 

@@ -5,6 +5,39 @@ final class CalendarTimelineTests: XCTestCase {
     private let date = "2026-09-14"
     private let timezone = "America/New_York"
 
+    func testPlanningPaneUsesSelectedDaysAndIncludesWholeWeekOnce() {
+        let planner = PreviewData.planner
+        let day = planner.days[0]
+        let daily = CalendarPlanningGroup.groups(days: [day], weeklyItems: planner.weeklyItems, personId: CalendarEventFilter.allPeople)
+        XCTAssertEqual(daily.map(\.date), [day.date, nil])
+        XCTAssertEqual(daily[0].items, day.items)
+        XCTAssertEqual(daily[1].items, planner.weeklyItems)
+        let week = CalendarPlanningGroup.groups(days: planner.days, weeklyItems: planner.weeklyItems, personId: CalendarEventFilter.allPeople)
+        XCTAssertEqual(week.count, 8)
+        XCTAssertEqual(week.filter { $0.date == nil }.count, 1)
+    }
+
+    func testPlanningPaneFiltersDailyAndWeeklyItemsWithExplicitAssignments() {
+        let planner = PreviewData.planner
+        var day = planner.days[0]
+        var assigned = day.items[0]
+        assigned.assignedMemberIds = ["child"]
+        var unassigned = day.items[1]
+        unassigned.assignedMemberIds = []
+        day.items = [assigned, unassigned]
+        let child = CalendarPlanningGroup.groups(days: [day], weeklyItems: [assigned, unassigned], personId: "child")
+        XCTAssertEqual(child.map { $0.items.map(\.id) }, [[assigned.id], [assigned.id]])
+        let empty = CalendarPlanningGroup.groups(days: [day], weeklyItems: [assigned, unassigned], personId: CalendarEventFilter.unassigned)
+        XCTAssertEqual(empty.map { $0.items.map(\.id) }, [[unassigned.id], [unassigned.id]])
+    }
+
+    func testPlanningPaneKeepsEmptyGroupsForAddingAndAppliesSearchToBothScopes() {
+        let planner = PreviewData.planner
+        let groups = CalendarPlanningGroup.groups(days: planner.days, weeklyItems: planner.weeklyItems, personId: CalendarEventFilter.allPeople, searchText: "no-matching-calendar-pane-item")
+        XCTAssertEqual(groups.count, 8)
+        XCTAssertTrue(groups.allSatisfy { $0.items.isEmpty })
+    }
+
     private func event(_ id: String, _ start: String, _ end: String, allDay: Bool = false) throws -> CalendarEvent {
         let source = PreviewData.planner.days[0].events[0]
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(source)) as? [String: Any])

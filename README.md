@@ -4,6 +4,8 @@ Week of Us is a shared Monday-through-Sunday family planner. It keeps scheduled 
 
 Use the **List / Calendar** buttons on web, iPhone, and Mac to switch between the existing planner and an hourly calendar. Calendar has **Day / Week** buttons and remembers the last range while switching views. Events use the household time zone, all-day activities sit above the hours, and overlapping visible events appear side by side. Blank space shows gaps in the selected calendars; person and calendar filters apply to both views. Select an event for its existing details and editing controls, or choose **List** to return to daily notes, tasks, and weather. On a phone, scroll the Week timeline horizontally or select a day header for a closer look.
 
+Calendar also keeps **Tasks & Notes** in a collapsible pane below the hourly timeline. Day view shows that day plus whole-week items; Week view groups items by day and includes a separate **This week** group. The pane stays in place while the hours scroll and has its own scrolling, completion controls, editors, and add actions. Person filters apply to daily and weekly items. On iPhone and narrow web screens it starts collapsed with task and note counts. Native Apple Reminders for the visible dates appear under Everyone or the signed-in person.
+
 The production application uses the existing self-hosted PostgreSQL 16 service. It does not use DynamoDB or Supabase. With no database configuration, it opens as a polished interactive demo so the product can still be evaluated locally.
 
 ## Task responsibilities and shared details
