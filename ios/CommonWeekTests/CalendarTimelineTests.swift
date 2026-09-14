@@ -5,6 +5,58 @@ final class CalendarTimelineTests: XCTestCase {
     private let date = "2026-09-14"
     private let timezone = "America/New_York"
 
+    func testCalendarSlotsSnapAndNormalizeMidnight() {
+        XCTAssertEqual(CalendarTimeSlot.snapped(date: date, minute: 607), CalendarTimeSlot(date: date, minute: 600))
+        XCTAssertEqual(CalendarTimeSlot.snapped(date: date, minute: -15), CalendarTimeSlot(date: "2026-09-13", minute: 1425))
+        XCTAssertEqual(CalendarTimeSlot.snapped(date: date, minute: 1440), CalendarTimeSlot(date: "2026-09-15", minute: 0))
+    }
+
+    func testCalendarMovePreservesDurationAndProviderIdentity() throws {
+        let original = try event("move", "2026-09-14T09:00:00-04:00", "2026-09-14T10:30:00-04:00")
+        let draft = try CalendarInteraction.moveDraft(original, to: CalendarTimeSlot(date: "2026-09-16", minute: 1410), timezone: timezone)
+        XCTAssertEqual(draft.startTime, "23:30"); XCTAssertEqual(draft.endTime, "01:00"); XCTAssertEqual(draft.endDate, "2026-09-17")
+        XCTAssertEqual(draft.calendarPreferenceId, original.calendarPreferenceId)
+        XCTAssertEqual(draft.providerEventId, original.providerEventId); XCTAssertEqual(draft.etag, original.etag)
+        XCTAssertNil(draft.guestEmails)
+    }
+
+    func testCalendarMovePreservesAllDaySpanAcrossClockChanges() throws {
+        let original = try event("all-day", "2026-03-07", "2026-03-10", allDay: true)
+        let draft = try CalendarInteraction.moveDraft(original, to: CalendarTimeSlot(date: "2026-11-01", minute: nil), timezone: timezone)
+        XCTAssertEqual(draft.startDate, "2026-11-01"); XCTAssertEqual(draft.endDate, "2026-11-03"); XCTAssertTrue(draft.allDay)
+    }
+
+    func testCalendarMoveRejectsMissingTimesAndPreservesSpringDuration() throws {
+        XCTAssertThrowsError(try CalendarInteraction.instant(CalendarTimeSlot(date: "2026-03-08", minute: 150), timezone: timezone))
+        let original = try event("spring-move", "2026-09-14T09:00:00-04:00", "2026-09-14T10:30:00-04:00")
+        let draft = try CalendarInteraction.moveDraft(original, to: CalendarTimeSlot(date: "2026-03-08", minute: 90), timezone: timezone)
+        XCTAssertEqual(draft.startTime, "01:30"); XCTAssertEqual(draft.endTime, "04:00")
+        let twoHours = try event("fall-move", "2026-09-14T09:00:00-04:00", "2026-09-14T11:00:00-04:00")
+        XCTAssertThrowsError(try CalendarInteraction.moveDraft(twoHours, to: CalendarTimeSlot(date: "2026-11-01", minute: 30), timezone: timezone))
+    }
+
+    func testCalendarMoveRejectsReadOnlyAndScopesRepeatingOccurrence() throws {
+        let original = try event("move", "2026-09-14T09:00:00-04:00", "2026-09-14T10:00:00-04:00")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        json["canEdit"] = false
+        let readOnly = try JSONDecoder().decode(CalendarEvent.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertThrowsError(try CalendarInteraction.moveDraft(readOnly, to: CalendarTimeSlot(date: date, minute: 600), timezone: timezone))
+        json["canEdit"] = true; json["recurringEventId"] = "series"
+        let repeating = try JSONDecoder().decode(CalendarEvent.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(try CalendarInteraction.moveDraft(repeating, to: CalendarTimeSlot(date: date, minute: 600), timezone: timezone).recurringScope, "occurrence")
+    }
+
+    func testDemoCalendarMoveUpdatesVisibleDaysAndDoesNotDuplicateEvent() throws {
+        let planner = PreviewData.planner
+        let event = planner.days[0].events[0]
+        let draft = try CalendarInteraction.moveDraft(event, to: CalendarTimeSlot(date: planner.days[3].date, minute: 1410), timezone: planner.household.timezone)
+        let moved = try CalendarInteraction.applyingDemo(draft, to: planner)
+        XCTAssertFalse(moved.days[0].events.contains { $0.id == event.id })
+        XCTAssertTrue(moved.days[3].events.contains { $0.id == event.id })
+        XCTAssertTrue(moved.days[4].events.contains { $0.id == event.id })
+        XCTAssertEqual(moved.days.flatMap(\.events).filter { $0.id == event.id }.count, 2)
+    }
+
     func testPlanningPaneUsesSelectedDaysAndIncludesWholeWeekOnce() {
         let planner = PreviewData.planner
         let day = planner.days[0]

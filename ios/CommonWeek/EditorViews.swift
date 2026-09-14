@@ -1240,14 +1240,14 @@ struct CalendarEventEditorView: View {
     @State private var guestEmailInput = ""
     @State private var authoringError: String?
 
-    init(event: CalendarEvent?, date: String, data: WeeklyPlannerData, viewModel: PlannerViewModel) {
+    init(event: CalendarEvent?, date: String, data: WeeklyPlannerData, viewModel: PlannerViewModel, initialSlot: CalendarTimeSlot? = nil, initialCalendarId: String? = nil) {
         self.event = event; self.date = date; self.data = data; self.viewModel = viewModel
-        let defaultStart = WeekDate.calendarDate(date, hour: 9, timeZoneIdentifier: data.household.timezone)
+        let defaultStart = (try? CalendarInteraction.instant(initialSlot ?? CalendarTimeSlot(date: date, minute: 540), timezone: data.household.timezone)) ?? WeekDate.calendarDate(date, hour: 9, timeZoneIdentifier: data.household.timezone)
         _title = State(initialValue: event?.title ?? "")
         _location = State(initialValue: event?.location ?? "")
         _notes = State(initialValue: event?.description ?? "")
-        _calendarId = State(initialValue: event?.calendarPreferenceId ?? data.editableCalendars.first?.id ?? "")
-        _allDay = State(initialValue: event?.allDay ?? false)
+        _calendarId = State(initialValue: event?.calendarPreferenceId ?? initialCalendarId ?? data.editableCalendars.first?.id ?? "")
+        _allDay = State(initialValue: event?.allDay ?? (initialSlot != nil && initialSlot?.minute == nil))
         _start = State(initialValue: event.map {
             WeekDate.calendarEventDate($0.start, timeZoneIdentifier: data.household.timezone)
         } ?? defaultStart)

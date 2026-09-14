@@ -4,7 +4,7 @@ enum PlannerSheet: Identifiable {
     case item(PlanningItem?, date: String?, type: PlanningItemType)
     case appleReminder(AppleReminderTask)
     case event(CalendarEvent)
-    case newEvent(String)
+    case newEvent(String, slot: CalendarTimeSlot? = nil, calendarId: String? = nil)
     case weather(DayPlan)
     case location(DayPlan)
     case search
@@ -20,7 +20,7 @@ enum PlannerSheet: Identifiable {
         case .item(let item, let date, let type): "item-\(item?.id ?? date ?? "weekly")-\(type.rawValue)"
         case .appleReminder(let reminder): "apple-reminder-\(reminder.id)"
         case .event(let event): "event-\(event.id)"
-        case .newEvent(let date): "new-event-\(date)"
+        case .newEvent(let date, _, _): "new-event-\(date)"
         case .weather(let day): "weather-\(day.date)"
         case .location(let day): "location-\(day.date)"
         case .search: "search"
@@ -391,7 +391,10 @@ struct PlannerView: View {
             timezone: data.household.timezone,
             sourceState: data.calendarState,
             onEvent: { sheet = .event($0) },
-            onDay: { selectedDayDate = $0; calendarPresentation = .day }
+            onDay: { selectedDayDate = $0; calendarPresentation = .day },
+            canCreate: !data.editableCalendars.isEmpty,
+            onCreate: { slot in sheet = .newEvent(slot.date, slot: slot, calendarId: data.editableCalendars.first(where: { $0.id == calendarFilterId })?.id) },
+            onMove: { await viewModel.saveEvent($0, editing: true) }
         ) {
             EmptyView()
         }
@@ -538,7 +541,7 @@ struct PlannerView: View {
             case .appleReminder(let reminder):
                 AppleReminderEditorView(task: reminder, data: data, store: appleReminders)
             case .event(let event): EventDetailView(event: event, data: data, viewModel: viewModel)
-            case .newEvent(let date): CalendarEventEditorView(event: nil, date: date, data: data, viewModel: viewModel)
+            case .newEvent(let date, let slot, let calendarId): CalendarEventEditorView(event: nil, date: date, data: data, viewModel: viewModel, initialSlot: slot, initialCalendarId: calendarId)
             case .weather(let day): WeatherDetailView(day: day, unit: data.household.temperatureUnit)
             case .location(let day): LocationPickerView(day: day, locations: data.locations, viewModel: viewModel)
             case .search: PlannerSearchView(viewModel: viewModel)

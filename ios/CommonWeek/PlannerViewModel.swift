@@ -339,7 +339,15 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func saveEvent(_ draft: CalendarEventDraft, editing: Bool) async -> Bool {
-        if isDemo { show(editing ? "Demo event updated" : "Demo event added"); return true }
+        if isDemo {
+            guard let planner = data else { return false }
+            do {
+                data = try CalendarInteraction.applyingDemo(draft, to: planner)
+                FamilyPlanningDemo.shared.capture(data)
+                show(editing ? "Demo event updated" : "Demo event added")
+                return true
+            } catch { show(error.localizedDescription); return false }
+        }
         do {
             _ = try await api.saveEvent(draft, editing: editing)
             await refreshAfterMutation(week: data?.weekStart)

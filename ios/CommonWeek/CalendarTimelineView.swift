@@ -1,4 +1,55 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+private let calendarEventDragType = UTType(exportedAs: "com.jimgreco.commonweek.calendar-event")
+private final class CalendarDragAnchor { var location: (id: String, y: CGFloat)? }
+
+// Observe the initial touch without competing with the system's long-press drag recognizer.
+private struct CalendarDragAnchorReader: UIViewRepresentable {
+    let onTouch: (CGPoint) -> Void
+    final class Observer: UIGestureRecognizer {
+        var onTouch: ((UITouch) -> Void)?
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+            if let touch = touches.first { onTouch?(touch) }
+            state = .failed
+        }
+        override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+        override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    }
+    final class AnchorView: UIView {
+        var onTouch: ((CGPoint) -> Void)?
+        let observer = Observer()
+        override func didMoveToWindow() {
+            observer.view?.removeGestureRecognizer(observer)
+            observer.cancelsTouchesInView = false
+            observer.onTouch = { [weak self] touch in
+                guard let self, self.bounds.contains(touch.location(in: self)) else { return }
+                self.onTouch?(touch.location(in: self))
+            }
+            window?.addGestureRecognizer(observer)
+        }
+    }
+    func makeUIView(context: Context) -> AnchorView { let view = AnchorView(); view.isUserInteractionEnabled = false; view.onTouch = onTouch; return view }
+    func updateUIView(_ uiView: AnchorView, context: Context) { uiView.onTouch = onTouch }
+    static func dismantleUIView(_ uiView: AnchorView, coordinator: ()) { uiView.observer.view?.removeGestureRecognizer(uiView.observer) }
+}
+private struct CalendarTimelineDrag {
+    let event: CalendarEvent
+    let offset: Double
+}
+private struct CalendarTimelineDrop: DropDelegate {
+    let accepts: Bool
+    let onPreview: (CGPoint?) -> Void
+    let onDrop: (CGPoint, NSItemProvider) -> Void
+    func validateDrop(info: DropInfo) -> Bool { accepts && info.hasItemsConforming(to: [calendarEventDragType]) }
+    func dropEntered(info: DropInfo) { onPreview(info.location) }
+    func dropUpdated(info: DropInfo) -> DropProposal? { onPreview(info.location); return DropProposal(operation: accepts ? .move : .forbidden) }
+    func dropExited(info: DropInfo) { onPreview(nil) }
+    func performDrop(info: DropInfo) -> Bool {
+        guard accepts, let provider = info.itemProviders(for: [calendarEventDragType]).first else { return false }
+        onDrop(info.location, provider); onPreview(nil); return true
+    }
+}
 
 enum CalendarPresentation: String, CaseIterable, Identifiable {
     case planner = "List", day = "Day", week = "Week"
@@ -112,7 +163,15 @@ struct CalendarTimelineView<Footer: View>: View {
     let sourceState: PlannerSourceState
     let onEvent: (CalendarEvent) -> Void
     let onDay: (String) -> Void
+    let canCreate: Bool
+    let onCreate: (CalendarTimeSlot) -> Void
+    let onMove: (CalendarEventDraft) async -> Bool
     @ViewBuilder var footer: () -> Footer
+    @State private var dragged: CalendarTimelineDrag?
+    @State private var dragAnchor = CalendarDragAnchor()
+    @State private var preview: CalendarTimeSlot?
+    @State private var saving = false
+    @State private var error: String?
     private let hourHeight: CGFloat = 72
     private let axisWidth: CGFloat = 48
     private var headerHeight: CGFloat { 42 + CGFloat(max(1, days.map { $0.events.filter(\.allDay).count }.max() ?? 1)) * 26 }
@@ -123,6 +182,12 @@ struct CalendarTimelineView<Footer: View>: View {
                 .font(.caption).foregroundStyle(CWTheme.secondaryInk)
             Text("Blank space is open time · Overlaps appear side by side")
                 .font(.caption2).foregroundStyle(CWTheme.secondaryInk)
+            if canCreate {
+                Text("Tap an empty time to add · Drag editable events to move · Repeating events move this occurrence only")
+                    .font(.caption2).foregroundStyle(CWTheme.secondaryInk)
+            }
+            if saving { Text("Saving event time…").font(.caption).accessibilityIdentifier("calendar-move-saving") }
+            if let error { Text(error).font(.caption).foregroundStyle(.red).accessibilityIdentifier("calendar-move-error") }
             if sourceState.status != "ready" {
                 Text("\(sourceState.message ?? "Loading calendar…") Open time may be incomplete.")
                     .font(.caption).foregroundStyle(CWTheme.secondaryInk)
@@ -181,23 +246,37 @@ struct CalendarTimelineView<Footer: View>: View {
                     .frame(maxWidth: .infinity).frame(height: 32)
             }.buttonStyle(.plain).accessibilityLabel("Show \(WeekDate.longDay(day.date))")
             ForEach(day.events.filter(\.allDay)) { event in
-                Button { onEvent(event) } label: {
+                movable(Button { onEvent(event) } label: {
                     Text(event.title).font(.caption2).lineLimit(1).padding(.horizontal, 4)
                         .frame(maxWidth: .infinity, alignment: .leading).frame(height: 22)
                         .background(Color(hex: event.calendarColor).opacity(0.17), in: RoundedRectangle(cornerRadius: 4))
-                }.buttonStyle(.plain).accessibilityLabel("\(event.title), All day, \(event.calendarAlias)")
+                }.buttonStyle(.plain).accessibilityLabel("\(event.title), All day, \(event.calendarAlias)"), event: event, date: day.date)
+            }
+            if canCreate && day.events.filter(\.allDay).isEmpty {
+                Button { create(CalendarTimeSlot(date: day.date, minute: nil)) } label: { Image(systemName: "plus").font(.caption2).frame(maxWidth: .infinity).frame(height: 22) }
+                    .buttonStyle(.plain).accessibilityLabel("Add all-day event on \(day.date)")
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 3).frame(width: width, height: headerHeight)
         .overlay(alignment: .leading) { Rectangle().fill(CWTheme.rule).frame(width: 0.5) }
+        .onDrop(of: [calendarEventDragType], delegate: dropTarget(date: day.date, allDay: true))
+        .overlay { if preview?.date == day.date && preview?.minute == nil { RoundedRectangle(cornerRadius: 4).stroke(CWTheme.brand, lineWidth: 2).allowsHitTesting(false) } }
+        .contextMenu { if canCreate { Button("Add all-day event") { create(CalendarTimeSlot(date: day.date, minute: nil)) } } }
     }
 
     private func dayColumn(_ day: DayPlan, width: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
+            if canCreate {
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture(coordinateSpace: .local) { location in create(CalendarTimeSlot.snapped(date: day.date, minute: min(1425, max(0, location.y * 60 / hourHeight)))) }
+                    .accessibilityLabel("Add event on \(day.date)").accessibilityAddTraits(.isButton)
+                    .accessibilityAction { create(CalendarTimeSlot(date: day.date, minute: 540)) }
+                    .accessibilityIdentifier("calendar-create-\(day.date)")
+            }
             ForEach(0..<48) { halfHour in
                 Rectangle().fill(CWTheme.rule.opacity(halfHour.isMultiple(of: 2) ? 1 : 0.45))
-                    .frame(height: 0.5).offset(y: CGFloat(halfHour) * hourHeight / 2)
+                    .frame(height: 0.5).offset(y: CGFloat(halfHour) * hourHeight / 2).allowsHitTesting(false)
             }
             ForEach(CalendarTimelineLayout.blocks(events: day.events, date: day.date, timezone: timezone)) { block in
                 eventBlock(block, date: day.date, width: width)
@@ -210,17 +289,23 @@ struct CalendarTimelineView<Footer: View>: View {
                         .accessibilityLabel("Current time").allowsHitTesting(false)
                 }
             }.allowsHitTesting(false)
+            if let preview, preview.date == day.date, let minute = preview.minute {
+                Text("Move to \(preview.label)").font(.caption2).padding(5).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(CWTheme.mint).overlay { RoundedRectangle(cornerRadius: 4).stroke(CWTheme.brand, lineWidth: 2) }
+                    .offset(y: CGFloat(minute) * hourHeight / 60).allowsHitTesting(false)
+            }
         }
         .frame(width: width, height: hourHeight * 24, alignment: .topLeading)
         .clipped()
         .overlay(alignment: .leading) { Rectangle().fill(CWTheme.rule).frame(width: 0.5).allowsHitTesting(false) }
+        .onDrop(of: [calendarEventDragType], delegate: dropTarget(date: day.date, allDay: false))
     }
 
     private func eventBlock(_ block: CalendarTimelineBlock, date: String, width: CGFloat) -> some View {
         let label = CalendarTimelineLayout.label(block.event, date: date, timezone: timezone)
         let eventWidth = width / CGFloat(block.columnCount)
         let eventHeight = max(18, (block.endMinute - block.startMinute) * hourHeight / 60) - 2
-        return Button { onEvent(block.event) } label: {
+        return movable(Button { onEvent(block.event) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(block.event.title).font(.system(size: 12, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
                 Text(label).font(.system(size: 10))
@@ -236,8 +321,55 @@ struct CalendarTimelineView<Footer: View>: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(block.event.title), \(label), \(block.event.calendarAlias)\(block.overlaps ? ", Overlaps another visible event" : "")")
         .accessibilityIdentifier("timeline-event-\(block.event.id)")
-        .help("\(block.event.title) · \(label) · \(block.event.calendarAlias)")
+        .help("\(block.event.title) · \(label) · \(block.event.calendarAlias)"), event: block.event, date: date)
         .offset(x: CGFloat(block.column) * eventWidth + 2, y: block.startMinute * hourHeight / 60)
+    }
+
+    private func create(_ slot: CalendarTimeSlot) {
+        do { _ = try CalendarInteraction.instant(slot, timezone: timezone); error = nil; onCreate(slot) }
+        catch { self.error = error.localizedDescription }
+    }
+
+    @ViewBuilder private func movable<Content: View>(_ content: Content, event: CalendarEvent, date: String) -> some View {
+        if CalendarInteraction.canMove(event) && !saving {
+            content.background(CalendarDragAnchorReader { location in dragAnchor.location = (event.id, location.y) }).onDrag {
+                let originalDate = event.allDay ? String(event.start.prefix(10)) : WeekDate.string(PlannerMoment.date(from: event.start) ?? .now, timeZoneIdentifier: timezone)
+                let days = CalendarInteraction.dayDifference(originalDate, date)
+                let originalMinute = event.allDay ? 0 : CalendarTimelineLayout.minute(PlannerMoment.date(from: event.start) ?? .now, timezone: timezone)
+                let grabMinute = dragAnchor.location?.id == event.id ? max(0, dragAnchor.location?.y ?? 0) * 60 / hourHeight : 0
+                dragged = CalendarTimelineDrag(event: event, offset: event.allDay ? Double(days) : max(0, Double(days) * 1440 - originalMinute) + grabMinute)
+                let provider = NSItemProvider()
+                provider.registerDataRepresentation(forTypeIdentifier: calendarEventDragType.identifier, visibility: .ownProcess) { completion in completion(Data(event.id.utf8), nil); return nil }
+                return provider
+            }
+        } else { content }
+    }
+
+    private func dropTarget(date: String, allDay: Bool) -> CalendarTimelineDrop {
+        let accepts = dragged?.event.allDay == allDay && !saving
+        func slot(_ location: CGPoint) -> CalendarTimeSlot {
+            let offset = dragged?.offset ?? 0
+            return allDay ? CalendarTimeSlot(date: WeekDate.addDays(-Int(offset), to: date), minute: nil)
+                : CalendarTimeSlot.snapped(date: date, minute: min(1425, max(0, location.y * 60 / hourHeight)) - offset)
+        }
+        return CalendarTimelineDrop(accepts: accepts, onPreview: { location in preview = location.map(slot) }, onDrop: { location, provider in
+            guard let event = dragged?.event else { return }
+            let target = slot(location)
+            dragged = nil
+            provider.loadDataRepresentation(forTypeIdentifier: calendarEventDragType.identifier) { data, _ in
+                guard data == Data(event.id.utf8) else { return }
+                Task { @MainActor in
+                    do {
+                        let sameDate = target.date == (event.allDay ? String(event.start.prefix(10)) : WeekDate.string(PlannerMoment.date(from: event.start) ?? .now, timeZoneIdentifier: timezone))
+                        if sameDate && (event.allDay || target.minute == Int(CalendarTimelineLayout.minute(PlannerMoment.date(from: event.start) ?? .now, timezone: timezone))) { return }
+                        let draft = try CalendarInteraction.moveDraft(event, to: target, timezone: timezone)
+                        saving = true; error = nil
+                        if !(await onMove(draft)) { error = "The event could not be moved. Its original time has been kept. Check the calendar connection and try again." }
+                        saving = false
+                    } catch { self.error = error.localizedDescription }
+                }
+            }
+        })
     }
 
     private func hourLabel(_ hour: Int) -> String { "\(hour % 12 == 0 ? 12 : hour % 12) \(hour < 12 ? "AM" : "PM")" }

@@ -31,6 +31,7 @@ import { NotificationInboxButton } from "@/components/planner/notification-inbox
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { CalendarTimeline } from "@/components/planner/calendar-timeline";
 import { CalendarPlanningPane } from "@/components/planner/calendar-planning-pane";
+import { applyDemoCalendarDraft, calendarMoveDraft, newCalendarDraft, type CalendarSlot } from "@/lib/calendar-interactions";
 import { useTheme } from "@/components/theme-provider";
 import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatMobileDate, formatWeekRange, todayInTimeZone, weekDates } from "@/lib/date";
@@ -85,7 +86,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [weatherDay, setWeatherDay] = useState<DayPlan | null>(null);
   const [editingItem, setEditingItem] = useState<PlanningItem | null>(focusedItem);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(focusedEvent);
-  const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent } | null>(null);
+  const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent; draft?: CalendarEventDraft } | null>(null);
   const [calendarFilter, setCalendarFilter] = useState(ALL_CALENDARS);
   const [personFilter, setPersonFilter] = useState(ALL_PEOPLE);
   const [calendarView, setCalendarView] = useState<"planner" | "day" | "week">("planner");
@@ -405,6 +406,10 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
 
   const saveCalendarEvent = useCallback(async (draft: CalendarEventDraft): Promise<string | null> => {
     if (initialData.isDemo) {
+      try {
+        const updated = applyDemoCalendarDraft(days, draft, initialData.editableCalendars, initialData.household.timezone);
+        setDays(updated);
+      } catch (error) { return error instanceof Error ? error.message : "This event could not be saved."; }
       setNotice(`Demo event ${draft.providerEventId ? "updated" : "added"}.`);
       return null;
     }
@@ -415,7 +420,19 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     await refreshPlannerSources();
     setNotice(draft.providerEventId ? "Google Calendar event updated." : "Google Calendar event added.");
     return null;
-  }, [initialData.isDemo, refreshPlannerSources]);
+  }, [initialData.isDemo, initialData.editableCalendars, initialData.household.timezone, days, refreshPlannerSources]);
+
+  const createFromCalendar = (slot: CalendarSlot) => {
+    try {
+      const calendarId = initialData.editableCalendars.find(calendar => calendar.id === activeCalendarFilter)?.id ?? initialData.editableCalendars[0]?.id ?? "";
+      setCalendarEditor({ date: slot.date, draft: newCalendarDraft(slot, calendarId, initialData.household.timezone) });
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Choose another time."); }
+  };
+
+  const moveCalendarEvent = async (event: CalendarEvent, slot: CalendarSlot) => {
+    try { return await saveCalendarEvent(calendarMoveDraft(event, slot, initialData.household.timezone)); }
+    catch (error) { return error instanceof Error ? error.message : "This event could not be moved."; }
+  };
 
   const deleteCalendarEvent = useCallback(async (event: CalendarEvent, scope: "occurrence" | "series"): Promise<string | null> => {
     if (!event.calendarPreferenceId || !event.providerEventId || !event.etag) return "Refresh the week before deleting this event.";
@@ -628,7 +645,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
           {calendarView === "week" && <span className="timeline-week-hint">Select a day for a closer look</span>}
         </div>
 
-        {calendarView !== "planner" && <CalendarTimeline days={timelineDays} timeZone={initialData.household.timezone} sourceState={calendarState} onEvent={setSelectedEvent} onDay={(date) => { setTimelineDate(date); setCalendarView("day"); setLastTimelineView("day"); }}>
+        {calendarView !== "planner" && <CalendarTimeline canCreate={initialData.editableCalendars.length > 0} onCreate={createFromCalendar} onMove={moveCalendarEvent} days={timelineDays} timeZone={initialData.household.timezone} sourceState={calendarState} onEvent={setSelectedEvent} onDay={(date) => { setTimelineDate(date); setCalendarView("day"); setLastTimelineView("day"); }}>
           <CalendarPlanningPane days={timelineDays} weeklyItems={filteredWeeklyItems} childProfiles={family.children} canEdit={initialData.isDemo || family.canEdit} onAdd={addItem} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} />
         </CalendarTimeline>}
 
@@ -671,7 +688,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       {locationDate && <LocationDialog date={locationDate} locations={initialData.locations} members={initialData.members} currentLocationId={days.find((day) => day.date === locationDate)?.location?.id ?? null} isDemo={initialData.isDemo} onClose={() => setLocationDate(null)} onSave={setLocation} />}
       {weatherDay && <WeatherDialog day={weatherDay} timeZone={initialData.household.timezone} temperatureUnit={initialData.household.temperatureUnit} onClose={() => setWeatherDay(null)} />}
       {selectedEvent && <EventDetailDialog members={initialData.members} childProfiles={family.children} onMembers={family.canEdit ? async (memberIds) => { if (!initialData.isDemo) { if (!selectedEvent.calendarPreferenceId || !selectedEvent.providerEventId) return "Refresh this event and try again."; const result = await saveEventMembersAction({ calendarPreferenceId: selectedEvent.calendarPreferenceId, providerEventId: selectedEvent.providerEventId, memberIds }); if (!result.ok) return result.error ?? "Assignments could not be saved."; } else { saveDemoEventMembers(selectedEvent, memberIds); } const updated = familyEvent({ ...selectedEvent, memberOverrideIds: memberIds }, family); setDays((days) => days.map((day) => ({ ...day, events: day.events.map((event) => event.id === updated.id ? updated : event) }))); setSelectedEvent(updated); return null; } : undefined} event={familyEvent(selectedEvent, family)} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onDelete={deleteCalendarEvent} onRespond={respondToCalendarEvent} onReminder={setCalendarReminder} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
-      {calendarEditor && <CalendarEventEditorDialog date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} locationBias={initialData.locations.find((location) => location.isDefault) ?? initialData.locations[0]} isDemo={initialData.isDemo} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
+      {calendarEditor && <CalendarEventEditorDialog initialDraft={calendarEditor.draft} date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} locationBias={initialData.locations.find((location) => location.isDefault) ?? initialData.locations[0]} isDemo={initialData.isDemo} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
       {editingItem && <ItemEditorDialog members={initialData.members} childProfiles={family.children} onRepeat={family.canEdit ? repeatTask : undefined} item={editingItem} weekDates={weekDates(initialData.weekStart)} timeZone={initialData.household.timezone} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
       {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} timeZone={initialData.household.timezone} onEvent={(event) => { setSearchOpen(false); setSelectedEvent(event); }} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
     </main></TaskWorkspaceProvider>

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0611124087A98B1F05B7B212 /* AppleReminderRecurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8971F5CDE9538481710D1578 /* AppleReminderRecurrence.swift */; };
+		0E3469C00597B83BB1EB2959 /* CalendarInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CF70EDDDB8940BF71EBBA31 /* CalendarInteraction.swift */; };
 		13E2A9B9FC571BFC8FE846F5 /* FamilyPlanningViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089FDAFB595631006ABDEC55 /* FamilyPlanningViews.swift */; };
 		1DD584089716C8917F2D8AEB /* FamilyPlanningEditors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D4AB04D74535B15E61C3F2 /* FamilyPlanningEditors.swift */; };
 		1EDD71A17A2152BF1D37220A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FE9DB5960BC4265E4C44FBEA /* PrivacyInfo.xcprivacy */; };
@@ -101,6 +102,7 @@
 		15D280453135ABCB20247AFB /* WeekDateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekDateTests.swift; sourceTree = "<group>"; };
 		17AE84A55F77B2E94AAB5770 /* PlatformCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCopy.swift; sourceTree = "<group>"; };
 		194B7E6770649ECF980A47F1 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		2CF70EDDDB8940BF71EBBA31 /* CalendarInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarInteraction.swift; sourceTree = "<group>"; };
 		2E8618295C4BEC334961F6E0 /* CommonWeekApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonWeekApp.swift; sourceTree = "<group>"; };
 		3014EBACE5446E3C9F0BB9EE /* DetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViews.swift; sourceTree = "<group>"; };
 		391E7169B0DD4BC0F0C71A32 /* FamilyPlanningDemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanningDemo.swift; sourceTree = "<group>"; };
@@ -219,6 +221,7 @@
 				66D3F14C98728A22A430B035 /* Assets.xcassets */,
 				ABF657900C4FFE9A5A8E859F /* AuthStore.swift */,
 				AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */,
+				2CF70EDDDB8940BF71EBBA31 /* CalendarInteraction.swift */,
 				E76B0F53CC811A164F33D4CA /* CalendarPlanningPane.swift */,
 				77F14EEC6BC0252324828E47 /* CalendarTimelineView.swift */,
 				E75F905F402D3487A486607C /* CommonWeek-iOS.entitlements */,
@@ -414,6 +417,7 @@
 				C9AA2CB9167CE6EFAE2D52C5 /* AppleRemindersClient.swift in Sources */,
 				3902C8073C4B9AD59BF3AF8B /* AuthStore.swift in Sources */,
 				7A8583A7642567A6496565A0 /* BackgroundRefresh.swift in Sources */,
+				0E3469C00597B83BB1EB2959 /* CalendarInteraction.swift in Sources */,
 				A9A7EB2A425717625A53D7A1 /* CalendarPlanningPane.swift in Sources */,
 				C0BF14966BC36925E059B6C4 /* CalendarTimelineView.swift in Sources */,
 				8CB7268C1D33378B37229A52 /* CommonWeekApp.swift in Sources */,

@@ -97,7 +97,7 @@ struct MacPlannerCommands: Commands {
 private enum MacPlannerSheet: Identifiable {
     case item(date: String?, type: PlanningItemType, allowsAppleReminderDestination: Bool)
     case reminder(date: String)
-    case event(date: String)
+    case event(date: String, slot: CalendarTimeSlot? = nil, calendarId: String? = nil)
     case search
     case coverage
     case shareWeek
@@ -110,7 +110,7 @@ private enum MacPlannerSheet: Identifiable {
         switch self {
         case .item(let date, let type, _): "item-\(date ?? "weekly")-\(type.rawValue)"
         case .reminder(let date): "reminder-\(date)"
-        case .event(let date): "event-\(date)"
+        case .event(let date, _, _): "event-\(date)"
         case .coverage: "coverage"
         case .shareWeek: "share-week"
         case .taskWorkspace: "task-workspace"
@@ -519,7 +519,10 @@ struct MacPlannerView: View {
                         timezone: data.household.timezone,
                         sourceState: data.calendarState,
                         onEvent: { request(.selections([.event($0.id)])) },
-                        onDay: { request(.day($0)); calendarPresentation = .day }
+                        onDay: { request(.day($0)); calendarPresentation = .day },
+                        canCreate: !data.editableCalendars.isEmpty,
+                        onCreate: { slot in sheet = .event(date: slot.date, slot: slot, calendarId: data.editableCalendars.first(where: { $0.id == calendarFilterId })?.id) },
+                        onMove: { await viewModel.saveEvent($0, editing: true) }
                     ) {
                         CalendarPlanningPane(
                             days: data.days.filter { calendarPresentation == .week || $0.date == navigation.selectedDay },
@@ -628,8 +631,8 @@ struct MacPlannerView: View {
                 )
             case .reminder(let date):
                 MacNewAppleReminderView(date: date, data: data, store: appleReminders)
-            case .event(let date):
-                CalendarEventEditorView(event: nil, date: date, data: data, viewModel: viewModel)
+            case .event(let date, let slot, let calendarId):
+                CalendarEventEditorView(event: nil, date: date, data: data, viewModel: viewModel, initialSlot: slot, initialCalendarId: calendarId)
             case .search:
                 MacPlannerSearchView(viewModel: viewModel) { result in
                     openSearchResult(result)

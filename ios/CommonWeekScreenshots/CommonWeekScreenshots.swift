@@ -48,6 +48,34 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if !targetEnvironment(macCatalyst)
+    func testCalendarClickAndDrag() throws {
+        launchDemo()
+        let picker = app.segmentedControls["calendar-view-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10)); picker.buttons["Calendar"].tap()
+        app.segmentedControls["calendar-range-picker"].buttons["Week"].tap()
+        let root = app.scrollViews.firstMatch
+        root.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.35)).press(forDuration: 0.05, thenDragTo: root.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.05)))
+        let camp = app.buttons["timeline-event-event-0"]
+        XCTAssertTrue(camp.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Calendar before click")
+        let empty = camp.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: -18))
+        empty.tap()
+        let title = app.textFields["Title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Calendar slot test")
+        app.buttons["Save"].firstMatch.tap()
+        let added = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Calendar slot test,")).firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 5))
+        XCTAssertTrue(added.label.contains("9:00"), added.label)
+        let tuesday = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Show Tuesday,")).firstMatch
+        let target = tuesday.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: camp.frame.minY - tuesday.frame.minY + 126))
+        added.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1, thenDragTo: target)
+        let moved = NSPredicate { _, _ in added.exists && added.label.contains("10:30") }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: moved, object: nil)], timeout: 8), .completed)
+        attachCurrentScreen(named: "Calendar event moved to Tuesday")
+        added.tap()
+        XCTAssertTrue(app.staticTexts["Calendar slot test"].firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testCalendarPlanningPane() throws {
         launchDemo()
         let viewPicker = app.segmentedControls["calendar-view-picker"]
@@ -465,6 +493,27 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if targetEnvironment(macCatalyst)
+    func testMacCalendarClickAndDrag() throws {
+        launchDemo()
+        let picker = app.segmentedControls["calendar-view-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10)); picker.buttons["Calendar"].tap()
+        app.segmentedControls["calendar-range-picker"].buttons["Week"].tap()
+        let camp = app.buttons["timeline-event-event-0"]
+        XCTAssertTrue(camp.waitForExistence(timeout: 5))
+        camp.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: -camp.frame.height)).tap()
+        let title = app.textFields["Title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("Mac calendar slot test")
+        app.buttons["Save"].firstMatch.tap()
+        let added = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Mac calendar slot test,")).firstMatch
+        XCTAssertTrue(added.waitForExistence(timeout: 5)); XCTAssertTrue(added.label.contains("8:15"), added.label)
+        let tuesday = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Show Tuesday,")).firstMatch
+        let target = tuesday.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: added.frame.midY - tuesday.frame.minY + camp.frame.height * 2))
+        added.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1, thenDragTo: target)
+        let moved = NSPredicate { _, _ in added.exists && added.label.contains("10:15") && added.label.contains("11:15") && abs(added.frame.midX - tuesday.frame.midX) < 10 }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: moved, object: nil)], timeout: 8), .completed)
+        attachCurrentScreen(named: "Mac calendar event moved to Tuesday")
+    }
+
     func testMacTaskWorkspace() throws {
         launchDemo()
         let open = app.buttons["Tasks & backlog"]

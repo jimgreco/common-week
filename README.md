@@ -6,6 +6,8 @@ Use the **List / Calendar** buttons on web, iPhone, and Mac to switch between th
 
 Calendar also keeps **Tasks & Notes** in a collapsible pane below the hourly timeline. Day view shows that day plus whole-week items; Week view groups items by day and includes a separate **This week** group. The pane stays in place while the hours scroll and has its own scrolling, completion controls, editors, and add actions. Person filters apply to daily and weekly items. On iPhone and narrow web screens it starts collapsed with task and note counts. Native Apple Reminders for the visible dates appear under Everyone or the signed-in person.
 
+Click or tap an empty time in Calendar to open an event editor with that date and time filled in, or use the all-day row’s **+**. Drag editable events to another date or time; on iPhone, touch and hold before dragging. Times snap to 15-minute intervals and moves preserve duration and the original calendar. All-day events move within the all-day row and keep their date span. Recurring moves change only the selected occurrence. Saves use the existing Google permissions and concurrency checks; failed saves keep the original placement. Demo events can also be created and moved locally.
+
 The production application uses the existing self-hosted PostgreSQL 16 service. It does not use DynamoDB or Supabase. With no database configuration, it opens as a polished interactive demo so the product can still be evaluated locally.
 
 ## Task responsibilities and shared details

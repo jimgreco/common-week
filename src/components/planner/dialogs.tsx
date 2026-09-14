@@ -279,6 +279,7 @@ function initialEventDraft(date: string, calendars: EditableCalendar[], timeZone
 export function CalendarEventEditorDialog({
   date,
   event,
+  initialDraft,
   calendars,
   timeZone,
   locationBias,
@@ -289,6 +290,7 @@ export function CalendarEventEditorDialog({
 }: {
   date: string;
   event?: CalendarEvent;
+  initialDraft?: CalendarEventDraft;
   calendars: EditableCalendar[];
   timeZone: string;
   locationBias?: { latitude: number; longitude: number };
@@ -297,7 +299,7 @@ export function CalendarEventEditorDialog({
   onSave: (draft: CalendarEventDraft) => Promise<string | null>;
   onDelete: (event: CalendarEvent, scope: "occurrence" | "series") => Promise<string | null>;
 }) {
-  const [draft, setDraft] = useState(() => initialEventDraft(date, calendars, timeZone, event));
+  const [draft, setDraft] = useState(() => initialDraft ?? initialEventDraft(date, calendars, timeZone, event));
   const [guestInput, setGuestInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
