@@ -19,6 +19,7 @@ final class PlannerViewModel: ObservableObject {
     private var toastTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
     private var liveRefreshTask: Task<Void, Never>?
+    private var loadGeneration = 0
     private var syncInProgress = false
     private var followsCurrentWeek = true
     private let isDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"] == "1"
@@ -86,6 +87,7 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func deactivate() {
+        loadGeneration += 1
         stopLiveUpdates()
         activeUser = nil
         data = nil
@@ -95,10 +97,12 @@ final class PlannerViewModel: ObservableObject {
         followsCurrentWeek = true
     }
 
-    func load(week: String? = nil, quietly: Bool = false) async {
+    func load(week: String? = nil, quietly: Bool = false, refreshSources: Bool = true) async {
         if isDemo { data = WorkspaceAccess.applying(to: FamilyPlanningDemo.shared.planner(weekStart: week ?? data?.weekStart ?? PreviewData.planner.weekStart, capturing: data)); return }
         guard let user = activeUser else { return }
         if syncInProgress { return }
+        loadGeneration += 1
+        let generation = loadGeneration
         let selected = week ?? data?.weekStart ?? WeekDate.string(WeekDate.monday())
         if data?.weekStart != selected {
             if let cached = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selected) {
@@ -118,7 +122,7 @@ final class PlannerViewModel: ObservableObject {
         }
         if !quietly && data == nil { isLoading = true }
         errorMessage = nil
-        defer { isLoading = false }
+        defer { if generation == loadGeneration { isLoading = false } }
 
         guard await flushPendingChanges() else {
             isOffline = true
@@ -126,11 +130,34 @@ final class PlannerViewModel: ObservableObject {
             return
         }
         do {
-            let planner = try await api.planner(week: selected).planner
+            var planner = try await api.planner(week: selected, coreOnly: true).planner
+            guard generation == loadGeneration, activeUser?.userId == user.userId, !Task.isCancelled else { return }
+            if let previous = data, previous.weekStart == selected {
+                planner.calendarState = previous.calendarState
+                planner.weatherState = previous.weatherState
+                for index in planner.days.indices {
+                    guard let old = previous.days.first(where: { $0.date == planner.days[index].date }) else { continue }
+                    planner.days[index].events = old.events.filter { event in planner.visibleCalendars?.contains(where: { $0.id == (event.calendarPreferenceId ?? event.calendarId) }) ?? false }
+                    if planner.days[index].location?.id == old.location?.id { planner.days[index].weather = old.weather }
+                    for memberIndex in planner.days[index].memberLocations.indices {
+                        let member = planner.days[index].memberLocations[memberIndex]
+                        if let prior = old.memberLocations.first(where: { $0.memberId == member.memberId && $0.location?.id == member.location?.id }) {
+                            planner.days[index].memberLocations[memberIndex].weather = prior.weather
+                        }
+                    }
+                }
+            }
             data = planner
-            try? await offlineStore.savePlanner(planner, userId: user.userId)
+            isLoading = false
             isOffline = false
+            try? await offlineStore.savePlanner(planner, userId: user.userId)
+            if refreshSources || planner.calendarState.status == "loading" || planner.weatherState.status == "loading" {
+                async let calendar: Void = loadSource("calendar", week: selected, userId: user.userId, generation: generation)
+                async let weather: Void = loadSource("weather", week: selected, userId: user.userId, generation: generation)
+                _ = await (calendar, weather)
+            }
         } catch {
+            guard generation == loadGeneration, activeUser?.userId == user.userId, !Task.isCancelled else { return }
             if APIClient.isConnectivityFailure(error) {
                 isOffline = true
                 if data == nil,
@@ -139,6 +166,31 @@ final class PlannerViewModel: ObservableObject {
                 }
             }
             if data == nil { errorMessage = error.localizedDescription }
+        }
+    }
+
+    private func loadSource(_ source: String, week: String, userId: String, generation: Int) async {
+        do {
+            let payload = try await api.plannerSource(source, week: week)
+            guard generation == loadGeneration, activeUser?.userId == userId, var planner = data, planner.weekStart == week, !Task.isCancelled else { return }
+            for index in planner.days.indices {
+                guard let day = payload.days.first(where: { $0.date == planner.days[index].date }) else { continue }
+                if source == "calendar" { planner.days[index].events = day.events }
+                else {
+                    planner.days[index].location = day.location
+                    planner.days[index].weather = day.weather
+                    planner.days[index].memberLocations = day.memberLocations
+                }
+            }
+            if source == "calendar" { planner.calendarState = payload.calendarState }
+            else { planner.weatherState = payload.weatherState }
+            data = planner
+            try? await offlineStore.savePlanner(planner, userId: userId)
+        } catch {
+            guard generation == loadGeneration, activeUser?.userId == userId, data?.weekStart == week, !Task.isCancelled else { return }
+            let state = PlannerSourceState(status: "error", message: "\(source == "calendar" ? "Calendar" : "Weather") could not refresh. Pull to refresh and try again.")
+            if source == "calendar" { data?.calendarState = state }
+            else { data?.weatherState = state }
         }
     }
 
@@ -424,10 +476,10 @@ final class PlannerViewModel: ObservableObject {
             while !Task.isCancelled, self?.activeUser?.userId == userId {
                 do {
                     guard let self else { return }
-                    for try await _ in api.realtimeChanges() {
+                    for try await change in api.realtimeChanges() {
                         guard !Task.isCancelled else { return }
                         retryDelay = 1
-                        scheduleLiveRefresh()
+                        scheduleLiveRefresh(table: change.table)
                     }
                 } catch is CancellationError {
                     return
@@ -487,12 +539,12 @@ final class PlannerViewModel: ObservableObject {
         }
     }
 
-    private func scheduleLiveRefresh() {
+    private func scheduleLiveRefresh(table: String?) {
         liveRefreshTask?.cancel()
         liveRefreshTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled, let self else { return }
-            await load(week: data?.weekStart, quietly: true)
+            await load(week: data?.weekStart, quietly: true, refreshSources: !["planning_items", "task_checklist_items", "item_comments", "item_attachments", "event_coverage", "weekly_reviews"].contains(table ?? ""))
         }
     }
 

@@ -6,7 +6,7 @@ import { AlertTriangle, Bell, CalendarDays, Check, Clock, CloudRain, ExternalLin
 import { searchLocationsAction } from "@/app/actions/planner";
 import { RoutineFields, type RoutineDraft } from "@/components/planner/family-planning-fields";
 import { EventLocationAutocomplete } from "@/components/planner/event-location-autocomplete";
-import { addDateDays, formatDayName, formatEventTime, formatMobileDate, parseDateOnly } from "@/lib/date";
+import { addDateDays, formatDayName, formatEventTime, formatForecastTime, formatMobileDate, parseDateOnly } from "@/lib/date";
 import { displayTemperature, temperatureSymbol, type TemperatureUnit } from "@/lib/temperature";
 import { weatherLabel, weatherSymbol } from "@/lib/weather-codes";
 import type { CalendarEvent, CalendarEventDraft, CalendarRecurrenceFrequency, CalendarRecurrenceWeekday, CalendarResponseStatus, ChildProfile, DayPlan, EditableCalendar, GeocodingResult, HouseholdLocation, HouseholdMember, NotificationReminder, PlannerSearchResult, PlanningItem } from "@/types/domain";
@@ -639,21 +639,27 @@ export function WeatherDialog({ day, timeZone, temperatureUnit, onClose }: { day
       </div>
       <div className="hourly-scroll" aria-label="Hourly forecast">
         {daytime.map((hour) => {
-          const rainHeight = Math.max(2, hour.precipitationProbability * 0.42);
+          const rainHeight = hour.precipitationProbability == null ? 0 : Math.max(2, hour.precipitationProbability * 0.42);
+          const temperature = hour.temperatureF == null ? "—" : `${displayTemperature(hour.temperatureF, temperatureUnit)}${temperatureSymbol(temperatureUnit)}`;
+          const rain = hour.precipitationProbability == null ? "—" : `${hour.precipitationProbability}%`;
+          const amount = hour.precipitationAmount == null ? "—" : `${hour.precipitationAmount.toFixed(2)} in`;
+          const wind = hour.windSpeedMph == null ? "—" : `${hour.windSpeedMph} mph`;
           return (
             <div className="hour-cell" key={hour.time}>
-              <time>{formatEventTime(hour.time, timeZone)}</time>
-              <span aria-hidden="true">{weatherSymbol(hour.conditionCode)}</span>
-              <strong>{displayTemperature(hour.temperatureF, temperatureUnit)}°</strong>
-              <div className="rain-bar-track" title={`${hour.precipitationProbability}% precipitation`}><i style={{ height: rainHeight }} /></div>
-              <small>{hour.precipitationProbability}%</small>
+              <time>{formatForecastTime(hour.time, day.location?.timezone ?? timeZone)}</time>
+              <span aria-hidden="true">{hour.conditionCode == null ? "—" : weatherSymbol(hour.conditionCode)}</span>
+              <strong aria-label={`Temperature ${temperature}`}>{temperature}</strong>
+              <div className="rain-bar-track" aria-hidden="true"><i style={{ height: rainHeight }} /></div>
+              <small aria-label={`Chance of rain ${rain}`}>{rain}</small>
+              <small aria-label={`Expected precipitation ${amount}`}>{amount}</small>
+              <small aria-label={`Wind ${wind}`}>{wind}</small>
             </div>
           );
         })}
       </div>
       <div className="sun-row">
-        <span><Sunrise size={15} /> Sunrise {weather.sunrise ? formatEventTime(weather.sunrise, timeZone) : "—"}</span>
-        <span><Sunset size={15} /> Sunset {weather.sunset ? formatEventTime(weather.sunset, timeZone) : "—"}</span>
+        <span><Sunrise size={15} /> Sunrise {weather.sunrise ? formatForecastTime(weather.sunrise, day.location?.timezone ?? timeZone) : "—"}</span>
+        <span><Sunset size={15} /> Sunset {weather.sunset ? formatForecastTime(weather.sunset, day.location?.timezone ?? timeZone) : "—"}</span>
       </div>
     </Modal>
   );

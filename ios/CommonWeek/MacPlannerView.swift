@@ -1187,6 +1187,7 @@ private struct MacDayContextBar: View {
                         Button { openWeather(weatherDay(location: day.location ?? day.memberLocations.first?.location, weather: weather)) } label: {
                             weatherLabel(weather)
                         }
+                        .accessibilityLabel("High \(temperature(weather.highF)) degrees, low \(temperature(weather.lowF)) degrees, \(weather.precipitationProbability) percent chance of rain")
                         .buttonStyle(.bordered)
                     }
                 } else {

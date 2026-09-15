@@ -90,8 +90,12 @@ final class APIClient {
         return result
     }
 
-    func planner(week: String) async throws -> PlannerPayload {
-        try await send(path: "/api/ios/planner", query: [URLQueryItem(name: "week", value: week)])
+    func planner(week: String, coreOnly: Bool = false) async throws -> PlannerPayload {
+        try await send(path: "/api/ios/planner", query: [URLQueryItem(name: "week", value: week), URLQueryItem(name: "core", value: coreOnly ? "1" : "0"), URLQueryItem(name: "nullable_weather", value: "1")])
+    }
+
+    func plannerSource(_ source: String, week: String) async throws -> PlannerSourcePayload {
+        try await send(path: "/api/planner/sources", query: [URLQueryItem(name: "source", value: source), URLQueryItem(name: "week", value: week)])
     }
 
     func coverage() async throws -> CoveragePayload { try await send(path: "/api/coverage") }

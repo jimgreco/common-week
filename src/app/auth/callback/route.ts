@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
   const oauthPlatform = request.cookies.get(OAUTH_PLATFORM_COOKIE)?.value;
   const clientState = request.cookies.get(OAUTH_CLIENT_STATE_COOKIE)?.value;
   const connectToken = request.cookies.get(OAUTH_CONNECT_COOKIE)?.value;
+  if (request.nextUrl.searchParams.has("error") && equalState(expectedState, state)) return authFailure("denied", oauthPlatform, clientState);
   if (!code || !codeVerifier || !equalState(expectedState, state)) return authFailure("state", oauthPlatform, clientState);
 
   try {

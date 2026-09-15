@@ -19,7 +19,16 @@ export async function GET(request: NextRequest) {
     const data = await getPlannerData({
       userId: session.identity.userId,
       householdId: session.identity.householdId,
-    }, weekStart, { includeExternal: true });
+    }, weekStart, { includeExternal: request.nextUrl.searchParams.get("core") !== "1" });
+    // Older installed clients require every hourly number. Omit incomplete hours
+    // for them rather than inventing values or failing the entire planner decode.
+    if (request.nextUrl.searchParams.get("nullable_weather") !== "1") {
+      for (const day of data.days) {
+        for (const weather of [day.weather, ...day.memberLocations.map((member) => member.weather)]) {
+          if (weather) weather.hourly = weather.hourly.filter((hour) => [hour.temperatureF, hour.precipitationProbability, hour.precipitationAmount, hour.windSpeedMph, hour.conditionCode].every((value) => typeof value === "number" && Number.isFinite(value)));
+        }
+      }
+    }
     // Keep an empty key for already-installed native clients that predate category removal.
     const planner = { ...data, categories: [] };
     return Response.json({ ok: true, data: { planner, user: session.identity } }, {

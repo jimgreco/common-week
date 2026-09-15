@@ -106,6 +106,12 @@ export function weekOffset(from: string, to: string): number {
   return Math.round(differenceInCalendarDays(parseDateOnly(to), parseDateOnly(from)) / 7);
 }
 
+// Open-Meteo's offset-free timestamps already represent the location's wall clock.
+export function formatForecastTime(value: string, timeZone: string): string {
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value)) return formatEventTime(`${value}Z`, "UTC");
+  return formatEventTime(value, timeZone);
+}
+
 export function formatEventTime(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",

@@ -2,6 +2,29 @@ import XCTest
 @testable import CommonWeek
 
 final class WeekDateTests: XCTestCase {
+    func testForecastSunTimesKeepMinutes() {
+        XCTAssertEqual(WeekDate.hourlyWeatherTime("2026-09-14T06:30", includeMinutes: true), "6:30 AM")
+        XCTAssertEqual(WeekDate.hourlyWeatherTime("2026-09-14T19:15", includeMinutes: true), "7:15 PM")
+    }
+
+    func testPartialHourlyForecastDecodesWithoutInventingValues() throws {
+        let json = #"{"time":"2026-09-14T09:00","temperatureF":null,"precipitationProbability":50,"precipitationAmount":null}"#
+        let hour = try JSONDecoder().decode(HourlyWeather.self, from: Data(json.utf8))
+        XCTAssertNil(hour.temperatureF)
+        XCTAssertEqual(hour.precipitationProbability, 50)
+        XCTAssertNil(hour.precipitationAmount)
+        XCTAssertNil(hour.windSpeedMph)
+        XCTAssertNil(hour.conditionCode)
+    }
+
+    func testCompleteHourlyForecastPreservesAmountsAndWind() throws {
+        let json = #"{"time":"2026-09-14T09:00","temperatureF":68,"precipitationProbability":50,"precipitationAmount":0.12,"windSpeedMph":12,"conditionCode":3}"#
+        let hour = try JSONDecoder().decode(HourlyWeather.self, from: Data(json.utf8))
+        XCTAssertEqual(hour.temperatureF, 68)
+        XCTAssertEqual(hour.precipitationAmount, 0.12)
+        XCTAssertEqual(hour.windSpeedMph, 12)
+    }
+
     func testPlanningItemNotificationDestination() {
         XCTAssertEqual(
             NotificationCoordinator.plannerDestination(for: "/planner?week=2026-08-31&item=item-123"),

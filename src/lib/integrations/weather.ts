@@ -26,12 +26,17 @@ interface OpenMeteoResponse {
   };
   hourly?: {
     time: string[];
-    temperature_2m: number[];
-    precipitation_probability: number[];
-    precipitation: number[];
-    weather_code: number[];
-    wind_speed_10m: number[];
+    temperature_2m?: Array<number | null>;
+    precipitation_probability?: Array<number | null>;
+    precipitation?: Array<number | null>;
+    weather_code?: Array<number | null>;
+    wind_speed_10m?: Array<number | null>;
   };
+}
+
+function numberAt(values: Array<number | null> | undefined, index: number, round = false): number | null {
+  const value = values?.[index];
+  return typeof value === "number" && Number.isFinite(value) ? (round ? Math.round(value) : value) : null;
 }
 
 function unavailableForecast(date: string, locationId: string): DailyWeather {
@@ -102,11 +107,11 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
       const hours = hoursByDate.get(date) ?? [];
       hours.push({
         time,
-        temperatureF: Math.round(payload.hourly!.temperature_2m[index]),
-        precipitationProbability: Math.round(payload.hourly!.precipitation_probability[index] ?? 0),
-        precipitationAmount: payload.hourly!.precipitation[index] ?? 0,
-        conditionCode: payload.hourly!.weather_code[index] ?? 0,
-        windSpeedMph: Math.round(payload.hourly!.wind_speed_10m[index] ?? 0),
+        temperatureF: numberAt(payload.hourly!.temperature_2m, index, true),
+        precipitationProbability: numberAt(payload.hourly!.precipitation_probability, index, true),
+        precipitationAmount: numberAt(payload.hourly!.precipitation, index),
+        conditionCode: numberAt(payload.hourly!.weather_code, index),
+        windSpeedMph: numberAt(payload.hourly!.wind_speed_10m, index, true),
       });
       hoursByDate.set(date, hours);
     });

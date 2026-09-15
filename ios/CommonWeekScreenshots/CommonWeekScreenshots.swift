@@ -9,6 +9,22 @@ final class CommonWeekScreenshots: XCTestCase {
         app = XCUIApplication()
     }
 
+    func testHourlyWeatherDetails() throws {
+        launchDemo()
+        #if targetEnvironment(macCatalyst)
+        let weather = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'high' AND label CONTAINS[c] 'low'")).firstMatch
+        #else
+        let weather = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'High '")).firstMatch
+        #endif
+        XCTAssertTrue(weather.waitForExistence(timeout: 10))
+        weather.tap()
+        let amount = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Expected precipitation '")).firstMatch
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Wind ' AND label CONTAINS 'miles per hour'")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Sunrise 6:30 AM"].exists)
+        attachCurrentScreen(named: "Hourly rain amounts and wind")
+    }
+
     func testCalendarDayAndWeekTimelines() throws {
         launchDemo()
         let picker = app.segmentedControls["calendar-view-picker"]

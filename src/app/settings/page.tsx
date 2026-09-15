@@ -1,3 +1,4 @@
+import { AuthErrorNotice } from "@/components/auth-error-notice";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -17,7 +18,8 @@ import type { ReactNode } from "react";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ auth_error?: string }> }) {
+  const { auth_error: authError } = await searchParams;
   if (isDemoMode) {
     const data = getDemoPlannerData();
     const demoCalendars = Array.from(new Map(data.days.flatMap((day) => day.events).map((event) => [event.calendarId, event])).values()).map((event, index) => ({
@@ -34,11 +36,11 @@ export default async function SettingsPage() {
       accessRole: "owner" as const,
     }));
     const demoNotifications: NotificationPreferences = { emailEnabled: true, pushEnabled: true, morningDigestEnabled: false, morningDigestTime: "07:00", sundayPlanningEnabled: false, sundayPlanningTime: "18:00", householdChangeAlerts: false };
-    return <SettingsScaffold><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} notificationPreferences={demoNotifications} calendarConnected={false} calendarWriteEnabled currentUserId="demo-jim" isDemo /></SettingsScaffold>;
+    return <SettingsScaffold><AuthErrorNotice reason={authError} /><SettingsPanel household={data.household} members={data.members} invitations={[]} locations={data.locations} calendars={demoCalendars} notificationPreferences={demoNotifications} calendarConnected={false} calendarWriteEnabled currentUserId="demo-jim" isDemo /></SettingsScaffold>;
   }
 
   const context = await getUserContext();
-  if (!context) redirect("/");
+  if (!context) redirect(authError ? `/?auth_error=${encodeURIComponent(authError)}` : "/");
   if (!context.householdId) redirect("/onboarding");
   const [householdResult, membersResult, locationsResult, invitationsResult, calendars, connectionResult, hiddenEventsResult, notificationPreferences] = await Promise.all([
     query<{ id: string; name: string; timezone: string; temperature_unit: "fahrenheit" | "celsius"; default_location_id: string | null }>(
@@ -86,7 +88,7 @@ export default async function SettingsPage() {
   const members: HouseholdMember[] = membersResult.rows.map((member) => ({ id: member.id, userId: member.user_id, displayName: member.display_name, email: member.email, role: member.role }));
   const locations: HouseholdLocation[] = locationsResult.rows.map((location) => ({ id: location.id, name: location.name, latitude: Number(location.latitude), longitude: Number(location.longitude), timezone: location.timezone, isSaved: location.is_saved, isDefault: location.id === household.default_location_id }));
   const hiddenEvents: HiddenCalendarEvent[] = hiddenEventsResult.rows.map((event) => ({ id: event.id, eventId: event.event_id, title: event.title, calendarName: event.calendar_name, eventStart: event.event_start, hiddenAt: event.hidden_at.toISOString() }));
-  return <SettingsScaffold><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString(), sentAt: invite.sent_at?.toISOString() ?? null, deliveryError: invite.delivery_error }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} notificationPreferences={notificationPreferences} calendarConnected={Boolean(connectionResult.rowCount)} calendarWriteEnabled={hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE)} currentUserId={context.userId} isDemo={false} /></SettingsScaffold>;
+  return <SettingsScaffold><AuthErrorNotice reason={authError} /><SettingsPanel household={{ id: household.id, name: household.name, timezone: household.timezone, temperatureUnit: household.temperature_unit }} members={members} invitations={invitationsResult.rows.map((invite) => ({ id: invite.id, email: invite.email, status: invite.status, expiresAt: invite.expires_at.toISOString(), sentAt: invite.sent_at?.toISOString() ?? null, deliveryError: invite.delivery_error }))} locations={locations} calendars={calendars} hiddenEvents={hiddenEvents} notificationPreferences={notificationPreferences} calendarConnected={Boolean(connectionResult.rowCount)} calendarWriteEnabled={hasGoogleScope(connectionResult.rows[0]?.scope, GOOGLE_CALENDAR_WRITE_SCOPE)} currentUserId={context.userId} isDemo={false} /></SettingsScaffold>;
 }
 
 function SettingsScaffold({ children }: { children: ReactNode }) {

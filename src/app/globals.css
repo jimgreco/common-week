@@ -509,9 +509,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .weather-detail-summary span { color: var(--ink-soft); font-size: 9px; }
 .weather-detail-summary .weather-detail-symbol { flex: 0 0 auto; color: #a7782c; font-family: Georgia, serif; font-size: 36px; line-height: 1; }
 .weather-detail-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.hourly-scroll { display: grid; grid-auto-flow: column; grid-auto-columns: 61px; overflow-x: auto; padding: 16px; border-bottom: 1px solid var(--rule); }
-.hour-cell { height: 165px; display: flex; flex-direction: column; align-items: center; gap: 7px; border-right: 1px solid var(--rule); font-size: 10px; }
-.hour-cell time, .hour-cell small { color: var(--muted); font-size: 8px; }
+.hourly-scroll { display: grid; grid-auto-flow: column; grid-auto-columns: 78px; overflow-x: auto; padding: 16px; border-bottom: 1px solid var(--rule); }
+.hour-cell { min-height: 205px; display: flex; flex-direction: column; align-items: center; gap: 7px; border-right: 1px solid var(--rule); font-size: 10px; }
+.hour-cell time, .hour-cell small { color: var(--muted); font-size: 10px; }
 .rain-bar-track { height: 48px; width: 5px; margin-top: auto; display: flex; align-items: flex-end; border-radius: 4px; background: #edf2f4; overflow: hidden; }
 .rain-bar-track i { display: block; width: 100%; background: #5f91a7; }
 .sun-row { display: flex; justify-content: space-between; padding: 13px 16px; color: var(--ink-soft); font-size: 10px; }
@@ -1419,3 +1419,11 @@ textarea:focus-visible {
 .timeline-drop-preview { position: absolute; left: 2px; right: 2px; }
 .timeline-drop-all-day { position: absolute; inset: 0; }
 .timeline-move-error { margin: 0; padding: 10px 16px; color: var(--danger-ink); background: var(--danger-surface); font-size: 13px; }
+
+.auth-error-notice, .settings-write-error { padding: 16px; border: 1px solid var(--danger, #ad453f); border-radius: 12px; background: var(--paper, #fff); color: var(--ink); }
+.auth-error-notice p { margin: 0 0 12px; }
+.settings-write-error { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
+.settings-write-error span { flex: 1; }
+.calendar-provider-error { flex-wrap: wrap; }
+.source-alert { flex-wrap: wrap; }
+@media (max-width: 480px) { .settings-write-error { flex-wrap: wrap; } }

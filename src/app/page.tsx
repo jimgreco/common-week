@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AuthErrorNotice } from "@/components/auth-error-notice";
 import { ArrowRight, CalendarDays, Check, CloudSun, MapPin } from "lucide-react";
 import { signInWithGoogle } from "@/app/actions/auth";
 import { BrandMark } from "@/components/brand-mark";
@@ -9,10 +10,11 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ auth_error?: string }> }) {
+  const { auth_error: authError } = await searchParams;
   if (!isDemoMode) {
     const context = await getUserContext();
-    if (context?.householdId) redirect("/planner");
+    if (context?.householdId) redirect(authError ? `/settings?auth_error=${encodeURIComponent(authError)}#calendars` : "/planner");
     if (context) redirect("/onboarding");
   }
 
@@ -38,6 +40,7 @@ export default async function Home() {
             Google Calendar access is read-only by default. Event editing is
             requested separately only when you choose to enable it.
           </p>
+          <AuthErrorNotice reason={authError} />
           <div className="landing-actions">
             {!isDemoMode && isAppleOAuthConfigured && (
               <a className="button button-primary button-large apple-sign-in" href="/auth/apple">

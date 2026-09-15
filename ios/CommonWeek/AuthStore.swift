@@ -76,8 +76,8 @@ final class AuthStore: NSObject, ObservableObject, ASWebAuthenticationPresentati
                       callbackComponents.queryItems?.first(where: { $0.name == "state" })?.value == clientState,
                       let code = callbackComponents.queryItems?.first(where: { $0.name == "code" })?.value else {
                     self.state = .signedOut
-                    self.errorMessage = callback.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "error" })?.value }
-                        ?? "Google sign-in could not be completed."
+                    let reason = callback.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "error" })?.value }
+                    self.errorMessage = reason == "state" ? "Your sign-in attempt expired. Tap Continue with Google to try again." : reason == "denied" ? "Google permission was declined. Tap Continue with Google to try again." : "Google sign-in could not be completed. Please try again."
                     return
                 }
                 do {

@@ -35,6 +35,14 @@ Every task, plan, and visible Google event can have a checklist, discussion, and
 - Database-backed opaque sessions, PKCE OAuth state validation, encrypted Google tokens, CSP/security headers, and parameterized server-only data access
 - Exact-SHA container publishing and deployment through the consolidated server Compose project
 
+## Recovery and forecast details
+
+Calendar and weather load through separate authenticated requests after the core planner appears, on web, iPhone, and Mac. Each source can finish or fail independently. Week/location changes discard older responses, and planning-only live updates do not reload Calendar. The web source alerts offer Retry and Calendar reconnection; existing calendar and forecast caches remain in use.
+
+Settings preserve entered values when a save fails and provide an announced error with Retry. Failed calendar visibility changes restore the saved selection; default locations change only after the server confirms the save. Sign-in failures explain how to start again. Hourly forecasts show temperature, rain probability, precipitation in inches, and wind in mph, with Fahrenheit/Celsius temperatures and an em dash for missing hourly fields. Forecast hours use the forecast location's clock.
+
+See [the dated acceptance record](docs/ACCEPTANCE.md) for completed checks and the remaining real-account/device verification.
+
 ## Run it
 
 For the interactive demo:

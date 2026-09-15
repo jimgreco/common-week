@@ -7,12 +7,11 @@ import { geocodingService } from "@/lib/integrations/geocoding";
 import { plannerNotificationDeepLink } from "@/lib/notification-links";
 import { requireHouseholdContext, requireUserContext } from "@/lib/server/auth";
 import { postgresErrorCode, query, withTransaction } from "@/lib/server/database";
-import { getPlannerData } from "@/lib/server/planner-data";
 import { searchHouseholdCalendarEvents } from "@/lib/server/calendar-data";
 import { queueHouseholdChange, upsertPlanningReminder } from "@/lib/server/notifications";
 import { validateChildForHousehold } from "@/lib/server/family-planning";
 import { carryOverOpenTasks } from "@/lib/server/planning-carryover";
-import type { ActionResult, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlannerSourcePayload, PlanningItem, PlanningItemType } from "@/types/domain";
+import type { ActionResult, GeocodingResult, HouseholdLocation, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType } from "@/types/domain";
 
 import { assignedMembersSchema, validateAssignedMembers } from "@/lib/server/household-assignments";
 
@@ -103,25 +102,6 @@ function validateWeek(planningDate: string | null, weekStartDate: string) {
   if (weekStartForDate(weekStartDate) !== weekStartDate) throw new Error("Week must begin Monday.");
   if (planningDate && weekStartForDate(planningDate) !== weekStartDate) {
     throw new Error("Planning date must be in the selected week.");
-  }
-}
-
-export async function loadPlannerSourcesAction(weekStartDate: string): Promise<ActionResult<PlannerSourcePayload>> {
-  try {
-    const weekStart = dateOnly.parse(weekStartDate);
-    validateWeek(null, weekStart);
-    const context = await requireHouseholdContext();
-    const data = await getPlannerData(context, weekStart, { includeExternal: true });
-    return {
-      ok: true,
-      data: {
-        days: data.days.map(({ date, events, location, weather, memberLocations }) => ({ date, events, location, weather, memberLocations })),
-        calendarState: data.calendarState,
-        weatherState: data.weatherState,
-      },
-    };
-  } catch {
-    return { ok: false, error: "Calendar and weather could not be refreshed." };
   }
 }
 

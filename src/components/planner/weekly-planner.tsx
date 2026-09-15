@@ -14,7 +14,6 @@ import {
   createPlanningItemAction,
   deletePlanningItemAction,
   hideCalendarEventAction,
-  loadPlannerSourcesAction,
   searchPlannerAction,
   setDailyLocationAction,
   setGeocodedLocationAction,
@@ -29,6 +28,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
 import { NotificationInboxButton } from "@/components/planner/notification-inbox";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
+import { usePlannerSource } from "./use-planner-source";
 import { CalendarTimeline } from "@/components/planner/calendar-timeline";
 import { CalendarPlanningPane } from "@/components/planner/calendar-planning-pane";
 import { applyDemoCalendarDraft, calendarMoveDraft, newCalendarDraft, type CalendarSlot } from "@/lib/calendar-interactions";
@@ -36,7 +36,7 @@ import { useTheme } from "@/components/theme-provider";
 import { CalendarEventEditorDialog, EventDetailDialog, ItemEditorDialog, LocationDialog, SearchDialog, WeatherDialog, type LocationSelection } from "@/components/planner/dialogs";
 import { addDateDays, currentWeekStart, formatMobileDate, formatWeekRange, todayInTimeZone, weekDates } from "@/lib/date";
 import type { PlannerNotificationTarget, ResolvedPlannerNotificationTarget } from "@/lib/notification-links";
-import type { CalendarEvent, CalendarEventDraft, CalendarResponseStatus, FamilyPlanningData, FamilyPlanningMutation, DayPlan, HouseholdLocation, NotificationInbox, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
+import type { ActionResult, PlannerSourcePayload, CalendarEvent, CalendarEventDraft, CalendarResponseStatus, FamilyPlanningData, FamilyPlanningMutation, DayPlan, HouseholdLocation, NotificationInbox, NotificationReminder, PlannerSearchResult, PlanningItem, PlanningItemType, WeeklyPlannerData } from "@/types/domain";
 
 type PlannerFocusTarget = PlannerNotificationTarget | ResolvedPlannerNotificationTarget;
 
@@ -116,10 +116,12 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   if (lastInitialData !== initialData) {
     if (lastInitialData.weekStart !== initialData.weekStart) setDemoLoaded(false);
     setLastInitialData(initialData);
-    setDays((current) => mergeUnsavedDays(initialData.days, current, !initialData.isDemo));
+    setDays((current) => mergeUnsavedDays(initialData.days, current, !initialData.isDemo, initialData.visibleCalendars.map((calendar) => calendar.id)));
     setWeeklyItems((current) => mergeUnsavedItems(initialData.weeklyItems, current));
-    setCalendarState(initialData.calendarState);
-    setWeatherState(initialData.weatherState);
+    if (lastInitialData.weekStart !== initialData.weekStart || initialData.isDemo) {
+      setCalendarState(initialData.calendarState);
+      setWeatherState(initialData.weatherState);
+    }
   }
 
   useEffect(() => {
@@ -165,37 +167,33 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     return () => window.clearTimeout(timer);
   }, [focusKey, focusedEvent, focusedItem]);
 
-  useEffect(() => {
-    if (initialData.isDemo) return;
-    let cancelled = false;
-    void loadPlannerSourcesAction(initialData.weekStart).then((result) => {
-      if (cancelled) return;
-      if (!result.ok || !result.data) {
-        setCalendarState({ status: "error", message: "Calendar unavailable." });
-        setWeatherState({ status: "error", message: "Weather unavailable." });
-        return;
-      }
-      const sources = new Map(result.data.days.map((day) => [day.date, day]));
-      const sourceDays = result.data.days;
-      setDays((current) => current.map((day) => {
-        const source = sources.get(day.date);
-        return source ? { ...day, events: source.events, location: source.location, weather: source.weather, memberLocations: source.memberLocations } : day;
-      }));
-      if ((initialFocus?.kind === "calendar_reminder" || initialFocus?.kind === "calendar_event") && handledFocusKey.current !== focusKey) {
-        const event = sourceDays.flatMap((day) => day.events).find((candidate) => initialFocus.kind === "calendar_reminder"
-          ? candidate.reminder?.id === initialFocus.id
-          : candidate.calendarPreferenceId === initialFocus.calendarPreferenceId
-            && candidate.providerEventId === initialFocus.providerEventId);
-        if (event) {
-          handledFocusKey.current = focusKey;
-          setSelectedEvent(event);
-        }
-      }
-      setCalendarState(result.data.calendarState);
-      setWeatherState(result.data.weatherState);
-    });
-    return () => { cancelled = true; };
-  }, [focusKey, initialData, initialFocus]);
+  const [calendarRevision, setCalendarRevision] = useState(0);
+  const calendarKey = JSON.stringify([initialData.household.id, initialData.household.timezone, initialData.visibleCalendars, initialData.editableCalendars, initialData.members, calendarRevision]);
+  const weatherKey = JSON.stringify([initialData.household.id, initialData.days.map((day) => [day.date, day.memberLocations.map((member) => [member.memberId, member.location])])]);
+  const receiveCalendar = useCallback((result: ActionResult<PlannerSourcePayload>) => {
+    if (!result.ok || !result.data) { setCalendarState({ status: "error", message: result.error }); return; }
+    const payload = result.data;
+    const sources = new Map(payload.days.map((day) => [day.date, day]));
+    setDays((current) => current.map((day) => ({ ...day, events: sources.get(day.date)?.events ?? day.events })));
+    setCalendarState(payload.calendarState);
+    if (handledFocusKey.current === focusKey || (initialFocus?.kind !== "calendar_reminder" && initialFocus?.kind !== "calendar_event")) return;
+    const event = payload.days.flatMap((day) => day.events).find((candidate) => initialFocus.kind === "calendar_reminder"
+      ? candidate.reminder?.id === initialFocus.id
+      : candidate.calendarPreferenceId === initialFocus.calendarPreferenceId && candidate.providerEventId === initialFocus.providerEventId);
+    if (event) { handledFocusKey.current = focusKey; setSelectedEvent(event); }
+  }, [focusKey, initialFocus]);
+  const receiveWeather = useCallback((result: ActionResult<PlannerSourcePayload>) => {
+    if (!result.ok || !result.data) { setWeatherState({ status: "error", message: result.error }); return; }
+    const payload = result.data;
+    const sources = new Map(payload.days.map((day) => [day.date, day]));
+    setDays((current) => current.map((day) => {
+      const source = sources.get(day.date);
+      return source ? { ...day, location: source.location, weather: source.weather, memberLocations: source.memberLocations } : day;
+    }));
+    setWeatherState(payload.weatherState);
+  }, []);
+  const refreshPlannerSources = usePlannerSource("calendar", initialData.weekStart, calendarKey, !initialData.isDemo, receiveCalendar);
+  const refreshWeather = usePlannerSource("weather", initialData.weekStart, weatherKey, !initialData.isDemo, receiveWeather);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -218,7 +216,11 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         router.refresh();
       }
     };
-    const refresh = () => {
+    const refresh = (event: MessageEvent) => {
+      try {
+        const { table } = JSON.parse(event.data);
+        if (["google_calendar_events", "calendar_preferences", "google_connections", "reminders", "child_calendar_links", "calendar_event_member_overrides", "event_member_overrides", "adult_calendar_links", "hidden_calendar_events", "notification_reminders"].includes(table)) setCalendarRevision((value) => value + 1);
+      } catch { setCalendarRevision((value) => value + 1); }
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(refreshCurrentPlanner, 250);
     };
@@ -227,10 +229,10 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     events.onopen = () => setNotice((current) => current?.startsWith("Live updates") ? null : current);
     events.onerror = () => setNotice("Live updates are reconnecting. Your changes can still be saved.");
     const fallback = window.setInterval(() => {
-      if (document.visibilityState === "visible") refreshCurrentPlanner();
+      if (document.visibilityState === "visible") { refreshCurrentPlanner(); void refreshPlannerSources(); void refreshWeather(); }
     }, 30_000);
     const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") refreshCurrentPlanner();
+      if (document.visibilityState === "visible") { refreshCurrentPlanner(); void refreshPlannerSources(); void refreshWeather(); }
     };
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
@@ -239,7 +241,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       events.close();
     };
-  }, [initialData.household.id, initialData.household.timezone, initialData.isDemo, initialData.weekStart, router]);
+  }, [initialData.household.id, initialData.household.timezone, initialData.isDemo, initialData.weekStart, router, refreshPlannerSources, refreshWeather]);
 
   useEffect(() => {
     if (initialData.weekStart === currentWeekStart(initialData.household.timezone)) {
@@ -389,21 +391,6 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     return null;
   }, [initialData.isDemo]);
 
-  const refreshPlannerSources = useCallback(async () => {
-    if (initialData.isDemo) return;
-    const result = await loadPlannerSourcesAction(initialData.weekStart);
-    if (!result.ok || !result.data) {
-      setNotice(result.error ?? "Google Calendar could not be refreshed.");
-      return;
-    }
-    const sources = new Map(result.data.days.map((day) => [day.date, day]));
-    setDays((current) => current.map((day) => {
-      const source = sources.get(day.date);
-      return source ? { ...day, events: source.events, location: source.location, weather: source.weather, memberLocations: source.memberLocations } : day;
-    }));
-    setCalendarState(result.data.calendarState);
-  }, [initialData.isDemo, initialData.weekStart]);
-
   const saveCalendarEvent = useCallback(async (draft: CalendarEventDraft): Promise<string | null> => {
     if (initialData.isDemo) {
       try {
@@ -515,9 +502,9 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       return { ...day, memberLocations, location: shared ? memberLocations[0].location : null, weather: shared ? memberLocations[0].weather : null };
     }));
     setLocationDate(null);
-    if (!initialData.isDemo) router.refresh();
+    if (!initialData.isDemo) { void refreshWeather(); router.refresh(); }
     return null;
-  }, [initialData.isDemo, initialData.weekStart, locationDate, router]);
+  }, [initialData.isDemo, initialData.weekStart, locationDate, router, refreshWeather]);
 
   const mutateFamily = useCallback(async (mutation: FamilyPlanningMutation): Promise<string | null> => {
     try {
@@ -631,9 +618,9 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
           onClear={() => { setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); setChildFilter(""); }}
         />
 
-        {calendarState.status === "error" && <div className="source-alert" role="status"><CalendarRange size={14} />{calendarState.message}</div>}
+        {calendarState.status === "error" && <div className="source-alert" role="status"><CalendarRange size={14} />{calendarState.message}<button className="text-button" type="button" onClick={() => void refreshPlannerSources()}>Retry Calendar</button><Link href="/settings#calendars">Reconnect</Link></div>}
         {calendarState.status === "not-connected" && <div className="source-alert"><CalendarRange size={14} />{calendarState.message}<Link href="/settings">Connect</Link></div>}
-        {weatherState.status === "error" && <div className="source-alert" role="status"><CloudOff size={14} />{weatherState.message}</div>}
+        {weatherState.status === "error" && <div className="source-alert" role="status"><CloudOff size={14} />{weatherState.message}<button className="text-button" type="button" onClick={() => void refreshWeather()}>Retry weather</button></div>}
 
         <div className="calendar-view-toolbar">
           <div className="calendar-view-picker" role="group" aria-label="View">
@@ -710,15 +697,21 @@ function mergeUnsavedItems(serverItems: PlanningItem[], currentItems: PlanningIt
   return [...serverItems.filter((item) => !unsavedIds.has(item.id)), ...unsaved];
 }
 
-function mergeUnsavedDays(serverDays: DayPlan[], currentDays: DayPlan[], preserveSources = false): DayPlan[] {
+function mergeUnsavedDays(serverDays: DayPlan[], currentDays: DayPlan[], preserveSources = false, visibleCalendarIds: string[] = []): DayPlan[] {
   const currentByDate = new Map(currentDays.map((day) => [day.date, day]));
-  return serverDays.map((day) => ({
-    ...day,
-    events: preserveSources ? currentByDate.get(day.date)?.events ?? day.events : day.events,
-    weather: preserveSources ? currentByDate.get(day.date)?.weather ?? day.weather : day.weather,
-    memberLocations: preserveSources ? currentByDate.get(day.date)?.memberLocations ?? day.memberLocations : day.memberLocations,
-    items: mergeUnsavedItems(day.items, currentByDate.get(day.date)?.items ?? []),
-  }));
+  return serverDays.map((day) => {
+    const previous = currentByDate.get(day.date);
+    return {
+      ...day,
+      events: preserveSources ? (previous?.events ?? day.events).filter((event) => visibleCalendarIds.includes(event.calendarPreferenceId ?? event.calendarId)) : day.events,
+      weather: preserveSources && previous?.location?.id === day.location?.id ? previous?.weather ?? day.weather : day.weather,
+      memberLocations: day.memberLocations.map((member) => {
+        const prior = previous?.memberLocations.find((candidate) => candidate.memberId === member.memberId);
+        return preserveSources && prior?.location?.id === member.location?.id ? { ...member, weather: prior?.weather ?? member.weather } : member;
+      }),
+      items: mergeUnsavedItems(day.items, previous?.items ?? []),
+    };
+  });
 }
 
 function initials(name: string): string {

@@ -98,6 +98,19 @@ try {
   const outsider = await makeUser(householdIds[1], "owner", "Outside");
   assert.equal((await api(null, `/api/ios/family-planning?week=${week}`)).status, 401);
 
+  for (const source of ["calendar", "weather"]) {
+    const path = `/api/planner/sources?source=${source}&week=${week}`;
+    assert.equal((await api(null, path)).status, 401, "source reads require authentication");
+    const isolated = await api(outsider.token, `${path}&householdId=${householdIds[0]}&userId=${owner.userId}`);
+    assert.equal(isolated.ok, true, isolated.error);
+    assert.ok(isolated.data.days.every(day => day.memberLocations.every(member => member.userId === outsider.userId)), "source payloads derive household from the authenticated session");
+  }
+  const core = await api(owner.token, `/api/ios/planner?week=${week}&core=1`);
+  assert.equal(core.ok, true, core.error);
+  assert.equal(core.data.planner.calendarState.status, "loading", "core planner does not await calendar");
+  assert.equal(core.data.planner.weatherState.status, "loading", "core planner does not await weather");
+  console.log("Independent source integration passed: bearer authentication, household isolation, and core-first native loading.");
+
   const child = { id: randomUUID(), name: "Miriam", color: "#678D76", calendarPreferenceIds: [] };
   await change(owner.token, { action: "saveChild", child });
   await change(owner.token, { action: "saveChild", child });

@@ -11,7 +11,7 @@ struct WeatherDetailView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if let weather {
+                if let weather, weather.status == "available" {
                     VStack(spacing: 18) {
                         CardSurface {
                             VStack(spacing: 18) {
@@ -37,18 +37,29 @@ struct WeatherDetailView: View {
                                         ForEach(weather.hourly) { hour in
                                             VStack(spacing: 8) {
                                                 Text(WeekDate.hourlyWeatherTime(hour.time)).font(.caption2).foregroundStyle(.secondary)
-                                                Image(systemName: weatherIcon(hour.conditionCode)).symbolRenderingMode(.multicolor)
-                                                Text("\(temperature(hour.temperatureF))°").font(.headline)
-                                                Text("\(hour.precipitationProbability)%").font(.caption2).foregroundStyle(.blue)
-                                            }.frame(width: 68).padding(.vertical, 12).background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                                                Image(systemName: hour.conditionCode.map(weatherIcon) ?? "cloud.slash").symbolRenderingMode(.multicolor)
+                                                Text(hour.temperatureF.map { "\(temperature($0))°\(unit == .fahrenheit ? "F" : "C")" } ?? "—").font(.headline)
+                                                    .accessibilityLabel("Temperature " + (hour.temperatureF.map { "\(temperature($0)) degrees \(unit == .fahrenheit ? "Fahrenheit" : "Celsius")" } ?? "unavailable"))
+                                                Text(hour.precipitationProbability.map { "\($0)%" } ?? "—").font(.caption2).foregroundStyle(.blue)
+                                                    .accessibilityLabel("Chance of rain " + (hour.precipitationProbability.map { "\($0) percent" } ?? "unavailable"))
+                                                Text(hour.precipitationAmount.map { String(format: "%.2f in", $0) } ?? "—").font(.caption2)
+                                                    .accessibilityLabel("Expected precipitation " + (hour.precipitationAmount.map { String(format: "%.2f inches", $0) } ?? "unavailable"))
+                                                Text(hour.windSpeedMph.map { "\(Int($0.rounded())) mph" } ?? "—").font(.caption2)
+                                                    .accessibilityLabel("Wind " + (hour.windSpeedMph.map { "\(Int($0.rounded())) miles per hour" } ?? "unavailable"))
+                                            }.frame(width: 78).padding(.vertical, 12).background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
                                         }
                                     }
                                 }
                             }
                         }
+                        HStack {
+                            Label("Sunrise " + (weather.sunrise.isEmpty ? "—" : WeekDate.hourlyWeatherTime(weather.sunrise, includeMinutes: true)), systemImage: "sunrise")
+                            Spacer()
+                            Label("Sunset " + (weather.sunset.isEmpty ? "—" : WeekDate.hourlyWeatherTime(weather.sunset, includeMinutes: true)), systemImage: "sunset")
+                        }.font(.caption).foregroundStyle(.secondary)
                     }.padding(16)
                 } else {
-                    ContentUnavailableView("Forecast unavailable", systemImage: "cloud.slash")
+                    ContentUnavailableView("Forecast unavailable", systemImage: "cloud.slash", description: Text(weather?.errorMessage ?? "Weather is available only within the forecast window."))
                 }
             }
             .background(AppBackground())
@@ -627,6 +638,7 @@ struct SettingsView: View {
 private struct CalendarPreferenceEditor: View {
     @State private var calendar: CalendarPreference
     @State private var isSaving = false
+    @State private var saveFailed = false
     let disabled: Bool
     let onSave: (CalendarPreference) async -> Bool
 
@@ -667,10 +679,10 @@ private struct CalendarPreferenceEditor: View {
             Picker("Planner section", selection: $calendar.sectionGroup) {
                 ForEach(CalendarSectionGroup.allCases) { section in Text(section.title).tag(section) }
             }
-            Button(isSaving ? "Saving…" : "Save calendar") {
+            Button(isSaving ? "Saving…" : saveFailed ? "Retry calendar save" : "Save calendar") {
                 Task {
                     isSaving = true
-                    _ = await onSave(calendar)
+                    saveFailed = !(await onSave(calendar))
                     isSaving = false
                 }
             }.disabled(disabled || isSaving)

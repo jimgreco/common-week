@@ -40,10 +40,23 @@ struct WeeklyPlannerData: Codable {
     var locations: [HouseholdLocation]
     let visibleCalendars: [EditableCalendar]?
     let editableCalendars: [EditableCalendar]
-    let calendarState: PlannerSourceState
-    let weatherState: PlannerSourceState
+    var calendarState: PlannerSourceState
+    var weatherState: PlannerSourceState
     let isDemo: Bool
     var childProfiles: [ChildProfile]? = nil
+}
+
+struct PlannerSourcePayload: Decodable {
+    struct SourceDay: Decodable {
+        let date: String
+        let events: [CalendarEvent]
+        let location: HouseholdLocation?
+        let weather: DailyWeather?
+        let memberLocations: [DayMemberLocation]
+    }
+    let days: [SourceDay]
+    let calendarState: PlannerSourceState
+    let weatherState: PlannerSourceState
 }
 
 struct HouseholdSummary: Codable, Equatable {
@@ -252,11 +265,11 @@ struct DailyWeather: Codable, Hashable {
 struct HourlyWeather: Codable, Hashable, Identifiable {
     var id: String { time }
     let time: String
-    let temperatureF: Double
-    let precipitationProbability: Int
-    let precipitationAmount: Double
-    let windSpeedMph: Double
-    let conditionCode: Int
+    let temperatureF: Double?
+    let precipitationProbability: Int?
+    let precipitationAmount: Double?
+    let windSpeedMph: Double?
+    let conditionCode: Int?
 }
 
 struct CalendarEvent: Codable, Identifiable, Hashable {
@@ -823,10 +836,11 @@ enum WeekDate {
         return date.formatted(date: .omitted, time: .shortened)
     }
 
-    static func hourlyWeatherTime(_ value: String) -> String {
+    static func hourlyWeatherTime(_ value: String, includeMinutes: Bool = false) -> String {
         let time = value.split(separator: "T", maxSplits: 1).last ?? Substring(value)
         guard let hour = Int(time.prefix(2)), (0...23).contains(hour) else { return value }
         let displayHour = hour % 12 == 0 ? 12 : hour % 12
-        return "\(displayHour) \(hour < 12 ? "AM" : "PM")"
+        let minutes = includeMinutes ? ":" + String(time.dropFirst(3).prefix(2)) : ""
+        return "\(displayHour)\(minutes) \(hour < 12 ? "AM" : "PM")"
     }
 }

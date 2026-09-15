@@ -110,7 +110,7 @@ function mapPlanningItem(row: PlanningRow): PlanningItem {
 export async function getPlannerData(
   context: PlannerContext,
   weekStart: string,
-  options: { includeExternal?: boolean } = {},
+  options: { includeExternal?: boolean | "calendar" | "weather" } = {},
 ): Promise<WeeklyPlannerData> {
   const dates = weekDates(weekStart);
   const householdResult = await query<HouseholdRow>(
@@ -123,12 +123,14 @@ export async function getPlannerData(
   const household = householdResult.rows[0];
   if (!household) throw new Error("The household planner could not be loaded.");
 
-  await materializeTaskRoutines(context, weekStart, household.timezone);
-  await carryOverOpenTasks({
-    householdId: context.householdId,
-    timeZone: household.timezone,
-    requestedWeekStart: weekStart,
-  });
+  if (typeof options.includeExternal !== "string") {
+    await materializeTaskRoutines(context, weekStart, household.timezone);
+    await carryOverOpenTasks({
+      householdId: context.householdId,
+      timeZone: household.timezone,
+      requestedWeekStart: weekStart,
+    });
+  }
 
   const [locationsResult, settingsResult, planningResult, membersResult, hiddenEventsResult, accessibleCalendarsResult] =
     await Promise.all([
@@ -229,14 +231,14 @@ export async function getPlannerData(
   const [calendarBundle, weatherBundle] = options.includeExternal === false
     ? [{ events: [], state: loadingState }, { forecasts: new Map(), state: loadingState }]
     : await Promise.all([
-      getHouseholdCalendarEvents(
+      options.includeExternal === "weather" ? { events: [], state: loadingState } : getHouseholdCalendarEvents(
         context.householdId,
         members.map((member) => ({ userId: member.userId })),
         context.userId,
         weekStart,
         household.timezone,
       ),
-      getWeatherForAssignments(assignments),
+      options.includeExternal === "calendar" ? { forecasts: new Map(), state: loadingState } : getWeatherForAssignments(assignments),
     ]);
 
   const adultLinks = await query<{ calendar_preference_id: string; user_ids: string[] }>(

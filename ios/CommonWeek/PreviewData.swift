@@ -1,6 +1,16 @@
 import Foundation
 
 enum PreviewData {
+    private static func hourlyForecast(date: String, dayIndex: Int, rainChance: Int) -> [HourlyWeather] {
+        var result: [HourlyWeather] = []
+        for hour in 7...21 {
+            let temperature: Double = 68.0 + Double(hour % 10)
+            let amount: Double = hour == 14 ? (dayIndex == 3 ? 0.08 : dayIndex == 5 ? 0.18 : 0) : 0
+            result.append(HourlyWeather(time: "\(date)T\(String(format: "%02d", hour)):00", temperatureF: temperature, precipitationProbability: rainChance, precipitationAmount: amount, windSpeedMph: Double(7 + hour % 4), conditionCode: rainChance >= 50 ? 61 : 0))
+        }
+        return result
+    }
+
     static let user = SessionIdentity(userId: "demo-jim", email: "jim@example.com", displayName: "Jim", avatarUrl: nil, householdId: "demo-household", role: "owner")
 
     static var planner: WeeklyPlannerData { planner(weekStart: WeekDate.string(WeekDate.monday())) }
@@ -28,7 +38,6 @@ enum PreviewData {
         let days = (0..<7).map { index -> DayPlan in
             let date = WeekDate.addDays(index, to: weekStart)
             let location = index == 3 ? city : east
-            let start = WeekDate.calendarDate(date, hour: 0, timeZoneIdentifier: east.timezone)
             let eventStart = WeekDate.calendarDate(date, hour: index == 5 ? 19 : 9, minute: index == 6 ? 30 : 15, timeZoneIdentifier: east.timezone)
             let eventEnd = Calendar.current.date(byAdding: .hour, value: index == 5 ? 2 : 1, to: eventStart) ?? eventStart
             let event = CalendarEvent(id: "event-\(index)", providerEventId: "provider-\(index)", sourceUserId: "demo-jim", calendarPreferenceId: "calendar-family", etag: "etag", recurringEventId: nil, originalStartTime: nil, canEdit: true, title: dayNames[index], description: index == 0 ? "Camp drop-off and morning activities." : nil, location: location.name, googleUrl: nil, start: WeekDate.iso8601.string(from: eventStart), end: WeekDate.iso8601.string(from: eventEnd), allDay: false, calendarId: "family", calendarName: "Family", calendarAlias: "Family", calendarColor: "#688173", attribution: "FA", sectionGroup: "critical", isConflict: false, attendees: nil, canRespond: false, reminder: nil)
@@ -36,7 +45,8 @@ enum PreviewData {
             var items = [PlanningItem(id: "plan-\(index)", planningDate: date, weekStartDate: weekStart, type: .note, text: plans[index], isCompleted: false, sortOrder: 0, createdBy: "demo-jim", createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved", reminder: nil)]
             if !tasks[index].isEmpty { items.append(PlanningItem(id: "task-\(index)", planningDate: date, weekStartDate: weekStart, type: .task, text: tasks[index], isCompleted: false, sortOrder: 1, createdBy: "demo-jim", createdByName: "Jim", updatedAt: WeekDate.iso8601.string(from: Date()), saveState: "saved", reminder: nil)) }
             let rainChance = index == 3 ? 54 : index == 5 ? 72 : 8 + index * 3
-            let weather = DailyWeather(date: date, locationId: location.id, conditionCode: index == 2 || index == 3 || index == 5 ? 61 : 0, highF: Double(82 - index), lowF: Double(66 + index % 3), precipitationProbability: rainChance, precipitationAmount: index == 3 ? 0.08 : index == 5 ? 0.18 : 0, windSpeedMph: 8, sunrise: WeekDate.iso8601.string(from: start), sunset: WeekDate.iso8601.string(from: start), hourly: [], status: "available", errorMessage: nil)
+            let hourly = hourlyForecast(date: date, dayIndex: index, rainChance: rainChance)
+            let weather = DailyWeather(date: date, locationId: location.id, conditionCode: index == 2 || index == 3 || index == 5 ? 61 : 0, highF: Double(82 - index), lowF: Double(66 + index % 3), precipitationProbability: rainChance, precipitationAmount: index == 3 ? 0.08 : index == 5 ? 0.18 : 0, windSpeedMph: 8, sunrise: "\(date)T06:30", sunset: "\(date)T19:15", hourly: hourly, status: "available", errorMessage: nil)
             return DayPlan(
                 date: date,
                 location: location,

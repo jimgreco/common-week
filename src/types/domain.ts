@@ -106,11 +106,11 @@ export interface HouseholdLocation {
 
 export interface HourlyWeather {
   time: string;
-  temperatureF: number;
-  precipitationProbability: number;
-  precipitationAmount: number;
-  windSpeedMph: number;
-  conditionCode: number;
+  temperatureF: number | null;
+  precipitationProbability: number | null;
+  precipitationAmount: number | null;
+  windSpeedMph: number | null;
+  conditionCode: number | null;
 }
 
 export interface DailyWeather {
