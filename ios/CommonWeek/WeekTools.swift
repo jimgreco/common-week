@@ -42,8 +42,6 @@ struct EventCoverage: Codable, Identifiable {
         return issues.isEmpty ? "Coverage confirmed" : issues.joined(separator: " · ")
     }
 }
-struct CoveragePayload: Decodable { let ok: Bool; let data: [EventCoverage] }
-
 struct CoverageView: View {
     let planner: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
@@ -51,30 +49,38 @@ struct CoverageView: View {
     @State private var rows: [EventCoverage] = []
     @State private var error: String?
     @State private var loaded = false
+    @State private var loading = false
     var events: [CalendarEvent] { Array(Dictionary(planner.days.flatMap(\.events).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }).values).sorted { $0.start < $1.start } }
     func children(_ event: CalendarEvent) -> [ChildProfile] { (planner.childProfiles ?? []).filter { child in event.assignedMemberIds.map { $0.contains(child.id) } ?? child.calendarPreferenceIds.contains(event.calendarPreferenceId ?? "") } }
     var body: some View {
         NavigationStack {
             List {
                 Section { Text("Assign each handoff, then ask the assigned adult to confirm their own coverage.") }
-                if let error { Text(error).foregroundStyle(.red) }
-                if !loaded { ProgressView("Loading coverage…") }
-                if loaded && events.allSatisfy({ children($0).isEmpty }) { Text("No child events this week. Assign children to calendars or events to plan their transport.") }
-                ForEach(events) { event in
-                    if let calendar = event.calendarPreferenceId, let provider = event.providerEventId, !children(event).isEmpty {
-                        Section(event.title) {
-                            Text(event.allDay ? "All day · Confirm handoff times in notes" : "Drop-off at start · Pickup at end").font(.caption)
-                            Text(PlannerMoment.label(event, timezone: planner.household.timezone)).font(.caption).foregroundStyle(.secondary)
-                            ForEach(children(event)) { child in
-                                let entry = rows.first { $0.calendarId == calendar && $0.eventId == provider && $0.childId == child.id } ?? EventCoverage(calendarId: calendar, eventId: provider, childId: child.id)
-                                CoverageEditor(entry: entry, name: child.name, members: planner.members, userId: viewModel.workspaceUserId, canEdit: viewModel.canEditHousehold, save: save).id("\(entry.id):\(entry.revision)")
+                if let error {
+                    Section {
+                        Text("Coverage could not be loaded. \(error)").foregroundStyle(.red)
+                        Button("Retry loading coverage") { Task { await reload() } }
+                    }
+                }
+                if loading { ProgressView("Loading coverage…") }
+                if loaded {
+                    if events.allSatisfy({ children($0).isEmpty }) { Text("No child events this week. Assign children to calendars or events to plan their transport.") }
+                    ForEach(events) { event in
+                        if let calendar = event.calendarPreferenceId, let provider = event.providerEventId, !children(event).isEmpty {
+                            Section(event.title) {
+                                Text(event.allDay ? "All day · Confirm handoff times in notes" : "Drop-off at start · Pickup at end").font(.caption)
+                                Text(PlannerMoment.label(event, timezone: planner.household.timezone)).font(.caption).foregroundStyle(.secondary)
+                                ForEach(children(event)) { child in
+                                    let entry = rows.first { $0.calendarId == calendar && $0.eventId == provider && $0.childId == child.id } ?? EventCoverage(calendarId: calendar, eventId: provider, childId: child.id)
+                                    CoverageEditor(entry: entry, name: child.name, members: planner.members, userId: viewModel.workspaceUserId, canEdit: viewModel.canEditHousehold, save: save).id("\(entry.id):\(entry.revision)")
+                                }
                             }
                         }
                     }
-                }
-                Section("Travel checks") {
-                    ForEach(CoverageTravel.warnings(events: events, rows: rows), id: \.self) { Text($0).foregroundStyle(.orange) }
-                    Text("Warnings use scheduled times and your travel buffer, not live traffic. All-day events are excluded.").font(.caption)
+                    Section("Travel checks") {
+                        ForEach(CoverageTravel.warnings(events: events, rows: rows), id: \.self) { Text($0).foregroundStyle(.orange) }
+                        Text("Warnings use scheduled times and your travel buffer, not live traffic. All-day events are excluded.").font(.caption)
+                    }
                 }
             }
             .navigationTitle("Pickup & drop-off")
@@ -83,9 +89,12 @@ struct CoverageView: View {
         }
     }
     func reload() async {
+        guard !loading else { return }
+        loading = true; loaded = false; error = nil
+        defer { loading = false }
         do {
             if planner.isDemo { rows = (UserDefaults.standard.data(forKey: "demo-coverage-native").flatMap { try? JSONDecoder().decode([EventCoverage].self, from: $0) }) ?? [] }
-            else { rows = try await APIClient.shared.coverage().data }
+            else { rows = try await APIClient.shared.coverage() }
             loaded = true; error = nil
         } catch { self.error = error.localizedDescription }
     }
@@ -96,7 +105,7 @@ struct CoverageView: View {
             if entry.confirmation == "pickup" { updated.pickupConfirmed = entry.confirmed ?? true }
             rows.removeAll { $0.id == entry.id }; rows.append(updated)
             UserDefaults.standard.set(try JSONEncoder().encode(rows), forKey: "demo-coverage-native")
-        } else { rows = try await APIClient.shared.saveCoverage(entry).data }
+        } else { rows = try await APIClient.shared.saveCoverage(entry) }
     }
 }
 private struct CoverageEditor: View {

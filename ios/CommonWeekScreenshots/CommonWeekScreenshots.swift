@@ -144,6 +144,9 @@ final class CommonWeekScreenshots: XCTestCase {
         #endif
         app.buttons["Pickup & drop-off"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Miriam"].firstMatch.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Save coverage"].firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["Loading coverage…"].exists)
+        XCTAssertFalse(app.buttons["Retry loading coverage"].exists)
         attachCurrentScreen(named: "Pickup and drop-off coverage")
         app.buttons["Done"].firstMatch.tap()
         #if !targetEnvironment(macCatalyst)
