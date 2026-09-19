@@ -415,71 +415,89 @@ struct ItemCollaborationView: View {
     @ObservedObject var viewModel: PlannerViewModel
     var includePlacement = true
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var files = ItemFilePresentation()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                ItemCollaborationFields(resource: resource, planner: planner, viewModel: viewModel, includePlacement: includePlacement, showsSaveNotice: false, files: files)
+            }
+            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.fixedSize() } }
+        }
+        .itemFilePresentation(files)
+    }
+}
+
+struct ItemCollaborationFields: View {
+    let resource: [String: String]
+    let planner: WeeklyPlannerData
+    @ObservedObject var viewModel: PlannerViewModel
+    var includePlacement = true
+    var showsSaveNotice = true
+    @ObservedObject var files: ItemFilePresentation
     @State private var payload: TaskWorkspacePayload?
     @State private var error: String?
     @State private var busy = false
     @State private var step = ""
     @State private var comment = ""
-    @State private var importing = false
-    @State private var downloaded: URL?
     @State private var nameDraft: String?
     @FocusState private var editingField: String?
     private var task: WorkspaceTask? { payload?.task }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                if let error { Section { Text(error).foregroundStyle(.red) } }
-                if payload == nil && error == nil { ProgressView("Loading shared details…") }
-                if let task, task.type == "task" { taskFields(task) }
-                Section("Checklist") {
-                    ForEach(payload?.entries.filter { $0.kind == "checklist" } ?? []) { entry in
-                        Toggle(entry.text, isOn: Binding(get: { entry.completed }, set: { value in Task { await save("check", fields: ["id": .string(entry.id), "completed": .bool(value)]) } }))
-                            .disabled(busy || !viewModel.canEditHousehold)
-                            .swipeActions { if viewModel.canEditHousehold { Button("Delete", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } } } }
-                    }
-                    if viewModel.canEditHousehold {
-                        TextField("Add a step", text: $step).focused($editingField, equals: "step")
-                        Button("Add step") { Task { if await addEntry("checklist", text: step) { step = ""; editingField = nil } } }.disabled(busy || step.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                Section("Discussion") {
-                    ForEach(payload?.entries.filter { $0.kind == "comment" } ?? []) { entry in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(entry.author).font(.caption.bold())
-                            Text(entry.text)
-                            Text(entry.createdAt.prefix(16).replacingOccurrences(of: "T", with: " ")).font(.caption2).foregroundStyle(.secondary)
-                            if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Remove comment", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } }.disabled(busy) }
-                        }
-                    }
-                    if viewModel.canEditHousehold {
-                        TextField("Leave a note for the household", text: $comment, axis: .vertical).lineLimit(3...6).focused($editingField, equals: "comment")
-                        Button("Post comment") { Task { if await addEntry("comment", text: comment) { comment = ""; editingField = nil } } }.disabled(busy || comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                Section {
-                    ForEach(payload?.entries.filter { $0.kind == "file" } ?? []) { entry in
-                        Button(entry.text) { Task { await download(entry) } }
-                            .swipeActions { if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Delete", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } } } }
-                    }
-                    if viewModel.canEditHousehold { Button("Attach a file") { importing = true }.disabled(busy) }
-                    if let downloaded { ShareLink("Open or share downloaded file", item: downloaded) }
-                } header: { Text("Files") } footer: { Text("Shared with people who can view this item. Up to 5 MB per file.") }
+        sections
+            .task(id: resource.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: "|")) { await reload() }
+    }
+
+    @ViewBuilder private var sections: some View {
+        if let message = error ?? files.error { Section { Text(message).foregroundStyle(.red) } }
+        if payload == nil && error == nil { ProgressView("Loading shared details…") }
+        if showsSaveNotice { Section { Text("Changes to shared details save immediately.").font(.footnote).foregroundStyle(.secondary) } }
+        if let task, task.type == "task" { taskFields(task) }
+        Section("Checklist") {
+            ForEach(payload?.entries.filter { $0.kind == "checklist" } ?? []) { entry in
+                Toggle(entry.text, isOn: Binding(get: { entry.completed }, set: { value in Task { await save("check", fields: ["id": .string(entry.id), "completed": .bool(value)]) } }))
+                    .disabled(busy || !viewModel.canEditHousehold)
+                    .swipeActions { if viewModel.canEditHousehold { Button("Delete", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } } } }
             }
-            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() }.fixedSize() } }
-            .task { await reload() }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
-                Task {
-                    do {
-                        let url = try result.get(); let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-                        let bytes = try Data(contentsOf: url, options: .mappedIfSafe)
-                        guard !bytes.isEmpty && bytes.count <= 5_242_880 else { throw APIError.server("Choose a file between 1 byte and 5 MB.") }
-                        await save("add", fields: ["id": .string(UUID().uuidString), "kind": .string("file"), "text": .string(url.lastPathComponent), "fileData": .string(bytes.base64EncodedString())])
-                    } catch { self.error = error.localizedDescription }
-                }
+            if viewModel.canEditHousehold {
+                TextField("Add a step", text: $step).focused($editingField, equals: "step")
+                Button("Add step") { Task { if await addEntry("checklist", text: step) { step = ""; editingField = nil } } }.disabled(busy || step.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+        Section("Discussion") {
+            ForEach(payload?.entries.filter { $0.kind == "comment" } ?? []) { entry in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(entry.author).font(.caption.bold())
+                    Text(entry.text)
+                    Text(entry.createdAt.prefix(16).replacingOccurrences(of: "T", with: " ")).font(.caption2).foregroundStyle(.secondary)
+                    if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Remove comment", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } }.disabled(busy) }
+                }
+            }
+            if viewModel.canEditHousehold {
+                TextField("Leave a note for the household", text: $comment, axis: .vertical).lineLimit(3...6).focused($editingField, equals: "comment")
+                Button("Post comment") { Task { if await addEntry("comment", text: comment) { comment = ""; editingField = nil } } }.disabled(busy || comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        Section {
+            ForEach(payload?.entries.filter { $0.kind == "file" } ?? []) { entry in
+                Button {
+                    files.open(entry, planner: planner)
+                } label: {
+                    HStack {
+                        Label(entry.text, systemImage: "doc")
+                        Spacer()
+                        if files.openingFile == entry.id { ProgressView() }
+                        else { Image(systemName: "chevron.right").foregroundStyle(.secondary) }
+                    }
+                }
+                    .accessibilityLabel("Open \(entry.text)")
+                    .disabled(files.openingFile != nil)
+                    .swipeActions { if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Delete", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } } } }
+            }
+            if viewModel.canEditHousehold { Button("Attach a file") { files.beginImport(completion: importFile) }.disabled(busy) }
+        } header: { Text("Files") } footer: { Text("Tap a file to preview it or open it in another app. Shared with people who can view this item. Up to 5 MB per file.") }
     }
     @ViewBuilder private func taskFields(_ task: WorkspaceTask) -> some View {
         Section("Responsibility & timing") {
@@ -516,7 +534,16 @@ struct ItemCollaborationView: View {
         catch { self.error = error.localizedDescription; return false }
     }
     private func addEntry(_ kind: String, text: String) async -> Bool { await save("add", fields: ["id": .string(UUID().uuidString), "kind": .string(kind), "text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines))]) }
-    private func download(_ entry: WorkspaceEntry) async {
-        do { downloaded = try await WorkspaceAccess.file(entry, planner: planner) } catch { self.error = error.localizedDescription }
+    private func importFile(_ result: Result<URL, Error>) {
+        Task {
+            do {
+                let url = try result.get()
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                let bytes = try Data(contentsOf: url, options: .mappedIfSafe)
+                guard !bytes.isEmpty && bytes.count <= 5_242_880 else { throw APIError.server("Choose a file between 1 byte and 5 MB.") }
+                await save("add", fields: ["id": .string(UUID().uuidString), "kind": .string("file"), "text": .string(url.lastPathComponent), "fileData": .string(bytes.base64EncodedString())])
+            } catch { self.error = error.localizedDescription }
+        }
     }
 }

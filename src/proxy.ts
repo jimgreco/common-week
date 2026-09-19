@@ -17,6 +17,8 @@ function contentSecurityPolicy(nonce: string): string {
     "connect-src 'self'",
     "font-src 'self'",
     "object-src 'none'",
+    "frame-src 'self' blob:",
+    "media-src 'self' blob:",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",

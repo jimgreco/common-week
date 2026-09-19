@@ -40,7 +40,7 @@ struct ItemEditorView: View {
     @State private var isSaving = false
     @State private var showingTaskMigration = false
     @State private var showingRoutine = false
-    @State private var showingCollaboration = false
+    @StateObject private var itemFiles = ItemFilePresentation()
 
     init(
         item: PlanningItem?,
@@ -79,6 +79,7 @@ struct ItemEditorView: View {
 
     var body: some View {
         editorBody
+            .itemFilePresentation(itemFiles)
             .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
             .onChange(of: type) { _, nextType in
                 if nextType != .task { destination = .weekOfUs }
@@ -100,7 +101,6 @@ struct ItemEditorView: View {
                     )
                 }
             }
-            .sheet(isPresented: $showingCollaboration) { if let item { ItemCollaborationView(resource: ["itemId": item.id], title: item.text, planner: data, viewModel: viewModel, includePlacement: false).familyPlanningSheetSize() } }
             .sheet(isPresented: $showingRoutine) {
                 if let item = currentItem {
                     PlanningItemRoutineView(item: item, planner: data, viewModel: viewModel)
@@ -229,8 +229,8 @@ struct ItemEditorView: View {
             }
         }
         if let item {
+            ItemCollaborationFields(resource: ["itemId": item.id], planner: data, viewModel: viewModel, includePlacement: false, files: itemFiles)
             Section {
-                Button("Responsibility, deadline & shared details") { showingCollaboration = true }
                 if item.type == .task {
                     Button(currentItem?.routineId == nil ? "Repeat this task…" : "Edit repeating routine…") { showingRoutine = true }
                         .disabled(text != item.text || type != item.type || assignedMemberIds != (item.assignedMemberIds ?? item.childId.map { [$0] } ?? []))

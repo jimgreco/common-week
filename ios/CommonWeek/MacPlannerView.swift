@@ -2344,7 +2344,7 @@ private struct MacReminderEditorState: Equatable {
 }
 
 private struct MacPlanningItemInspector: View {
-    @State private var showingCollaboration = false
+    @StateObject private var itemFiles = ItemFilePresentation()
     let item: PlanningItem
     let data: WeeklyPlannerData
     @ObservedObject var viewModel: PlannerViewModel
@@ -2452,6 +2452,11 @@ private struct MacPlanningItemInspector: View {
                         }
                     }
                 }
+
+                VStack(alignment: .leading, spacing: 14) {
+                    ItemCollaborationFields(resource: ["itemId": item.id], planner: data, viewModel: viewModel, includePlacement: false, files: itemFiles)
+                }
+                .id(item.id)
             }
         } footer: {
             HStack(spacing: 10) {
@@ -2483,8 +2488,7 @@ private struct MacPlanningItemInspector: View {
             }
         }
         .environment(\.timeZone, TimeZone(identifier: data.household.timezone) ?? .current)
-        .toolbar { ToolbarItem { Button("Responsibility & details") { showingCollaboration = true } } }
-        .sheet(isPresented: $showingCollaboration) { ItemCollaborationView(resource: ["itemId": item.id], title: item.text, planner: data, viewModel: viewModel, includePlacement: false).familyPlanningSheetSize() }
+        .itemFilePresentation(itemFiles)
         .navigationTitle(item.type.title)
         .onAppear { dirtyChanged(isDirty) }
         .onChange(of: editorState) { _, _ in dirtyChanged(isDirty) }

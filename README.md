@@ -16,6 +16,8 @@ Open **Tasks & backlog** to capture unscheduled tasks, claim a responsibility, a
 
 Every task, plan, and visible Google event can have a checklist, discussion, and files (up to 5 MB each). Google-event details belong to a single occurrence in Week of Us and do not change Google attendees or require Google write access. Calendar privacy and household viewer permissions still apply. Files are stored in PostgreSQL and downloaded through authenticated access checks. Apply migration `018_task_workspace.sql` before running this version. These new shared-detail operations require a connection; demo changes are saved locally.
 
+Responsibility, deadlines, checklists, discussion, and files appear directly in the task and note editor. Shared-detail changes save immediately; text and schedule edits use the editor’s Save action. Select an attachment to preview it in place. The web previews PDFs, common images, text, and supported audio/video, with sharing where the browser supports it and a download option for any file. On iPhone and Mac, supported documents open in Quick Look; **Open in…** offers compatible installed apps, and **Share** can save or share a copy.
+
 ## What is implemented
 
 - Independent Google sign-in for each member, read-only Calendar by default, and a separate opt-in for event editing

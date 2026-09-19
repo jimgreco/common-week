@@ -19,6 +19,8 @@ import {
   type CollaborationEntry,
 } from "@/lib/task-workspace";
 import { weekStartForDate } from "@/lib/date";
+import { attachmentFormat } from "@/lib/attachment-preview";
+import { AttachmentPreview } from "@/components/planner/attachment-preview";
 
 type Person = { id: string; name: string };
 type WorkspaceContextValue = {
@@ -29,7 +31,7 @@ type WorkspaceContextValue = {
   today: string;
   load: (resource?: ItemResource) => Promise<TaskWorkspaceData>;
   mutate: (mutation: WorkspaceMutation) => Promise<void>;
-  download: (entry: CollaborationEntry) => Promise<void>;
+  openFile: (entry: CollaborationEntry) => Promise<File>;
 };
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 export function TaskWorkspaceProvider({
@@ -165,26 +167,23 @@ export function TaskWorkspaceProvider({
     },
     [isDemo, demoRead, week, userId, people],
   );
-  const download = async (entry: CollaborationEntry) => {
+  const openFile = async (entry: CollaborationEntry) => {
     let blob: Blob;
     if (isDemo) {
-      const raw = atob(demoRead().files[entry.id] ?? "");
+      const encoded = demoRead().files[entry.id];
+      if (!encoded) throw new Error("File could not be opened. Try again.");
+      const raw = atob(encoded);
       blob = new Blob([Uint8Array.from(raw, (c) => c.charCodeAt(0))]);
     } else {
       const response = await fetch(`/api/task-workspace?file=${entry.id}`);
-      if (!response.ok) throw new Error("File could not be downloaded.");
+      if (!response.ok) throw new Error("File could not be opened. Try again.");
       blob = await response.blob();
     }
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = entry.text;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return new File([blob], entry.text, { type: attachmentFormat(entry.text).mimeType });
   };
   return (
     <WorkspaceContext.Provider
-      value={{ people, userId, canEdit, week, today, load, mutate, download }}
+      value={{ people, userId, canEdit, week, today, load, mutate, openFile }}
     >
       {children}
     </WorkspaceContext.Provider>
@@ -369,7 +368,12 @@ export function ItemCollaboration({
   const [busy, setBusy] = useState(false);
   const [check, setCheck] = useState("");
   const [comment, setComment] = useState("");
+  const [opening, setOpening] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ entryId: string; resourceKey: string; file: File; url: string } | null>(null);
+  const openRequest = useRef(0);
   const key = JSON.stringify(resource);
+  useEffect(() => () => { openRequest.current += 1; }, [key]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
   const loader = context?.load;
   const refresh = useCallback(async () => {
     if (loader)
@@ -688,25 +692,41 @@ export function ItemCollaboration({
           <div className="workspace-entry" key={e.id}>
             <button
               type="button"
-              onClick={() =>
-                void context.download(e).catch((e) => setError(e.message))
-              }
+              aria-label={`Open ${e.text}`}
+              disabled={opening !== null}
+              onClick={async () => {
+                const request = ++openRequest.current;
+                setOpening(e.id);
+                setError("");
+                setPreview(null);
+                try {
+                  const file = await context.openFile(e);
+                  if (openRequest.current === request) setPreview({ entryId: e.id, resourceKey: key, file, url: URL.createObjectURL(file) });
+                } catch (error) {
+                  if (openRequest.current === request) setError((error as Error).message);
+                } finally {
+                  setOpening(null);
+                }
+              }}
             >
-              {e.text}
+              {opening === e.id ? "Opening…" : e.text}
             </button>
             {context.canEdit && e.createdBy === context.userId && (
               <button
                 type="button"
                 disabled={busy}
-                onClick={() =>
-                  void save({ action: "remove", resource, id: e.id })
-                }
+                onClick={async () => {
+                  if (await save({ action: "remove", resource, id: e.id })) {
+                    if (preview?.entryId === e.id) setPreview(null);
+                  }
+                }}
               >
                 Remove
               </button>
             )}
           </div>
         ))}
+      {preview?.resourceKey === key && <AttachmentPreview key={preview.url} file={preview.file} url={preview.url} onClose={() => setPreview(null)} />}
       {context.canEdit && (
         <label>
           Attach a file

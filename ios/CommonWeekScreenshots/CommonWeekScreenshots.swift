@@ -193,6 +193,33 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if !targetEnvironment(macCatalyst)
+    func testSharedDetailsStayInTaskAndNoteEditors() throws {
+        launchDemo()
+        app.buttons["Weekly and daily tasks"].tap()
+        let task = app.buttons["Groceries"]
+        XCTAssertTrue(scrollToExistence(task)); task.tap()
+        XCTAssertFalse(app.buttons["Responsibility, deadline & shared details"].exists)
+        XCTAssertTrue(app.navigationBars["Edit item"].waitForExistence(timeout: 5))
+        let step = app.textFields["Add a step"]
+        XCTAssertTrue(scrollToExistence(step)); step.tap(); step.typeText("Check the attachment")
+        app.buttons["Add step"].tap()
+        XCTAssertTrue(app.switches["Check the attachment"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Edit item"].exists)
+        let attach = app.buttons["Attach a file"]
+        XCTAssertTrue(scrollToExistence(attach))
+        attachCurrentScreen(named: "Task files directly in Edit item")
+        app.buttons["Save"].tap()
+
+        app.buttons["Weekly and daily plans"].tap()
+        let note = app.buttons["Dinner: Pasta"]
+        XCTAssertTrue(scrollToExistence(note)); note.tap()
+        XCTAssertFalse(app.buttons["Responsibility, deadline & shared details"].exists)
+        XCTAssertTrue(scrollToExistence(attach))
+        XCTAssertTrue(app.navigationBars["Edit item"].exists)
+        attachCurrentScreen(named: "Note files directly in Edit item")
+        app.buttons["Cancel"].tap()
+    }
+
     func testTaskWorkspaceCaptureAndDetails() throws {
         launchDemo()
         app.buttons["Tasks and backlog"].tap()

@@ -47,7 +47,7 @@ For push delivery, enable Push Notifications for `com.jimgreco.commonweek` and u
 
 Family profile, routine, template, and review changes require a connection and retain entered values when a request fails. Shared task edits still use the existing offline queue, including child tags; older queued edits preserve child associations they did not change. The interactive native preview keeps family-planning changes in memory across sheets and week navigation for the current launch.
 
-The **Tasks & backlog** screen is available on iPhone and in the Mac sidebar. Tasks, plans, and event inspectors also open their shared details directly. Responsibilities, deadlines, backlog scheduling, checklists, comments, and file attachments require an online connection; they are not added to the offline replay queue. Failed requests keep the visible input for retry. Downloaded files can be opened or shared through the system sheet.
+The **Tasks & backlog** screen is available on iPhone and in the Mac sidebar. Task and note editors show responsibility, deadlines, checklists, discussion, and files on the same page, beneath household members. Shared-detail changes save immediately; text and schedule edits use Save. Event inspectors also open their shared details directly. Responsibilities, deadlines, backlog scheduling, checklists, comments, and file attachments require an online connection; they are not added to the offline replay queue. Failed requests keep the visible input for retry. Tap an attachment to preview supported files in the app. **Open in…** offers compatible installed apps, and **Share** lets you share or save a copy. Files without a preview still offer both actions.
 
 ## Offline and live synchronization
 
