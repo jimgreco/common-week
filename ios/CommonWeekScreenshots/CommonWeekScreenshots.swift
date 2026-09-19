@@ -64,6 +64,35 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if !targetEnvironment(macCatalyst)
+    func testPlannerMoreMenuOpensNotificationsAndSettings() throws {
+        launchDemo()
+        let more = app.buttons["planner-more-menu"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(more.isHittable)
+        XCTAssertTrue(app.buttons["Tasks and backlog"].isHittable)
+        XCTAssertTrue(app.buttons["family-planning-open"].isHittable)
+        XCTAssertTrue(app.buttons["Search"].isHittable)
+        attachCurrentScreen(named: "Compact planner toolbar")
+
+        more.tap()
+        XCTAssertTrue(app.buttons["Pickup & drop-off"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Share week"].exists)
+        XCTAssertTrue(app.buttons["Settings"].exists)
+        attachCurrentScreen(named: "Planner More menu")
+        let notifications = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Notifications'")).firstMatch
+        XCTAssertTrue(notifications.waitForExistence(timeout: 5))
+        notifications.tap()
+        XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+
+        more.tap()
+        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(more.waitForExistence(timeout: 5))
+        XCTAssertTrue(more.isHittable)
+    }
+
     func testCalendarClickAndDrag() throws {
         launchDemo()
         let picker = app.segmentedControls["calendar-view-picker"]
@@ -140,7 +169,7 @@ final class CommonWeekScreenshots: XCTestCase {
     func testCoverageAndShareWeek() throws {
         launchDemo()
         #if !targetEnvironment(macCatalyst)
-        app.buttons["Week tools"].tap()
+        app.buttons["planner-more-menu"].tap()
         #endif
         app.buttons["Pickup & drop-off"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Miriam"].firstMatch.waitForExistence(timeout: 8))
@@ -150,7 +179,7 @@ final class CommonWeekScreenshots: XCTestCase {
         attachCurrentScreen(named: "Pickup and drop-off coverage")
         app.buttons["Done"].firstMatch.tap()
         #if !targetEnvironment(macCatalyst)
-        app.buttons["Week tools"].tap()
+        app.buttons["planner-more-menu"].tap()
         #endif
         app.buttons["Share week"].firstMatch.tap()
         let create = app.buttons["Create PDF"]
@@ -387,6 +416,9 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["Confirm weekend plans"].waitForExistence(timeout: 5))
         snapshot("02-Weekly-Tasks")
 
+        #if !targetEnvironment(macCatalyst)
+        app.buttons["planner-more-menu"].tap()
+        #endif
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()

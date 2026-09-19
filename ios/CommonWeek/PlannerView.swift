@@ -116,20 +116,31 @@ struct PlannerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { BrandMark(compact: true) }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Menu {
-                        Button { sheet = .coverage } label: { Label("Pickup & drop-off", systemImage: "car.side") }
-                        Button { sheet = .shareWeek } label: { Label("Share week", systemImage: "square.and.arrow.up") }
-                    } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Week tools")
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { sheet = .taskWorkspace() } label: { Image(systemName: "checklist") }.accessibilityLabel("Tasks and backlog")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { sheet = .familyPlanning } label: { Image(systemName: "person.2.badge.gearshape") }
                         .accessibilityLabel("Plan your week")
                         .accessibilityIdentifier("family-planning-open")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { sheet = .search } label: { Image(systemName: "magnifyingglass") }
                         .accessibilityLabel("Search")
-                    Button { sheet = .notifications } label: {
+                }
+                // Keep secondary actions in an explicit menu instead of overflowing the toolbar.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button { sheet = .coverage } label: { Label("Pickup & drop-off", systemImage: "car.side") }
+                        Button { sheet = .shareWeek } label: { Label("Share week", systemImage: "square.and.arrow.up") }
+                        Divider()
+                        Button { sheet = .notifications } label: {
+                            Label(notifications.inbox.unreadCount > 0 ? "Notifications, \(notifications.inbox.unreadCount) unread" : "Notifications", systemImage: notifications.inbox.unreadCount > 0 ? "bell.fill" : "bell")
+                        }
+                        Button { sheet = .settings } label: { Label("Settings", systemImage: "gearshape") }
+                    } label: {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: notifications.inbox.unreadCount > 0 ? "bell.fill" : "bell")
+                            Image(systemName: "ellipsis")
                             if notifications.inbox.unreadCount > 0 {
                                 Text("\(min(notifications.inbox.unreadCount, 99))")
                                     .font(.system(size: 8, weight: .bold))
@@ -141,11 +152,9 @@ struct PlannerView: View {
                             }
                         }
                     }
-                    .accessibilityLabel(notifications.inbox.unreadCount > 0 ? "Notifications, \(notifications.inbox.unreadCount) unread" : "Notifications")
-                    Button { sheet = .settings } label: {
-                        ProfileAvatar(user: user)
-                    }
-                    .accessibilityLabel("Settings")
+                    .accessibilityLabel("More")
+                    .accessibilityValue(notifications.inbox.unreadCount > 0 ? "\(notifications.inbox.unreadCount) unread notifications" : "")
+                    .accessibilityIdentifier("planner-more-menu")
                 }
             }
             .sheet(item: $sheet) { destination in
