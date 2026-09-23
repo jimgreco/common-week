@@ -12,6 +12,8 @@ struct DayCardView: View {
     private var isToday: Bool { WeekDate.isToday(day.date, timeZoneIdentifier: data.household.timezone) }
     private var plans: [PlanningItem] { day.items.filter { $0.type == .note && CalendarEventFilter.matches($0, personId: personFilterId) } }
     private var tasks: [PlanningItem] { day.items.filter { $0.type == .task && CalendarEventFilter.matches($0, personId: personFilterId) } }
+    private var weeklyPlans: [PlanningItem] { data.weeklyItems.filter { $0.type == .note && CalendarEventFilter.matches($0, personId: personFilterId) } }
+    private var weeklyTasks: [PlanningItem] { data.weeklyItems.filter { $0.type == .task && CalendarEventFilter.matches($0, personId: personFilterId) } }
     private var reminderTasks: [AppleReminderTask] { appleReminders.tasks(for: day.date) }
     private var visibleEvents: [CalendarEvent] {
         day.events.filter {
@@ -31,6 +33,7 @@ struct DayCardView: View {
                     ForEach(plans) { item in
                         PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: day.date, type: .note) }
                     }
+                    weeklyItems(weeklyPlans)
                     addButton("Add a plan", icon: "plus") { sheet = .item(nil, date: day.date, type: .note) }
                 }
                 .background(Color(.secondarySystemGroupedBackground).opacity(0.35))
@@ -42,6 +45,7 @@ struct DayCardView: View {
                     ForEach(reminderTasks) { task in
                         AppleReminderRow(task: task, store: appleReminders) { sheet = .appleReminder(task) }
                     }
+                    weeklyItems(weeklyTasks)
                     addButton("Add a task", icon: "plus") { sheet = .item(nil, date: day.date, type: .task) }
                 }
             }
@@ -172,6 +176,21 @@ struct DayCardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
+    }
+
+    @ViewBuilder
+    private func weeklyItems(_ items: [PlanningItem]) -> some View {
+        if !items.isEmpty {
+            Text("This week")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(CWTheme.secondaryInk)
+                .padding(.top, 4)
+            ForEach(items) { item in
+                PlanningItemRow(item: item, viewModel: viewModel) {
+                    sheet = .item(item, date: nil, type: item.type)
+                }
+            }
+        }
     }
 
     private func addButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

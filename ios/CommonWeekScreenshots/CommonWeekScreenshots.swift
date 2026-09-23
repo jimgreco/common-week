@@ -64,6 +64,31 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if !targetEnvironment(macCatalyst)
+    func testCalendarListShowsDailyAndWeeklyPlansAndTasks() throws {
+        launchDemo()
+        let picker = app.segmentedControls["calendar-view-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        XCTAssertTrue(picker.buttons["List"].isSelected)
+        let monday = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Monday' ")).firstMatch
+        XCTAssertTrue(monday.waitForExistence(timeout: 5))
+        monday.tap()
+
+        XCTAssertTrue(app.buttons["Dinner: Pasta"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Groceries"].waitForExistence(timeout: 5))
+        let weeklyPlan = app.buttons["Keep Saturday afternoon open"]
+        let weeklyTask = app.buttons["Order groceries"]
+        XCTAssertTrue(weeklyPlan.waitForExistence(timeout: 5))
+        XCTAssertTrue(weeklyTask.waitForExistence(timeout: 5))
+        for _ in 0..<5 where !weeklyPlan.isHittable { app.swipeUp() }
+        XCTAssertTrue(weeklyPlan.isHittable)
+        attachCurrentScreen(named: "Daily and weekly plans in calendar list")
+
+        weeklyPlan.tap()
+        let placement = app.segmentedControls["planning-placement"]
+        XCTAssertTrue(placement.waitForExistence(timeout: 5))
+        XCTAssertTrue(placement.buttons["This week"].isSelected)
+    }
+
     func testPlannerMoreMenuOpensNotificationsAndSettings() throws {
         launchDemo()
         let more = app.buttons["planner-more-menu"]
