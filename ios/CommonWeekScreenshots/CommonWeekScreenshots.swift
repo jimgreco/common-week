@@ -31,7 +31,7 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
         let range = app.segmentedControls["calendar-range-picker"]
         XCTAssertTrue(range.exists)
-        XCTAssertLessThan(range.frame.minY, picker.frame.minY)
+        XCTAssertLessThan(picker.frame.minY, range.frame.minY)
         range.buttons["Week"].tap()
         XCTAssertTrue(picker.buttons["List"].isSelected)
         #if targetEnvironment(macCatalyst)
@@ -98,7 +98,7 @@ final class CommonWeekScreenshots: XCTestCase {
         let picker = app.segmentedControls["calendar-view-picker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
         let range = app.segmentedControls["calendar-range-picker"]
-        XCTAssertLessThan(range.frame.minY, picker.frame.minY)
+        XCTAssertLessThan(picker.frame.minY, range.frame.minY)
         range.buttons["Week"].tap()
         XCTAssertTrue(picker.buttons["List"].isSelected)
         XCTAssertEqual(app.buttons.matching(identifier: "Keep Saturday afternoon open").count, 1)

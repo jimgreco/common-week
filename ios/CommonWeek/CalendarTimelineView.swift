@@ -66,16 +66,16 @@ struct CalendarPresentationPicker: View {
     @Binding var selection: CalendarPresentation
     var body: some View {
         VStack(spacing: 8) {
-            Picker("Calendar range", selection: $range) {
-                ForEach(CalendarRange.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("calendar-range-picker")
             Picker("View", selection: $selection) {
                 ForEach(CalendarPresentation.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("calendar-view-picker")
+            Picker("Calendar range", selection: $range) {
+                ForEach(CalendarRange.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("calendar-range-picker")
         }
     }
 }

@@ -637,12 +637,12 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         {weatherState.status === "error" && <div className="source-alert" role="status"><CloudOff size={14} />{weatherState.message}<button className="text-button" type="button" onClick={() => void refreshWeather()}>Retry weather</button></div>}
 
         <div className="calendar-view-toolbar">
-          <div className="calendar-view-picker" role="group" aria-label="Calendar range">
-            {(["day", "week"] as const).map((range) => <button key={range} aria-pressed={calendarRange === range} onClick={() => setCalendarRange(range)}>{range === "day" ? "Day" : "Week"}</button>)}
-          </div>
           <div className="calendar-view-picker" role="group" aria-label="View">
             <button aria-pressed={calendarView === "list"} onClick={() => setCalendarView("list")}>List</button>
             <button aria-pressed={calendarView === "calendar"} onClick={() => setCalendarView("calendar")}>Calendar</button>
+          </div>
+          <div className="calendar-view-picker" role="group" aria-label="Calendar range">
+            {(["day", "week"] as const).map((range) => <button key={range} aria-pressed={calendarRange === range} onClick={() => setCalendarRange(range)}>{range === "day" ? "Day" : "Week"}</button>)}
           </div>
           {calendarRange === "day" && <label className="timeline-date-picker">Day <select value={activeTimelineDate} onChange={(event) => setTimelineDate(event.target.value)}>{days.map((day) => <option key={day.date} value={day.date}>{formatMobileDate(day.date)}</option>)}</select></label>}
           {calendarRange === "week" && calendarView === "calendar" && <span className="timeline-week-hint">Select a day for a closer look</span>}

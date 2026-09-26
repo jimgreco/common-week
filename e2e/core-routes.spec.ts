@@ -35,6 +35,24 @@ test("Settings renders and hydrates its client controls", async ({ page }) => {
   await expect(page.locator("html")).toHaveClass(/dark/);
 });
 
+test("mobile planner places List/Calendar above Day/Week and keeps Week List available", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/planner");
+  const view = page.getByRole("group", { name: "View" });
+  const range = page.getByRole("group", { name: "Calendar range" });
+  const viewBox = await view.boundingBox();
+  const rangeBox = await range.boundingBox();
+  expect(viewBox).not.toBeNull();
+  expect(rangeBox).not.toBeNull();
+  expect(viewBox!.y).toBeLessThan(rangeBox!.y);
+
+  await range.getByRole("button", { name: "Week" }).click();
+  await view.getByRole("button", { name: "List" }).click();
+  await expect(page.getByRole("region", { name: "Weekly notes and tasks" })).toBeVisible();
+  await view.getByRole("button", { name: "Calendar" }).click();
+  await expect(range.getByRole("button", { name: "Week" })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("a planner reminder link opens its item", async ({ page }) => {
   await page.goto("/");
   const plannerHref = await page.getByRole("link", { name: /Open interactive planner/ }).getAttribute("href");
