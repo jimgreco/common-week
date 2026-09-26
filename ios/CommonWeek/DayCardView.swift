@@ -8,13 +8,18 @@ struct DayCardView: View {
     @Binding var sheet: PlannerSheet?
     let calendarFilterId: String
     let personFilterId: String
+    let currentUserId: String
+    var includesWeeklyItems = true
 
     private var isToday: Bool { WeekDate.isToday(day.date, timeZoneIdentifier: data.household.timezone) }
     private var plans: [PlanningItem] { day.items.filter { $0.type == .note && CalendarEventFilter.matches($0, personId: personFilterId) } }
     private var tasks: [PlanningItem] { day.items.filter { $0.type == .task && CalendarEventFilter.matches($0, personId: personFilterId) } }
     private var weeklyPlans: [PlanningItem] { data.weeklyItems.filter { $0.type == .note && CalendarEventFilter.matches($0, personId: personFilterId) } }
     private var weeklyTasks: [PlanningItem] { data.weeklyItems.filter { $0.type == .task && CalendarEventFilter.matches($0, personId: personFilterId) } }
-    private var reminderTasks: [AppleReminderTask] { appleReminders.tasks(for: day.date) }
+    private var reminderTasks: [AppleReminderTask] {
+        CalendarEventFilter.includesPersonalReminders(personId: personFilterId, currentUserId: currentUserId)
+            ? appleReminders.tasks(for: day.date) : []
+    }
     private var visibleEvents: [CalendarEvent] {
         day.events.filter {
             CalendarEventFilter.matches($0, calendarId: calendarFilterId, personId: personFilterId)
@@ -33,7 +38,7 @@ struct DayCardView: View {
                     ForEach(plans) { item in
                         PlanningItemRow(item: item, viewModel: viewModel) { sheet = .item(item, date: day.date, type: .note) }
                     }
-                    weeklyItems(weeklyPlans)
+                    if includesWeeklyItems { weeklyItems(weeklyPlans) }
                     addButton("Add a plan", icon: "plus") { sheet = .item(nil, date: day.date, type: .note) }
                 }
                 .background(Color(.secondarySystemGroupedBackground).opacity(0.35))
@@ -45,7 +50,7 @@ struct DayCardView: View {
                     ForEach(reminderTasks) { task in
                         AppleReminderRow(task: task, store: appleReminders) { sheet = .appleReminder(task) }
                     }
-                    weeklyItems(weeklyTasks)
+                    if includesWeeklyItems { weeklyItems(weeklyTasks) }
                     addButton("Add a task", icon: "plus") { sheet = .item(nil, date: day.date, type: .task) }
                 }
             }

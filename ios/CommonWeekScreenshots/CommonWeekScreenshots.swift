@@ -29,9 +29,17 @@ final class CommonWeekScreenshots: XCTestCase {
         launchDemo()
         let picker = app.segmentedControls["calendar-view-picker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
-        picker.buttons["Calendar"].tap()
         let range = app.segmentedControls["calendar-range-picker"]
+        XCTAssertTrue(range.exists)
+        XCTAssertLessThan(range.frame.minY, picker.frame.minY)
         range.buttons["Week"].tap()
+        XCTAssertTrue(picker.buttons["List"].isSelected)
+        #if targetEnvironment(macCatalyst)
+        XCTAssertTrue(app.descendants(matching: .any)["mac-event-event-0"].firstMatch.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Mac week list")
+        #endif
+        picker.buttons["Calendar"].tap()
+        XCTAssertTrue(range.buttons["Week"].isSelected)
         let firstEvent = app.buttons["timeline-event-event-0"]
         XCTAssertTrue(firstEvent.waitForExistence(timeout: 5))
         attachCurrentScreen(named: "Week calendar timeline")
@@ -64,6 +72,57 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if !targetEnvironment(macCatalyst)
+    func testTodayReturnsToTodayWithinTheCurrentWeek() throws {
+        launchDemo()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let now = Date()
+        let offset = (calendar.component(.weekday, from: now) + 5) % 7
+        let otherDay = calendar.date(byAdding: .day, value: offset == 0 ? 1 : -offset, to: now)!
+        let formatter = DateFormatter()
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = app.buttons["calendar-day-\(formatter.string(from: now))"]
+        let other = app.buttons["calendar-day-\(formatter.string(from: otherDay))"]
+        XCTAssertTrue(other.waitForExistence(timeout: 10))
+        other.tap()
+        XCTAssertTrue(other.isSelected)
+        app.buttons["Today"].tap()
+        XCTAssertTrue(today.waitForExistence(timeout: 5))
+        XCTAssertTrue(today.isSelected)
+        attachCurrentScreen(named: "Today restores the selected day")
+    }
+
+    func testCalendarWeekListShowsAllDaysAndWeeklyItemsOnce() throws {
+        launchDemo()
+        let picker = app.segmentedControls["calendar-view-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        let range = app.segmentedControls["calendar-range-picker"]
+        XCTAssertLessThan(range.frame.minY, picker.frame.minY)
+        range.buttons["Week"].tap()
+        XCTAssertTrue(picker.buttons["List"].isSelected)
+        XCTAssertEqual(app.buttons.matching(identifier: "Keep Saturday afternoon open").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "Order groceries").count, 1)
+        attachCurrentScreen(named: "Week list with whole-week plans and tasks")
+
+        app.buttons["Keep Saturday afternoon open"].tap()
+        let placement = app.segmentedControls["planning-placement"]
+        XCTAssertTrue(placement.waitForExistence(timeout: 5))
+        XCTAssertTrue(placement.buttons["This week"].isSelected)
+        app.buttons["Cancel"].firstMatch.tap()
+
+        picker.buttons["Calendar"].tap()
+        XCTAssertTrue(range.buttons["Week"].isSelected)
+        picker.buttons["List"].tap()
+        XCTAssertTrue(range.buttons["Week"].isSelected)
+        for name in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] {
+            let heading = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+            for _ in 0..<12 where !heading.isHittable { app.swipeUp() }
+            XCTAssertTrue(heading.isHittable, "Week List must include \(name)")
+        }
+        attachCurrentScreen(named: "Week list includes Sunday")
+    }
+
     func testCalendarListShowsDailyAndWeeklyPlansAndTasks() throws {
         launchDemo()
         let picker = app.segmentedControls["calendar-view-picker"]

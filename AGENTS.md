@@ -42,3 +42,14 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   for CI, live deployment, and applicable TestFlight verification.
 - Preserve the generated Next.js guidance above. Read the applicable installed
   Next.js documentation before code changes that use its APIs.
+
+## Calendar and Save Invariants
+
+- Keep Day/Week independent of List/Calendar. Week List shows every day and
+  whole-week plans/tasks once; weekly editors retain `planningDate: nil`.
+- Scope web weekly drafts by household and week. Create retries reuse the same
+  UUID, and refreshes reconcile draft IDs with their saved counterparts.
+- Handle rejected planning requests as recoverable save failures. Preserve text
+  for retry and roll back failed optimistic completion/deletion changes.
+- Native personal Apple Reminders appear under Everyone or the signed-in person.
+  Today resets both the visible week and selected household-local date.

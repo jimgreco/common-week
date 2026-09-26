@@ -76,7 +76,8 @@ struct PlannerView: View {
     let user: SessionIdentity
     @State private var sheet: PlannerSheet?
     @State private var selectedDayDate = ""
-    @State private var calendarPresentation: CalendarPresentation = .planner
+    @State private var calendarPresentation: CalendarPresentation = .list
+    @State private var calendarRange: CalendarRange = .day
     @State private var calendarPlanningExpansion = 0
     @State private var dayMoveDirection = 1
     @State private var selectedDestination: PlannerDestination = .calendar
@@ -106,8 +107,8 @@ struct PlannerView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let data = viewModel.data {
                     VStack(spacing: 0) {
-                        if selectedDestination == .calendar && calendarPresentation != .planner {
-                            calendarPlanningPane(data, days: calendarPresentation == .week ? data.days : [selectedDay(in: data)])
+                        if selectedDestination == .calendar && calendarPresentation == .calendar {
+                            calendarPlanningPane(data, days: calendarRange == .week ? data.days : [selectedDay(in: data)])
                         }
                         PlannerGlassTabBar(selection: $selectedDestination)
                     }
@@ -317,9 +318,13 @@ struct PlannerView: View {
         case .calendar:
             VStack(spacing: 12) {
                 calendarFilters(data)
-                CalendarPresentationPicker(selection: $calendarPresentation)
-                if calendarPresentation == .week {
-                    calendarTimeline(data, days: data.days)
+                CalendarPresentationPicker(range: $calendarRange, selection: $calendarPresentation)
+                if calendarRange == .week {
+                    if calendarPresentation == .calendar {
+                        calendarTimeline(data, days: data.days)
+                    } else {
+                        weekList(data)
+                    }
                 } else {
                     dayPager(data)
                 }
@@ -338,6 +343,43 @@ struct PlannerView: View {
             WeeklyItemsList(type: .note, data: data, viewModel: viewModel, appleReminders: appleReminders, sheet: $sheet)
         case .tasks:
             WeeklyItemsList(type: .task, data: data, viewModel: viewModel, appleReminders: appleReminders, sheet: $sheet)
+        }
+    }
+
+    private func weekList(_ data: WeeklyPlannerData) -> some View {
+        LazyVStack(spacing: 16) {
+            CardSurface {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("This week").font(CWTheme.display(26))
+                    Text("Plans and tasks for the whole week").font(.caption).foregroundStyle(CWTheme.secondaryInk)
+                    ForEach([PlanningItemType.note, .task], id: \.self) { type in
+                        Text(type == .note ? "Plans" : "Tasks").font(.subheadline.weight(.semibold))
+                        ForEach(data.weeklyItems.filter { $0.type == type && CalendarEventFilter.matches($0, personId: personFilterId) }) { item in
+                            PlanningItemRow(item: item, viewModel: viewModel) {
+                                sheet = .item(item, date: nil, type: item.type)
+                            }
+                        }
+                        if user.role != "viewer" {
+                            Button(type == .note ? "Add a weekly plan" : "Add a weekly task") {
+                                sheet = .item(nil, date: nil, type: type)
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(CWTheme.accent)
+                            .frame(minHeight: 44)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+            }
+            ForEach(data.days) { day in
+                DayCardView(
+                    day: day, data: data, viewModel: viewModel, appleReminders: appleReminders,
+                    sheet: $sheet, calendarFilterId: calendarFilterId, personFilterId: personFilterId, currentUserId: user.userId,
+                    includesWeeklyItems: false
+                )
+                .accessibilityIdentifier("calendar-list-day-\(day.date)")
+            }
         }
     }
 
@@ -360,6 +402,7 @@ struct PlannerView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(WeekDate.longDay(day.date))
+                    .accessibilityIdentifier("calendar-day-\(day.date)")
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
@@ -367,7 +410,7 @@ struct PlannerView: View {
 
             ZStack(alignment: .top) {
                 let day = selectedDay(in: data)
-                if calendarPresentation == .day {
+                if calendarPresentation == .calendar {
                     calendarTimeline(data, days: [day])
                 } else {
                     DayCardView(
@@ -377,7 +420,8 @@ struct PlannerView: View {
                         appleReminders: appleReminders,
                         sheet: $sheet,
                         calendarFilterId: calendarFilterId,
-                        personFilterId: personFilterId
+                        personFilterId: personFilterId,
+                        currentUserId: user.userId
                     )
                         .id(day.date)
                         .offset(x: dayDragOffset)
@@ -400,7 +444,7 @@ struct PlannerView: View {
             timezone: data.household.timezone,
             sourceState: data.calendarState,
             onEvent: { sheet = .event($0) },
-            onDay: { selectedDayDate = $0; calendarPresentation = .day },
+            onDay: { selectedDayDate = $0; calendarRange = .day },
             canCreate: !data.editableCalendars.isEmpty,
             onCreate: { slot in sheet = .newEvent(slot.date, slot: slot, calendarId: data.editableCalendars.first(where: { $0.id == calendarFilterId })?.id) },
             onMove: { await viewModel.saveEvent($0, editing: true) }
@@ -513,7 +557,10 @@ struct PlannerView: View {
                         .foregroundStyle(CWTheme.ink)
                 }
                 Spacer()
-                Button { Task { await viewModel.moveToCurrentWeek() } } label: {
+                Button {
+                    selectedDayDate = WeekDate.string(Date(), timeZoneIdentifier: data.household.timezone)
+                    Task { await viewModel.moveToCurrentWeek() }
+                } label: {
                     Text("Today").font(.caption.bold()).padding(.horizontal, 12).frame(height: 38).background(.regularMaterial, in: Capsule())
                 }
             }

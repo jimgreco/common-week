@@ -40,7 +40,7 @@ struct CalendarPlanningPane: View {
     }
 
     private func reminders(for date: String?) -> [AppleReminderTask] {
-        guard let date, personId == CalendarEventFilter.allPeople || personId == currentUserId else { return [] }
+        guard let date, CalendarEventFilter.includesPersonalReminders(personId: personId, currentUserId: currentUserId) else { return [] }
         return appleReminders.tasks(for: date).filter { searchText.isEmpty || $0.title.localizedCaseInsensitiveContains(searchText) }
     }
 

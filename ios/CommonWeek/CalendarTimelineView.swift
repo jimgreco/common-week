@@ -52,31 +52,31 @@ private struct CalendarTimelineDrop: DropDelegate {
 }
 
 enum CalendarPresentation: String, CaseIterable, Identifiable {
-    case planner = "List", day = "Day", week = "Week"
+    case list = "List", calendar = "Calendar"
+    var id: String { rawValue }
+}
+
+enum CalendarRange: String, CaseIterable, Identifiable {
+    case day = "Day", week = "Week"
     var id: String { rawValue }
 }
 
 struct CalendarPresentationPicker: View {
+    @Binding var range: CalendarRange
     @Binding var selection: CalendarPresentation
-    @State private var lastRange: CalendarPresentation = .day
     var body: some View {
         VStack(spacing: 8) {
-            Picker("View", selection: Binding(get: { selection != .planner }, set: { selection = $0 ? lastRange : .planner })) {
-                Text("List").tag(false)
-                Text("Calendar").tag(true)
+            Picker("Calendar range", selection: $range) {
+                ForEach(CalendarRange.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("calendar-range-picker")
+            Picker("View", selection: $selection) {
+                ForEach(CalendarPresentation.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("calendar-view-picker")
-            if selection != .planner {
-                Picker("Calendar range", selection: $selection) {
-                    Text("Day").tag(CalendarPresentation.day)
-                    Text("Week").tag(CalendarPresentation.week)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("calendar-range-picker")
-            }
         }
-        .onChange(of: selection) { _, value in if value != .planner { lastRange = value } }
     }
 }
 

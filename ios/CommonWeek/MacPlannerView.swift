@@ -176,7 +176,8 @@ struct MacPlannerView: View {
     @State private var sheet: MacPlannerSheet?
     @State private var deletionTarget: MacDeletionTarget?
     @State private var searchText = ""
-    @State private var calendarPresentation: CalendarPresentation = .planner
+    @State private var calendarPresentation: CalendarPresentation = .list
+    @State private var calendarRange: CalendarRange = .day
     @State private var hasCapturedAppStoreScreenshot = false
     @FocusState private var searchFocused: Bool
     @Environment(\.openWindow) private var openWindow
@@ -472,7 +473,7 @@ struct MacPlannerView: View {
                     dropOnDay: reschedule(_:to:)
                 )
                 if navigation.section == .week || navigation.section == .events {
-                    CalendarPresentationPicker(selection: $calendarPresentation)
+                    CalendarPresentationPicker(range: $calendarRange, selection: $calendarPresentation)
                         .padding(.horizontal, 16).padding(.top, 10)
                     CalendarFilterControls(
                         calendars: CalendarEventFilter.calendars(in: data),
@@ -506,9 +507,9 @@ struct MacPlannerView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(uiColor: .secondarySystemBackground))
                 }
-                if (navigation.section == .week || navigation.section == .events) && calendarPresentation != .planner {
+                if (navigation.section == .week || navigation.section == .events) && calendarPresentation == .calendar {
                     CalendarTimelineView(
-                        days: data.days.filter { calendarPresentation == .week || $0.date == navigation.selectedDay }.map { day in
+                        days: data.days.filter { calendarRange == .week || $0.date == navigation.selectedDay }.map { day in
                             var filtered = day
                             filtered.events = day.events.filter {
                                 CalendarEventFilter.matches($0, calendarId: calendarFilterId, personId: personFilterId)
@@ -519,13 +520,13 @@ struct MacPlannerView: View {
                         timezone: data.household.timezone,
                         sourceState: data.calendarState,
                         onEvent: { request(.selections([.event($0.id)])) },
-                        onDay: { request(.day($0)); calendarPresentation = .day },
+                        onDay: { request(.day($0)); calendarRange = .day },
                         canCreate: !data.editableCalendars.isEmpty,
                         onCreate: { slot in sheet = .event(date: slot.date, slot: slot, calendarId: data.editableCalendars.first(where: { $0.id == calendarFilterId })?.id) },
                         onMove: { await viewModel.saveEvent($0, editing: true) }
                     ) {
                         CalendarPlanningPane(
-                            days: data.days.filter { calendarPresentation == .week || $0.date == navigation.selectedDay },
+                            days: data.days.filter { calendarRange == .week || $0.date == navigation.selectedDay },
                             weeklyItems: data.weeklyItems, personId: personFilterId,
                             currentUserId: user.userId, canEdit: user.role != "viewer", searchText: searchText,
                             viewModel: viewModel, appleReminders: appleReminders,
@@ -540,6 +541,8 @@ struct MacPlannerView: View {
                         data: data,
                         section: navigation.section,
                         selectedDay: navigation.selectedDay,
+                        calendarRange: calendarRange,
+                        currentUserId: user.userId,
                         selections: Binding(
                             get: { navigation.selections },
                             set: { request(.selections($0)) }
@@ -862,6 +865,7 @@ struct MacPlannerView: View {
         case .weekOffset(let days):
             Task { await viewModel.moveWeek(by: days) }
         case .currentWeek:
+            navigation.selectedDay = WeekDate.string(Date(), timeZoneIdentifier: viewModel.data?.household.timezone ?? TimeZone.current.identifier)
             Task { await viewModel.moveToCurrentWeek() }
         }
     }
@@ -1263,6 +1267,8 @@ private struct MacPlannerListPane: View {
     let data: WeeklyPlannerData
     let section: MacPlannerSection
     let selectedDay: String
+    let calendarRange: CalendarRange
+    let currentUserId: String
     @Binding var selections: Set<MacPlannerSelection>
     let searchText: String
     let calendarFilterId: String
@@ -1283,18 +1289,24 @@ private struct MacPlannerListPane: View {
         }
     }
 
+    private var visibleDays: [DayPlan] {
+        data.days.filter { calendarRange == .week || $0.date == selectedDay }
+    }
+
     private var plannerList: some View {
         List(selection: $selections) {
             switch section {
             case .week:
-                if let day = data.days.first(where: { $0.date == selectedDay }) {
-                    eventSection(day.events, title: "Events")
-                    itemSection(day.items.filter { $0.type == .note }, title: "Plans")
-                    itemSection(day.items.filter { $0.type == .task }, title: "Week of Us Tasks")
-                    reminderSection(reminders.tasks(for: day.date), title: "Apple Reminders")
+                itemSection(data.weeklyItems.filter { $0.type == .note }, title: "This week · Plans")
+                itemSection(data.weeklyItems.filter { $0.type == .task }, title: "This week · Tasks")
+                ForEach(visibleDays) { day in
+                    eventSection(day.events, title: "\(WeekDate.longDay(day.date)) · Events", showsEmpty: calendarRange == .week)
+                    itemSection(day.items.filter { $0.type == .note }, title: "\(WeekDate.longDay(day.date)) · Plans")
+                    itemSection(day.items.filter { $0.type == .task }, title: "\(WeekDate.longDay(day.date)) · Tasks")
+                    reminderSection(reminders.tasks(for: day.date), title: "\(WeekDate.longDay(day.date)) · Apple Reminders")
                 }
             case .events:
-                ForEach(data.days) { day in
+                ForEach(visibleDays) { day in
                     eventSection(day.events, title: WeekDate.longDay(day.date))
                 }
             case .plans:
@@ -1375,10 +1387,11 @@ private struct MacPlannerListPane: View {
     }
 
     @ViewBuilder
-    private func eventSection(_ events: [CalendarEvent], title: String) -> some View {
+    private func eventSection(_ events: [CalendarEvent], title: String, showsEmpty: Bool = false) -> some View {
         let matches = events.filter(matches)
-        if !matches.isEmpty {
+        if showsEmpty || !matches.isEmpty {
             Section(title) {
+                if matches.isEmpty { Text("No events in this view").foregroundStyle(.secondary) }
                 ForEach(matches) { event in
                     HStack(spacing: 10) {
                         RoundedRectangle(cornerRadius: 3)
@@ -1461,11 +1474,10 @@ private struct MacPlannerListPane: View {
     private var isPlannerSectionEmpty: Bool {
         switch section {
         case .week:
-            guard let day = data.days.first(where: { $0.date == selectedDay }) else { return true }
-            return day.events.filter(matches).isEmpty
-                && day.items.filter(matches).isEmpty
-                && reminders.tasks(for: day.date).filter(matches).isEmpty
-        case .events: return data.days.flatMap(\.events).filter(matches).isEmpty
+            return calendarRange == .day && visibleDays.flatMap(\.events).filter(matches).isEmpty
+                && (data.weeklyItems + visibleDays.flatMap(\.items)).filter(matches).isEmpty
+                && visibleDays.flatMap { reminders.tasks(for: $0.date) }.filter(matches).isEmpty
+        case .events: return visibleDays.flatMap(\.events).filter(matches).isEmpty
         case .plans: return (data.weeklyItems + data.days.flatMap(\.items)).filter { $0.type == .note && matches($0) }.isEmpty
         case .weekOfUsTasks: return (data.weeklyItems + data.days.flatMap(\.items)).filter { $0.type == .task && matches($0) }.isEmpty
         default: return false
@@ -1484,10 +1496,11 @@ private struct MacPlannerListPane: View {
     }
 
     private func matches(_ task: AppleReminderTask) -> Bool {
-        searchText.isEmpty
+        (section != .week || CalendarEventFilter.includesPersonalReminders(personId: personFilterId, currentUserId: currentUserId))
+            && (searchText.isEmpty
             || task.title.localizedCaseInsensitiveContains(searchText)
             || (task.notes?.localizedCaseInsensitiveContains(searchText) ?? false)
-            || task.listTitle.localizedCaseInsensitiveContains(searchText)
+            || task.listTitle.localizedCaseInsensitiveContains(searchText))
     }
 
     private func move(_ task: AppleReminderTask, to listId: String) {

@@ -5,6 +5,14 @@ final class CalendarTimelineTests: XCTestCase {
     private let date = "2026-09-14"
     private let timezone = "America/New_York"
 
+    func testPersonalRemindersRespectTheSelectedPerson() {
+        XCTAssertTrue(CalendarEventFilter.includesPersonalReminders(personId: CalendarEventFilter.allPeople, currentUserId: "jim"))
+        XCTAssertTrue(CalendarEventFilter.includesPersonalReminders(personId: "jim", currentUserId: "jim"))
+        XCTAssertFalse(CalendarEventFilter.includesPersonalReminders(personId: "rachel", currentUserId: "jim"))
+        XCTAssertFalse(CalendarEventFilter.includesPersonalReminders(personId: "child", currentUserId: "jim"))
+        XCTAssertFalse(CalendarEventFilter.includesPersonalReminders(personId: CalendarEventFilter.unassigned, currentUserId: "jim"))
+    }
+
     func testCalendarSlotsSnapAndNormalizeMidnight() {
         XCTAssertEqual(CalendarTimeSlot.snapped(date: date, minute: 607), CalendarTimeSlot(date: date, minute: 600))
         XCTAssertEqual(CalendarTimeSlot.snapped(date: date, minute: -15), CalendarTimeSlot(date: "2026-09-13", minute: 1425))

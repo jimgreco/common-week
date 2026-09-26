@@ -5,7 +5,7 @@ import { CoveragePanel } from "./coverage-panel";
 import { WeekShare } from "./week-share";
 import { TaskWorkspaceProvider, TaskWorkspaceDialog } from "@/components/planner/task-workspace";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type SetStateAction } from "react";
 import { ArrowLeft, ArrowRight, CalendarRange, CloudOff, Menu, Search, Settings, Users, WifiOff, X, Sparkles, Repeat2 } from "lucide-react";
 import { signOut } from "@/app/actions/auth";
 import { createCalendarEventAction, deleteCalendarEventAction, respondToCalendarEventAction, updateCalendarEventAction } from "@/app/actions/calendar";
@@ -68,7 +68,18 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         ? `event:${initialFocus.calendarPreferenceId}:${initialFocus.providerEventId}`
         : null;
   const [days, setDays] = useState(initialData.days);
-  const [weeklyItems, setWeeklyItems] = useState(initialData.weeklyItems);
+  const weeklyScope = `${initialData.household.id}:${initialData.weekStart}`;
+  const [weeklyItemsByScope, setWeeklyItemsByScope] = useState<Record<string, PlanningItem[]>>({
+    [weeklyScope]: initialData.weeklyItems,
+  });
+  const weeklyItems = weeklyItemsByScope[weeklyScope] ?? initialData.weeklyItems;
+  const setWeeklyItems = useCallback((update: SetStateAction<PlanningItem[]>) => {
+    const week = initialData.weekStart;
+    setWeeklyItemsByScope((current) => {
+      const items = typeof update === "function" ? update(current[weeklyScope] ?? []) : update;
+      return { ...current, [weeklyScope]: items.filter((item) => item.weekStartDate === week && item.planningDate === null && !item.isBacklog) };
+    });
+  }, [initialData.weekStart, weeklyScope]);
   const familyUserId = initialFamily?.currentUserId ?? currentUserId ?? initialData.members.find((member) => member.displayName === currentUserName)?.userId ?? initialData.members[0]?.userId ?? "demo-user";
   const [coverageOpen,setCoverageOpen]=useState(false);
   const [shareOpen,setShareOpen]=useState(false);
@@ -89,8 +100,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [calendarEditor, setCalendarEditor] = useState<{ date: string; event?: CalendarEvent; draft?: CalendarEventDraft } | null>(null);
   const [calendarFilter, setCalendarFilter] = useState(ALL_CALENDARS);
   const [personFilter, setPersonFilter] = useState(ALL_PEOPLE);
-  const [calendarView, setCalendarView] = useState<"planner" | "day" | "week">("planner");
-  const [lastTimelineView, setLastTimelineView] = useState<"day" | "week">("week");
+  const [calendarView, setCalendarView] = useState<"list" | "calendar">("list");
+  const [calendarRange, setCalendarRange] = useState<"day" | "week">("week");
   const [timelineDate, setTimelineDate] = useState(() => todayInTimeZone(initialData.household.timezone));
   const activeTimelineDate = days.some((day) => day.date === timelineDate) ? timelineDate : days[0]?.date;
   const [searchOpen, setSearchOpen] = useState(false);
@@ -141,7 +152,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [initialData, initialFamily, familyUserId]);
+  }, [initialData, initialFamily, familyUserId, setWeeklyItems]);
 
   useEffect(() => {
     if (!initialReview) return;
@@ -263,7 +274,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     events: day.events.map((event) => familyEvent(initialData.isDemo ? demoEventMembers(event) : event, family)).filter((event) => calendarEventMatchesFilters(event, activeCalendarFilter, activePersonFilter) && (!childFilter || event.assignedMemberIds?.includes(childFilter))),
     items: day.items.filter((item) => planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))),
   })), [activeCalendarFilter, activePersonFilter, childFilter, family, days, initialData.isDemo]);
-  const timelineDays = calendarView === "day" ? filteredDays.filter((day) => day.date === activeTimelineDate) : filteredDays;
+  const visibleDays = calendarRange === "day" ? filteredDays.filter((day) => day.date === activeTimelineDate) : filteredDays;
   const filteredWeeklyItems = weeklyItems.filter((item) => planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter)));
   const thisWeek = currentWeekStart(initialData.household.timezone);
   const previousWeek = addDateDays(initialData.weekStart, -7);
@@ -278,10 +289,11 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       const without = current.filter((candidate) => candidate.id !== (replacingId ?? item.id) && candidate.id !== item.id);
       return item.planningDate === null ? [...without, item] : without;
     });
-  }, []);
+  }, [setWeeklyItems]);
 
   const addItem = useCallback(async (date: string | null, text: string, type: PlanningItemType) => {
-    const temporaryId = `draft-${crypto.randomUUID()}`;
+    const id = crypto.randomUUID();
+    const temporaryId = `draft-${id}`;
     const optimistic: PlanningItem = {
       id: temporaryId,
       planningDate: date,
@@ -298,7 +310,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     };
     placeItem(optimistic);
     if (initialData.isDemo) return;
-    const result = await createPlanningItemAction({ text, type, planningDate: date, weekStartDate: initialData.weekStart, childId: childFilter || null });
+    const result = await createPlanningItemAction({ id, text, type, planningDate: date, weekStartDate: initialData.weekStart, childId: childFilter || null }).catch(planningConnectionError);
     if (result.ok && result.data) {
       placeItem({ ...result.data, createdByName: currentUserName }, temporaryId);
     } else {
@@ -314,13 +326,15 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     }
     placeItem({ ...item, saveState: "saving" });
     const result = await createPlanningItemAction({
+      id: item.id.slice("draft-".length),
       text: item.text,
       type: item.type,
       planningDate: item.planningDate,
       weekStartDate: item.weekStartDate,
       childId: item.childId ?? null,
       assignedMemberIds: item.assignedMemberIds ?? undefined,
-    });
+      remindAt: item.reminder?.remindAt ?? null,
+    }).catch(planningConnectionError);
     if (result.ok && result.data) placeItem(result.data, item.id);
     else placeItem({ ...item, saveState: "failed" });
   }, [placeItem]);
@@ -328,7 +342,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const toggleItem = useCallback(async (item: PlanningItem, completed: boolean) => {
     placeItem({ ...item, isCompleted: completed });
     if (initialData.isDemo || item.id.startsWith("draft-")) return;
-    const result = await togglePlanningItemAction(item.id, completed);
+    const result = await togglePlanningItemAction(item.id, completed).catch(planningConnectionError);
     if (!result.ok) {
       placeItem(item);
       setNotice(result.error ?? "Task status could not be saved.");
@@ -350,7 +364,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       remindAt: item.reminder?.remindAt ?? null,
       childId: item.childId ?? null,
       assignedMemberIds: item.assignedMemberIds ?? undefined,
-    });
+    }).catch(planningConnectionError);
     if (!result.ok) {
       placeItem({ ...optimistic, saveState: "failed" });
       setNotice(result.error ?? "Changes could not be saved.");
@@ -365,12 +379,12 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     setWeeklyItems((current) => current.filter((candidate) => candidate.id !== item.id));
     setEditingItem(null);
     if (initialData.isDemo || item.id.startsWith("draft-")) return;
-    const result = await deletePlanningItemAction(item.id);
+    const result = await deletePlanningItemAction(item.id).catch(planningConnectionError);
     if (!result.ok) {
       placeItem(item);
       setNotice(result.error ?? "The item could not be deleted.");
     }
-  }, [initialData.isDemo, placeItem]);
+  }, [initialData.isDemo, placeItem, setWeeklyItems]);
 
   const hideEvent = useCallback(async (event: CalendarEvent): Promise<string | null> => {
     if (!initialData.isDemo) {
@@ -522,7 +536,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       }
       return null;
     } catch { return "Your family plan could not be saved. Please try again."; }
-  }, [allItems, currentUserName, familyUserId, initialData, router]);
+  }, [allItems, currentUserName, familyUserId, initialData, router, setWeeklyItems]);
 
   const repeatTask = useCallback(async (routine: RoutineDraft, sourceItemId: string): Promise<string | null> => mutateFamily({ action: "saveRoutine", weekStart: initialData.weekStart, routine, sourceItemId }), [initialData.weekStart, mutateFamily]);
   const guideItems = [...allItems, ...(family.openTasks ?? []).filter((item) => !allItems.some((current) => current.id === item.id))];
@@ -530,7 +544,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     if (item.weekStartDate === initialData.weekStart) { await toggleItem(item, completed); return; }
     if (initialData.isDemo) updateDemoPriorItem({ ...item, isCompleted: completed });
     else {
-      const result = await togglePlanningItemAction(item.id, completed);
+      const result = await togglePlanningItemAction(item.id, completed).catch(planningConnectionError);
       if (!result.ok) { setNotice(result.error ?? "Task could not be updated."); return; }
     }
     setFamily((current) => ({ ...current, openTasks: (current.openTasks ?? []).filter((candidate) => candidate.id !== item.id) }));
@@ -539,7 +553,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     const moved = { ...item, planningDate: null, weekStartDate: initialData.weekStart };
     if (initialData.isDemo) updateDemoPriorItem(moved);
     else {
-      const result = await updatePlanningItemAction({ id: moved.id, text: moved.text, type: moved.type, planningDate: null, weekStartDate: moved.weekStartDate, childId: moved.childId ?? null, assignedMemberIds: moved.assignedMemberIds ?? undefined });
+      const result = await updatePlanningItemAction({ id: moved.id, text: moved.text, type: moved.type, planningDate: null, weekStartDate: moved.weekStartDate, childId: moved.childId ?? null, assignedMemberIds: moved.assignedMemberIds ?? undefined }).catch(planningConnectionError);
       if (!result.ok) return result.error ?? "Task could not be moved.";
     }
     placeItem(moved);
@@ -623,21 +637,23 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         {weatherState.status === "error" && <div className="source-alert" role="status"><CloudOff size={14} />{weatherState.message}<button className="text-button" type="button" onClick={() => void refreshWeather()}>Retry weather</button></div>}
 
         <div className="calendar-view-toolbar">
-          <div className="calendar-view-picker" role="group" aria-label="View">
-            <button aria-pressed={calendarView === "planner"} onClick={() => setCalendarView("planner")}>List</button>
-            <button aria-pressed={calendarView !== "planner"} onClick={() => setCalendarView(lastTimelineView)}>Calendar</button>
+          <div className="calendar-view-picker" role="group" aria-label="Calendar range">
+            {(["day", "week"] as const).map((range) => <button key={range} aria-pressed={calendarRange === range} onClick={() => setCalendarRange(range)}>{range === "day" ? "Day" : "Week"}</button>)}
           </div>
-          {calendarView !== "planner" && <div className="calendar-view-picker" role="group" aria-label="Calendar range">{(["day", "week"] as const).map((view) => <button key={view} aria-pressed={calendarView === view} onClick={() => { setCalendarView(view); setLastTimelineView(view); }}>{view === "day" ? "Day" : "Week"}</button>)}</div>}
-          {calendarView === "day" && <label className="timeline-date-picker">Day <select value={activeTimelineDate} onChange={(event) => setTimelineDate(event.target.value)}>{days.map((day) => <option key={day.date} value={day.date}>{formatMobileDate(day.date)}</option>)}</select></label>}
-          {calendarView === "week" && <span className="timeline-week-hint">Select a day for a closer look</span>}
+          <div className="calendar-view-picker" role="group" aria-label="View">
+            <button aria-pressed={calendarView === "list"} onClick={() => setCalendarView("list")}>List</button>
+            <button aria-pressed={calendarView === "calendar"} onClick={() => setCalendarView("calendar")}>Calendar</button>
+          </div>
+          {calendarRange === "day" && <label className="timeline-date-picker">Day <select value={activeTimelineDate} onChange={(event) => setTimelineDate(event.target.value)}>{days.map((day) => <option key={day.date} value={day.date}>{formatMobileDate(day.date)}</option>)}</select></label>}
+          {calendarRange === "week" && calendarView === "calendar" && <span className="timeline-week-hint">Select a day for a closer look</span>}
         </div>
 
-        {calendarView !== "planner" && <CalendarTimeline canCreate={initialData.editableCalendars.length > 0} onCreate={createFromCalendar} onMove={moveCalendarEvent} days={timelineDays} timeZone={initialData.household.timezone} sourceState={calendarState} onEvent={setSelectedEvent} onDay={(date) => { setTimelineDate(date); setCalendarView("day"); setLastTimelineView("day"); }}>
-          <CalendarPlanningPane days={timelineDays} weeklyItems={filteredWeeklyItems} childProfiles={family.children} canEdit={initialData.isDemo || family.canEdit} onAdd={addItem} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} />
+        {calendarView === "calendar" && <CalendarTimeline canCreate={initialData.editableCalendars.length > 0} onCreate={createFromCalendar} onMove={moveCalendarEvent} days={visibleDays} timeZone={initialData.household.timezone} sourceState={calendarState} onEvent={setSelectedEvent} onDay={(date) => { setTimelineDate(date); setCalendarRange("day"); }}>
+          <CalendarPlanningPane days={visibleDays} weeklyItems={filteredWeeklyItems} childProfiles={family.children} canEdit={initialData.isDemo || family.canEdit} onAdd={addItem} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} />
         </CalendarTimeline>}
 
-        {calendarView === "planner" && <div className="week-grid">
-          {filteredDays.map((day) => (
+        {calendarView === "list" && <div className={`week-grid${calendarRange === "day" ? " day-list" : ""}`}>
+          {visibleDays.map((day) => (
             <DayColumn
               day={day}
               childProfiles={family.children}
@@ -659,7 +675,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
           ))}
         </div>}
 
-        {calendarView === "planner" && <section className="weekly-section" aria-label="Weekly notes and tasks">
+        {calendarView === "list" && <section className="weekly-section" aria-label="Weekly notes and tasks">
           <header><span>This week</span><small>Notes and tasks that don’t belong to one day</small></header>
           <div className="weekly-columns">
             <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note" && planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
@@ -691,10 +707,14 @@ function WeeklyQuickAdd({ type, onAdd }: { type: PlanningItemType; onAdd: (date:
   );
 }
 
+function planningConnectionError(): ActionResult<never> {
+  return { ok: false, error: "Connection interrupted. Please try again." };
+}
+
 function mergeUnsavedItems(serverItems: PlanningItem[], currentItems: PlanningItem[]): PlanningItem[] {
   const unsaved = currentItems.filter((item) => item.saveState === "failed" || item.saveState === "saving");
-  const unsavedIds = new Set(unsaved.map((item) => item.id));
-  return [...serverItems.filter((item) => !unsavedIds.has(item.id)), ...unsaved];
+  const unsavedIds = new Set(unsaved.map((item) => item.id.replace(/^draft-/, "")));
+  return [...serverItems.filter((item) => !unsavedIds.has(item.id.replace(/^draft-/, ""))), ...unsaved];
 }
 
 function mergeUnsavedDays(serverDays: DayPlan[], currentDays: DayPlan[], preserveSources = false, visibleCalendarIds: string[] = []): DayPlan[] {

@@ -1436,3 +1436,11 @@ textarea:focus-visible {
 .calendar-provider-error { flex-wrap: wrap; }
 .source-alert { flex-wrap: wrap; }
 @media (max-width: 480px) { .settings-write-error { flex-wrap: wrap; } }
+
+/* Day and week share the same list/calendar presentation controls. */
+.week-grid.day-list { grid-template-columns: minmax(0, 1fr); max-width: 760px; }
+@media (max-width: 767px) {
+  .calendar-view-toolbar { gap: 8px; }
+  .calendar-view-toolbar .calendar-view-picker { display: flex; width: 100%; }
+  .calendar-view-toolbar .calendar-view-picker button { flex: 1; }
+}

@@ -530,6 +530,10 @@ enum CalendarEventFilter {
     static let allPeople = "all-people"
     static let unassigned = "unassigned"
 
+    static func includesPersonalReminders(personId: String, currentUserId: String) -> Bool {
+        personId == allPeople || personId == currentUserId
+    }
+
     private static func matches(memberIds: [String], personId: String) -> Bool {
         personId == allPeople || (personId == unassigned ? memberIds.isEmpty : memberIds.contains(personId))
     }
