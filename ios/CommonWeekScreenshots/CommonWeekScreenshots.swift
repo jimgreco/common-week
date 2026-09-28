@@ -13,6 +13,9 @@ final class CommonWeekScreenshots: XCTestCase {
         launchDemo()
         #if targetEnvironment(macCatalyst)
         let weather = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'high' AND label CONTAINS[c] 'low'")).firstMatch
+        let list = app.descendants(matching: .any)["mac-week-list"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        for _ in 0..<6 where !weather.isHittable { list.swipeUp() }
         #else
         let weather = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'High '")).firstMatch
         #endif
@@ -35,7 +38,10 @@ final class CommonWeekScreenshots: XCTestCase {
         range.buttons["Week"].tap()
         XCTAssertTrue(picker.buttons["List"].isSelected)
         #if targetEnvironment(macCatalyst)
-        XCTAssertTrue(app.descendants(matching: .any)["mac-event-event-0"].firstMatch.waitForExistence(timeout: 5))
+        let list = app.descendants(matching: .any)["mac-week-list"].firstMatch
+        let event = app.descendants(matching: .any)["mac-event-event-0"].firstMatch
+        for _ in 0..<6 where !event.isHittable { list.swipeUp() }
+        XCTAssertTrue(event.waitForExistence(timeout: 5))
         attachCurrentScreen(named: "Mac week list")
         #endif
         picker.buttons["Calendar"].tap()
@@ -655,6 +661,43 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if targetEnvironment(macCatalyst)
+    func testMacWeekListGroupsDaysAndPreservesWeeklyPlacement() throws {
+        app.launchEnvironment["APP_STORE_MAC_SCREENSHOT_SCENE"] = "week"
+        launchDemo()
+        let range = app.segmentedControls["calendar-range-picker"]
+        range.buttons["Week"].tap()
+        let list = app.descendants(matching: .any)["mac-week-list"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let weeklyPlan = app.staticTexts["Keep Saturday afternoon open"]
+        XCTAssertTrue(weeklyPlan.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts.matching(identifier: "mac-planning-item-weekly-plan-1").count, 1)
+        weeklyPlan.tap()
+        XCTAssertTrue(app.textFields["What needs doing?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == 'This week'")).firstMatch.exists)
+        XCTAssertFalse(app.datePickers["Date"].exists)
+        attachCurrentScreen(named: "Mac whole-week card and weekly plan inspector")
+
+        for name in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] {
+            let heading = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+            for _ in 0..<16 where !heading.isHittable { list.swipeUp() }
+            XCTAssertTrue(heading.isHittable, "Week List must include a card for \(name)")
+            if name == "Thursday" {
+                let supplemental = app.staticTexts["SUPPLEMENTAL"]
+                for _ in 0..<4 where !supplemental.isHittable { list.swipeUp() }
+                XCTAssertTrue(supplemental.isHittable)
+                attachCurrentScreen(named: "Mac day card with critical and supplemental events")
+            }
+        }
+        attachCurrentScreen(named: "Mac week list includes Sunday")
+
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'mac-day-'")).firstMatch.tap()
+        range.buttons["Day"].tap()
+        let sundayEvent = app.descendants(matching: .any)["mac-event-event-6"].firstMatch
+        XCTAssertFalse(sundayEvent.exists)
+        range.buttons["Week"].tap()
+        XCTAssertTrue(list.exists)
+    }
+
     func testMacCalendarClickAndDrag() throws {
         launchDemo()
         let picker = app.segmentedControls["calendar-view-picker"]

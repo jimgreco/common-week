@@ -488,7 +488,7 @@ struct MacPlannerView: View {
                     .background(Color(uiColor: .secondarySystemBackground))
                     .overlay(alignment: .bottom) { Divider() }
                 }
-                if navigation.section == .week,
+                if navigation.section == .week, calendarPresentation == .calendar,
                    let day = data.days.first(where: { $0.date == navigation.selectedDay }) {
                     MacDayContextBar(
                         day: day,
@@ -554,7 +554,9 @@ struct MacPlannerView: View {
                         reminders: appleReminders,
                         deleteItem: { deletionTarget = .planningItem($0) },
                         deleteReminder: { deletionTarget = .reminder($0) },
-                        reschedule: reschedule(_:to:)
+                        reschedule: reschedule(_:to:),
+                        openLocation: { sheet = .location($0) },
+                        openWeather: { sheet = .weather($0) }
                     )
                 }
             }
@@ -1278,11 +1280,15 @@ private struct MacPlannerListPane: View {
     let deleteItem: (PlanningItem) -> Void
     let deleteReminder: (AppleReminderTask) -> Void
     let reschedule: (MacPlannerDragPayload, String) -> Bool
+    let openLocation: (DayPlan) -> Void
+    let openWeather: (DayPlan) -> Void
 
     var body: some View {
         Group {
             if section == .appleReminders {
                 reminderContent
+            } else if section == .week {
+                weekList
             } else {
                 plannerList
             }
@@ -1293,18 +1299,132 @@ private struct MacPlannerListPane: View {
         data.days.filter { calendarRange == .week || $0.date == selectedDay }
     }
 
+    private var weekList: some View {
+        List(selection: $selections) {
+            Section {
+                cardHeading("This week", subtitle: "Plans and tasks for the whole week")
+                    .accessibilityIdentifier("mac-week-list-weekly-heading")
+                weekItems(data.weeklyItems, type: .note)
+                weekItems(data.weeklyItems, type: .task)
+            }
+            ForEach(visibleDays) { day in
+                Section {
+                    VStack(spacing: 0) {
+                        cardHeading(
+                            WeekDate.longDay(day.date),
+                            isToday: WeekDate.isToday(day.date, timeZoneIdentifier: data.household.timezone)
+                        )
+                        .accessibilityIdentifier("mac-week-list-day-\(day.date)")
+                        MacDayContextBar(
+                            day: day, unit: data.household.temperatureUnit, weatherState: data.weatherState,
+                            openLocation: { openLocation(day) }, openWeather: openWeather
+                        )
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .selectionDisabled()
+                    weekEvents(day.events)
+                    weekItems(day.items, type: .note)
+                    weekItems(day.items, type: .task, reminderTasks: reminders.tasks(for: day.date))
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(18)
+        .environment(\.defaultMinListRowHeight, 44)
+        .font(.system(size: 17))
+        .scrollContentBackground(.hidden)
+        .background { AppBackground() }
+        .accessibilityIdentifier("mac-week-list")
+    }
+
+    private func cardHeading(_ title: String, subtitle: String? = nil, isToday: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(CWTheme.display(26))
+                    .tracking(-0.6)
+                    .foregroundStyle(CWTheme.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                if isToday {
+                    Text("TODAY")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(1)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(CWTheme.brand, in: Capsule())
+                }
+            }
+            if let subtitle {
+                Text(subtitle).font(.subheadline).foregroundStyle(CWTheme.secondaryInk)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(LinearGradient(
+            colors: [CWTheme.mint.opacity(isToday ? 0.9 : 0.5), CWTheme.cream.opacity(0.45)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
+        ))
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
+        .selectionDisabled()
+    }
+
+    private func categoryHeading(_ title: String, supplemental: Bool = false) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .tracking(1.7)
+            .foregroundStyle(supplemental ? CWTheme.secondaryInk : CWTheme.accent)
+            .padding(.top, 8)
+            .listRowSeparator(.hidden)
+            .accessibilityAddTraits(.isHeader)
+            .selectionDisabled()
+    }
+
+    @ViewBuilder
+    private func weekEvents(_ events: [CalendarEvent]) -> some View {
+        let visible = events.filter(matches)
+        if visible.isEmpty {
+            categoryHeading("Calendar")
+            Text(data.calendarState.status == "loading" ? "Loading calendar…" : "No events in this view")
+                .foregroundStyle(CWTheme.secondaryInk)
+                .listRowSeparator(.hidden)
+                .selectionDisabled()
+        } else {
+            let critical = visible.filter { $0.sectionGroup != "supplemental" }
+            let supplemental = visible.filter { $0.sectionGroup == "supplemental" }
+            if !critical.isEmpty {
+                categoryHeading("Critical")
+                eventRows(critical, usesWeekStyle: true)
+            }
+            if !supplemental.isEmpty {
+                categoryHeading("Supplemental", supplemental: true)
+                eventRows(supplemental, usesWeekStyle: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func weekItems(_ items: [PlanningItem], type: PlanningItemType, reminderTasks: [AppleReminderTask] = []) -> some View {
+        let visible = items.filter { $0.type == type && matches($0) }
+        let visibleReminders = reminderTasks.filter(matches)
+        categoryHeading(type == .note ? "Plans" : "Tasks")
+        if visible.isEmpty && visibleReminders.isEmpty {
+            Text(searchText.isEmpty && personFilterId == CalendarEventFilter.allPeople
+                 ? (type == .note ? "No plans yet" : "No tasks yet")
+                 : (type == .note ? "No plans in this view" : "No tasks in this view"))
+                .foregroundStyle(CWTheme.secondaryInk)
+                .listRowSeparator(.hidden)
+                .selectionDisabled()
+        }
+        itemRows(visible)
+        reminderRows(visibleReminders)
+    }
+
     private var plannerList: some View {
         List(selection: $selections) {
             switch section {
-            case .week:
-                itemSection(data.weeklyItems.filter { $0.type == .note }, title: "This week · Plans")
-                itemSection(data.weeklyItems.filter { $0.type == .task }, title: "This week · Tasks")
-                ForEach(visibleDays) { day in
-                    eventSection(day.events, title: "\(WeekDate.longDay(day.date)) · Events", showsEmpty: calendarRange == .week)
-                    itemSection(day.items.filter { $0.type == .note }, title: "\(WeekDate.longDay(day.date)) · Plans")
-                    itemSection(day.items.filter { $0.type == .task }, title: "\(WeekDate.longDay(day.date)) · Tasks")
-                    reminderSection(reminders.tasks(for: day.date), title: "\(WeekDate.longDay(day.date)) · Apple Reminders")
-                }
             case .events:
                 ForEach(visibleDays) { day in
                     eventSection(day.events, title: WeekDate.longDay(day.date))
@@ -1369,90 +1489,124 @@ private struct MacPlannerListPane: View {
 
     @ViewBuilder
     private func itemSection(_ items: [PlanningItem], title: String) -> some View {
-        let matches = items.filter(matches)
-        if !matches.isEmpty {
-            Section(title) {
-                ForEach(matches) { item in
-                    MacPlanningItemRow(
-                        item: item,
-                        toggle: { toggleItem(item) },
-                        select: { select(.planningItem(item.id)) },
-                        delete: { deleteItem(item) }
-                    )
-                    .tag(MacPlannerSelection.planningItem(item.id))
-                    .draggable(MacPlannerDragPayload.planningItem(item.id).encoded)
-                }
-            }
+        let visible = items.filter(matches)
+        if !visible.isEmpty {
+            Section(title) { itemRows(visible) }
+        }
+    }
+
+    private func itemRows(_ items: [PlanningItem]) -> some View {
+        ForEach(items) { item in
+            MacPlanningItemRow(
+                item: item,
+                usesWeekStyle: section == .week,
+                toggle: { toggleItem(item) },
+                select: { select(.planningItem(item.id)) },
+                delete: { deleteItem(item) }
+            )
+            .listRowSeparator(section == .week ? .hidden : .automatic)
+            .listRowInsets(section == .week ? EdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18) : nil)
+            .tag(MacPlannerSelection.planningItem(item.id))
+            .draggable(MacPlannerDragPayload.planningItem(item.id).encoded)
         }
     }
 
     @ViewBuilder
-    private func eventSection(_ events: [CalendarEvent], title: String, showsEmpty: Bool = false) -> some View {
-        let matches = events.filter(matches)
-        if showsEmpty || !matches.isEmpty {
-            Section(title) {
-                if matches.isEmpty { Text("No events in this view").foregroundStyle(.secondary) }
-                ForEach(matches) { event in
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color(hex: event.calendarColor))
-                            .frame(width: 5, height: 34)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(event.title).foregroundStyle(.primary)
-                            Text(event.allDay ? "All day · \(event.calendarAlias)" : "\(eventTimeRange(event)) · \(event.calendarAlias)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
+    private func eventSection(_ events: [CalendarEvent], title: String) -> some View {
+        let visible = events.filter(matches)
+        if !visible.isEmpty {
+            Section(title) { eventRows(visible) }
+        }
+    }
+
+    private func eventRows(_ events: [CalendarEvent], usesWeekStyle: Bool = false) -> some View {
+        ForEach(events) { event in
+            HStack(alignment: .top, spacing: 11) {
+                if usesWeekStyle {
+                    Text(event.attribution)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(Color(hex: event.calendarColor), in: RoundedRectangle(cornerRadius: 8))
+                } else {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color(hex: event.calendarColor))
+                        .frame(width: 5, height: 34)
+                }
+                VStack(alignment: .leading, spacing: usesWeekStyle ? 5 : 2) {
+                    if usesWeekStyle {
+                        Text(event.allDay ? "All day" : eventTimeRange(event))
+                            .font(.system(size: 14)).foregroundStyle(CWTheme.secondaryInk)
                     }
-                    .contentShape(Rectangle())
-                    .tag(MacPlannerSelection.event(event.id))
-                    .draggable(MacPlannerDragPayload.event(event.id).encoded)
-                    .contextMenu {
-                        Button("Open") { select(.event(event.id)) }
-                        if event.canEdit == true {
-                            Button("Move to Selected Day") {
-                                _ = reschedule(.event(event.id), selectedDay)
-                            }
-                        }
-                    }
-                    .accessibilityIdentifier("mac-event-\(event.id)")
+                    Text(event.title)
+                        .fontWeight(usesWeekStyle && event.sectionGroup != "supplemental" ? .semibold : .regular)
+                        .foregroundStyle(usesWeekStyle && event.sectionGroup == "supplemental" ? CWTheme.secondaryInk : CWTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(usesWeekStyle
+                         ? [event.calendarAlias, event.location].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                         : event.allDay ? "All day · \(event.calendarAlias)" : "\(eventTimeRange(event)) · \(event.calendarAlias)")
+                        .font(usesWeekStyle ? .system(size: 14) : .caption)
+                        .foregroundStyle(CWTheme.secondaryInk)
+                        .lineLimit(usesWeekStyle ? 1 : nil)
+                }
+                Spacer(minLength: 8)
+                if usesWeekStyle, event.isConflict == true {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
                 }
             }
+            .listRowSeparator(usesWeekStyle ? .hidden : .automatic)
+            .listRowInsets(usesWeekStyle ? EdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18) : nil)
+            .contentShape(Rectangle())
+            .tag(MacPlannerSelection.event(event.id))
+            .draggable(MacPlannerDragPayload.event(event.id).encoded)
+            .contextMenu {
+                Button("Open") { select(.event(event.id)) }
+                if event.canEdit == true {
+                    Button("Move to Selected Day") {
+                        _ = reschedule(.event(event.id), selectedDay)
+                    }
+                }
+            }
+            .accessibilityIdentifier("mac-event-\(event.id)")
         }
     }
 
     @ViewBuilder
     private func reminderSection(_ tasks: [AppleReminderTask], title: String) -> some View {
-        let matches = tasks.filter(matches)
-        if !matches.isEmpty {
-            Section(title) {
-                ForEach(matches) { task in
-                    MacAppleReminderRow(
-                        task: task,
-                        toggle: { Task { await reminders.toggle(task) } }
-                    )
-                        .tag(MacPlannerSelection.appleReminder(task.id))
-                        .draggable(MacPlannerDragPayload.appleReminder(task.id).encoded)
-                        .contextMenu {
-                            Button("Open") { select(.appleReminder(task.id)) }
-                            Button(task.isCompleted ? "Reopen Reminder" : "Complete Reminder") {
-                                Task { await reminders.toggle(task) }
-                            }
-                            .disabled(!task.canModify)
-                            if task.canModify {
-                                Menu("Move to List") {
-                                    ForEach(reminders.writableSelectedLists) { list in
-                                        Button(list.title) { move(task, to: list.id) }
-                                            .disabled(list.id == task.listId)
-                                    }
-                                }
-                                Button("Delete Reminder", role: .destructive) { deleteReminder(task) }
-                            }
+        let visible = tasks.filter(matches)
+        if !visible.isEmpty {
+            Section(title) { reminderRows(visible) }
+        }
+    }
+
+    private func reminderRows(_ tasks: [AppleReminderTask]) -> some View {
+        ForEach(tasks) { task in
+            MacAppleReminderRow(
+                task: task,
+                usesWeekStyle: section == .week,
+                toggle: { Task { await reminders.toggle(task) } }
+            )
+            .listRowSeparator(section == .week ? .hidden : .automatic)
+            .listRowInsets(section == .week ? EdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18) : nil)
+            .tag(MacPlannerSelection.appleReminder(task.id))
+            .draggable(MacPlannerDragPayload.appleReminder(task.id).encoded)
+            .contextMenu {
+                Button("Open") { select(.appleReminder(task.id)) }
+                Button(task.isCompleted ? "Reopen Reminder" : "Complete Reminder") {
+                    Task { await reminders.toggle(task) }
+                }
+                .disabled(!task.canModify)
+                if task.canModify {
+                    Menu("Move to List") {
+                        ForEach(reminders.writableSelectedLists) { list in
+                            Button(list.title) { move(task, to: list.id) }
+                                .disabled(list.id == task.listId)
                         }
-                        .accessibilityIdentifier("mac-apple-reminder-\(task.id)")
+                    }
+                    Button("Delete Reminder", role: .destructive) { deleteReminder(task) }
                 }
             }
+            .accessibilityIdentifier("mac-apple-reminder-\(task.id)")
         }
     }
 
@@ -1473,10 +1627,6 @@ private struct MacPlannerListPane: View {
 
     private var isPlannerSectionEmpty: Bool {
         switch section {
-        case .week:
-            return calendarRange == .day && visibleDays.flatMap(\.events).filter(matches).isEmpty
-                && (data.weeklyItems + visibleDays.flatMap(\.items)).filter(matches).isEmpty
-                && visibleDays.flatMap { reminders.tasks(for: $0.date) }.filter(matches).isEmpty
         case .events: return visibleDays.flatMap(\.events).filter(matches).isEmpty
         case .plans: return (data.weeklyItems + data.days.flatMap(\.items)).filter { $0.type == .note && matches($0) }.isEmpty
         case .weekOfUsTasks: return (data.weeklyItems + data.days.flatMap(\.items)).filter { $0.type == .task && matches($0) }.isEmpty
@@ -1528,6 +1678,7 @@ private struct MacPlannerListPane: View {
 
 private struct MacPlanningItemRow: View {
     let item: PlanningItem
+    var usesWeekStyle = false
     let toggle: () -> Void
     let select: () -> Void
     let delete: () -> Void
@@ -1555,12 +1706,12 @@ private struct MacPlanningItemRow: View {
                     .opacity(item.isCompleted ? 0.55 : 1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 6) {
-                    Text(item.createdByName ?? "Week of Us")
+                    if !usesWeekStyle { Text(item.createdByName ?? "Week of Us") }
                     if item.reminder != nil { Image(systemName: "bell.fill") }
                     if let deadline = item.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(.secondary) }
-                    if let carryoverLabel = item.carryoverLabel { Text("· \(carryoverLabel)") }
+                    if let carryoverLabel = item.carryoverLabel { Text(carryoverLabel) }
                 }
-                .font(.caption2)
+                .font(usesWeekStyle ? .system(size: 14) : .caption2)
                 .foregroundStyle(.secondary)
             }
         }
@@ -1578,6 +1729,7 @@ private struct MacPlanningItemRow: View {
 
 private struct MacAppleReminderRow: View {
     let task: AppleReminderTask
+    var usesWeekStyle = false
     let toggle: () -> Void
 
     var body: some View {
@@ -1603,7 +1755,7 @@ private struct MacAppleReminderRow: View {
                     if task.isRecurring { Image(systemName: "repeat") }
                     if !task.canModify { Image(systemName: "lock.fill") }
                 }
-                .font(.caption2)
+                .font(usesWeekStyle ? .system(size: 14) : .caption2)
                 .foregroundStyle(.secondary)
                 if let carryoverLabel = task.carryoverLabel {
                     Text(carryoverLabel)
