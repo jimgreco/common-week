@@ -484,13 +484,14 @@ jobs:
 
       - name: Publish release summary
         run: |
+          APP_MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RUNNER_TEMP/CommonWeek-iOS.xcarchive/Products/Applications/Week of Us.app/Info.plist")"
           {
             echo "### TestFlight upload"
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Bundle: \`${IOS_BUNDLE_ID}\`"
             echo "- Platforms: iPhone and Mac Catalyst"
-            echo "- Version: \`1.1 (${APP_BUILD_NUMBER})\`"
+            echo "- Version: \`${APP_MARKETING_VERSION} (${APP_BUILD_NUMBER})\`"
             echo "- API: \`${IOS_API_BASE_URL}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
