@@ -544,6 +544,9 @@ struct MacPlannerView: View {
                         composer: inlineComposer,
                         canEdit: viewModel.canEditHousehold,
                         saveDraft: saveInlineDraft,
+                        createEvent: { date in
+                            sheet = .event(date: date, calendarId: data.editableCalendars.first(where: { $0.id == calendarFilterId })?.id)
+                        },
                         section: navigation.section,
                         selectedDay: navigation.selectedDay,
                         calendarRange: calendarRange,
@@ -1633,6 +1636,7 @@ private struct MacPlannerListPane: View {
     @ObservedObject var composer: MacInlineComposer
     let canEdit: Bool
     let saveDraft: (MacInlineDraft) async throws -> String
+    let createEvent: (String) -> Void
     let section: MacPlannerSection
     let selectedDay: String
     let calendarRange: CalendarRange
@@ -1710,7 +1714,7 @@ private struct MacPlannerListPane: View {
                     .dropDestination(for: String.self) { values, _ in
                         values.compactMap(MacPlannerDragPayload.init(encoded:)).contains { reschedule($0, day.date) }
                     } isTargeted: { _ in }
-                    weekEvents(day.events)
+                    weekEvents(day.events, date: day.date)
                     weekItems(day.items, type: .note, date: day.date)
                     weekItems(day.items, type: .task, date: day.date, reminderTasks: reminders.tasks(for: day.date))
                 }
@@ -1782,7 +1786,7 @@ private struct MacPlannerListPane: View {
     }
 
     @ViewBuilder
-    private func weekEvents(_ events: [CalendarEvent]) -> some View {
+    private func weekEvents(_ events: [CalendarEvent], date: String) -> some View {
         let visible = events.filter(matches)
         if visible.isEmpty {
             categoryHeading("Calendar")
@@ -1802,6 +1806,7 @@ private struct MacPlannerListPane: View {
                 eventRows(supplemental, usesWeekStyle: true)
             }
         }
+        addEventButton(date: date)
     }
 
     @ViewBuilder
@@ -1827,7 +1832,7 @@ private struct MacPlannerListPane: View {
             switch section {
             case .events:
                 ForEach(visibleDays) { day in
-                    eventSection(day.events, title: WeekDate.longDay(day.date))
+                    eventSection(day.events, title: WeekDate.longDay(day.date), date: day.date)
                 }
             case .plans:
                 itemSection(data.weeklyItems.filter { $0.type == .note }, title: "This Week", date: nil, type: .note)
@@ -1845,7 +1850,7 @@ private struct MacPlannerListPane: View {
         }
         .listStyle(.inset)
         .overlay {
-            if isPlannerSectionEmpty && (section == .events || !canEdit) {
+            if isPlannerSectionEmpty && (section == .events ? !canCreateEvents : !canEdit) {
                 ContentUnavailableView(
                     "Nothing here yet",
                     systemImage: section.icon,
@@ -1915,10 +1920,34 @@ private struct MacPlannerListPane: View {
     }
 
     @ViewBuilder
-    private func eventSection(_ events: [CalendarEvent], title: String) -> some View {
+    private func eventSection(_ events: [CalendarEvent], title: String, date: String) -> some View {
         let visible = events.filter(matches)
-        if !visible.isEmpty {
-            Section(title) { eventRows(visible) }
+        if !visible.isEmpty || canCreateEvents {
+            Section(title) {
+                eventRows(visible)
+                addEventButton(date: date)
+            }
+        }
+    }
+
+    private var canCreateEvents: Bool { !data.editableCalendars.isEmpty }
+
+    @ViewBuilder
+    private func addEventButton(date: String) -> some View {
+        if canCreateEvents {
+            Button {
+                createEvent(date)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "plus").frame(width: 18)
+                    Text("Add event")
+                    Spacer()
+                }.foregroundStyle(CWTheme.secondaryInk)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("mac-add-event-\(date)")
+            .listRowSeparator(.hidden)
+            .selectionDisabled()
         }
     }
 
