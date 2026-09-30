@@ -14,6 +14,7 @@ import { assignedMembersSchema } from "@/lib/household-assignments";
 
 const itemSchema = z.object({
   id: z.string().uuid().optional(),
+  afterItemId: z.string().uuid().optional(),
   assignedMemberIds: assignedMembersSchema.optional(),
   childId: z.string().uuid().nullable().optional(),
   text: z.string().trim().min(1).max(1000),

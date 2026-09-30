@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  withTransaction: vi.fn(),
   carryOverOpenTasks: vi.fn(),
   query: vi.fn(),
   queueHouseholdChange: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("@/lib/server/auth", () => ({
 vi.mock("@/lib/server/database", () => ({
   postgresErrorCode: vi.fn(),
   query: (...args: unknown[]) => mocks.query(...args),
-  withTransaction: vi.fn(),
+  withTransaction: (...args: unknown[]) => mocks.withTransaction(...args),
 }));
 vi.mock("@/lib/server/notifications", () => ({
   queueHouseholdChange: (...args: unknown[]) => mocks.queueHouseholdChange(...args),
@@ -26,7 +27,7 @@ vi.mock("@/lib/server/planning-carryover", () => ({
   carryOverOpenTasks: (...args: unknown[]) => mocks.carryOverOpenTasks(...args),
 }));
 
-import { togglePlanningItemAction } from "@/app/actions/planner";
+import { createPlanningItemAction, togglePlanningItemAction } from "@/app/actions/planner";
 
 describe("togglePlanningItemAction carryover ordering", () => {
   beforeEach(() => {
@@ -67,5 +68,61 @@ describe("togglePlanningItemAction carryover ordering", () => {
     expect(mocks.query.mock.invocationCallOrder[1]).toBeLessThan(
       mocks.carryOverOpenTasks.mock.invocationCallOrder[0],
     );
+  });
+});
+
+
+describe("inline planning item insertion", () => {
+  const first = "aaaaaaaa-0000-4000-8000-000000000001";
+  const second = "00000000-0000-4000-8000-000000000002";
+  const created = "00000000-0000-4000-8000-000000000003";
+  const input = { id: created, afterItemId: first, text: "Next plan", type: "note" as const,
+    planningDate: null, weekStartDate: "2026-09-28" };
+  let inserted: boolean;
+  beforeEach(() => {
+    for (const mock of Object.values(mocks)) mock.mockReset();
+    inserted = true;
+    mocks.requireHouseholdContext.mockResolvedValue({ userId: "user-a", householdId: "household-a", displayName: "Jim", role: "owner" });
+    mocks.withTransaction.mockImplementation((work) => work({ query: mocks.query }));
+    mocks.query.mockImplementation(async (sql: string) => {
+      if (sql.includes("insert into planning_items")) return { rows: inserted ? [{ id: created }] : [] };
+      if (sql.includes("order by sort_order")) return { rows: [{ id: first }, { id: second }] };
+      if (sql.includes("select pi.id")) return { rows: [{ id: created, type: "note", text: "Next plan", planning_date: null,
+        week_start_date: "2026-09-28", updated_at: new Date(), created_by: "user-a", sort_order: 2 }] };
+      return { rows: [] };
+    });
+  });
+
+  it("inserts immediately after the anchor within its household, week, day and type", async () => {
+    expect((await createPlanningItemAction(input)).ok).toBe(true);
+    const siblings = mocks.query.mock.calls.find(([sql]) => sql.includes("order by sort_order"));
+    expect(siblings?.[1]).toEqual(["household-a", "2026-09-28", null, "note", created]);
+    const reorder = mocks.query.mock.calls.find(([sql]) => sql.includes("with ordinality"));
+    expect(reorder?.[1]).toEqual([[first, created, second], "household-a"]);
+  });
+
+  it("recognizes uppercase UUID anchors from native clients", async () => {
+    expect((await createPlanningItemAction({ ...input, afterItemId: first.toUpperCase() })).ok).toBe(true);
+    const reorder = mocks.query.mock.calls.find(([sql]) => sql.includes("with ordinality"));
+    expect(reorder?.[1]).toEqual([[first, created, second], "household-a"]);
+  });
+
+  it("appends when the anchor was deleted or belongs to another list", async () => {
+    expect((await createPlanningItemAction({ ...input, afterItemId: "00000000-0000-4000-8000-000000000099" })).ok).toBe(true);
+    const reorder = mocks.query.mock.calls.find(([sql]) => sql.includes("with ordinality"));
+    expect(reorder?.[1]).toEqual([[first, second, created], "household-a"]);
+  });
+
+  it("does not move an existing item or repeat notifications when retrying a create", async () => {
+    inserted = false;
+    expect((await createPlanningItemAction(input)).ok).toBe(true);
+    expect(mocks.query.mock.calls.some(([sql]) => sql.includes("with ordinality"))).toBe(false);
+    expect(mocks.queueHouseholdChange).not.toHaveBeenCalled();
+  });
+
+  it("rejects viewers before changing any ordering", async () => {
+    mocks.requireHouseholdContext.mockResolvedValue({ householdId: "household-a", role: "viewer" });
+    expect((await createPlanningItemAction(input)).ok).toBe(false);
+    expect(mocks.withTransaction).not.toHaveBeenCalled();
   });
 });

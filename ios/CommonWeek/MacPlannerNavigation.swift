@@ -105,6 +105,7 @@ struct MacPlannerNavigationSnapshot: Codable, Equatable {
 }
 
 enum MacNavigationIntent: Equatable {
+    case closeDetails
     case section(MacPlannerSection)
     case day(String)
     case selection(MacPlannerSelection)
@@ -293,6 +294,81 @@ final class MacPlannerNavigation: ObservableObject {
         )
         if let data = try? JSONEncoder().encode(snapshot) {
             defaults.set(data, forKey: persistenceKey)
+        }
+    }
+}
+
+// Drafts belong to a week and section, so navigating never discards a failed entry.
+struct MacInlinePlacement: Equatable {
+    let weekStart: String
+    let date: String?
+    let type: PlanningItemType
+    var destination: TaskCreationDestination = .weekOfUs
+    var assignedMemberIds: [String]? = nil
+}
+
+struct MacInlineDraft: Identifiable {
+    let id: String
+    let placement: MacInlinePlacement
+    let afterItemId: String?
+    var text = ""
+    var isSaving = false
+    var error: String?
+}
+
+@MainActor
+final class MacInlineComposer: ObservableObject {
+    @Published private(set) var drafts: [MacInlineDraft] = []
+    @Published var focusedID: String?
+
+    @discardableResult
+    func begin(_ placement: MacInlinePlacement, after itemId: String? = nil) -> String {
+        if let blank = drafts.first(where: {
+            $0.placement == placement && $0.afterItemId == itemId && $0.text.isEmpty && !$0.isSaving
+        }) {
+            focusedID = blank.id
+            return blank.id
+        }
+        let draft = MacInlineDraft(id: UUID().uuidString.lowercased(), placement: placement, afterItemId: itemId)
+        drafts.append(draft)
+        focusedID = draft.id
+        return draft.id
+    }
+
+    func setText(_ text: String, for id: String) {
+        guard let index = drafts.firstIndex(where: { $0.id == id }), !drafts[index].isSaving else { return }
+        drafts[index].text = text
+        drafts[index].error = nil
+    }
+
+    func cancel(_ id: String) {
+        guard !drafts.contains(where: { $0.id == id && $0.isSaving }) else { return }
+        drafts.removeAll { $0.id == id }
+        if focusedID == id { focusedID = nil }
+    }
+
+    func submit(_ id: String, thenAddAnother: Bool,
+                save: (MacInlineDraft) async throws -> String) async {
+        guard let index = drafts.firstIndex(where: { $0.id == id }), !drafts[index].isSaving else { return }
+        let text = drafts[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { cancel(id); return }
+        guard text.count <= 1000 else {
+            drafts[index].error = "Keep this item to 1,000 characters or fewer."
+            return
+        }
+        drafts[index].text = text
+        drafts[index].isSaving = true
+        drafts[index].error = nil
+        let draft = drafts[index]
+        do {
+            let savedID = try await save(draft)
+            drafts.removeAll { $0.id == id }
+            if thenAddAnother && focusedID == id { begin(draft.placement, after: savedID) }
+            else if focusedID == id { focusedID = nil }
+        } catch {
+            guard let index = drafts.firstIndex(where: { $0.id == id }) else { return }
+            drafts[index].isSaving = false
+            drafts[index].error = error.localizedDescription
         }
     }
 }

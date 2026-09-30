@@ -661,21 +661,68 @@ final class CommonWeekScreenshots: XCTestCase {
     }
 
     #if targetEnvironment(macCatalyst)
+    func testMacInlineReturnCreatesConsecutiveWeeklyPlansAndDailyTasks() {
+        launchDemo()
+        let plan = app.descendants(matching: .any)["mac-planning-item-weekly-plan-1"]
+        XCTAssertTrue(plan.waitForExistence(timeout: 15))
+        plan.tap()
+        app.typeKey(.return, modifierFlags: [])
+        let editor = app.textFields["New plan"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("Inline plan one")
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Inline plan one"].waitForExistence(timeout: 5))
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("Inline plan two")
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Inline plan two"].waitForExistence(timeout: 5))
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(editor.exists)
+        let dailyAdd = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'mac-inline-add-task-' AND identifier != 'mac-inline-add-task-week'")).firstMatch
+        XCTAssertTrue(scrollToExistence(dailyAdd))
+        dailyAdd.tap()
+        let taskEditor = app.textFields["New task"]
+        XCTAssertTrue(taskEditor.waitForExistence(timeout: 5))
+        taskEditor.typeText("Inline daily task")
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Inline daily task"].waitForExistence(timeout: 5))
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertFalse(taskEditor.exists, "Return on an empty draft must not create an empty saved task")
+        attachCurrentScreen(named: "Mac inline plans and tasks")
+    }
+
     func testMacWeekListGroupsDaysAndPreservesWeeklyPlacement() throws {
         app.launchEnvironment["APP_STORE_MAC_SCREENSHOT_SCENE"] = "week"
         launchDemo()
         let range = app.segmentedControls["calendar-range-picker"]
+        let view = app.segmentedControls["calendar-view-picker"]
+        let dayPicker = app.descendants(matching: .any)["mac-day-picker"].firstMatch
+        XCTAssertTrue(dayPicker.waitForExistence(timeout: 5))
+        XCTAssertEqual(view.frame.midY, range.frame.midY, accuracy: 2)
+        if app.windows.firstMatch.frame.width >= 1000 {
+            XCTAssertEqual(dayPicker.frame.midY, range.frame.midY, accuracy: 4)
+            XCTAssertGreaterThan(dayPicker.frame.minX, range.frame.maxX)
+        } else {
+            XCTAssertGreaterThan(dayPicker.frame.minY, range.frame.maxY)
+        }
         range.buttons["Week"].tap()
+        XCTAssertFalse(dayPicker.exists)
         let list = app.descendants(matching: .any)["mac-week-list"].firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 5))
         let weeklyPlan = app.staticTexts["Keep Saturday afternoon open"]
         XCTAssertTrue(weeklyPlan.waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts.matching(identifier: "mac-planning-item-weekly-plan-1").count, 1)
-        weeklyPlan.tap()
+        let windowCount = app.windows.count
+        app.buttons["Details for Keep Saturday afternoon open"].tap()
         XCTAssertTrue(app.textFields["What needs doing?"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, windowCount, "Details should attach to the info button, not open a window")
+        XCTAssertTrue(app.descendants(matching: .popover).firstMatch.exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label == 'This week'")).firstMatch.exists)
         XCTAssertFalse(app.datePickers["Date"].exists)
-        attachCurrentScreen(named: "Mac whole-week card and weekly plan inspector")
+        XCTAssertTrue(app.buttons["mac-close-details"].exists)
+        attachCurrentScreen(named: "Mac whole-week plan info popover")
+        app.buttons["mac-close-details"].tap()
+        XCTAssertFalse(app.textFields["What needs doing?"].exists)
 
         for name in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] {
             let heading = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
@@ -690,8 +737,9 @@ final class CommonWeekScreenshots: XCTestCase {
         }
         attachCurrentScreen(named: "Mac week list includes Sunday")
 
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'mac-day-'")).firstMatch.tap()
         range.buttons["Day"].tap()
+        XCTAssertTrue(dayPicker.waitForExistence(timeout: 5))
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'mac-day-'")).firstMatch.tap()
         let sundayEvent = app.descendants(matching: .any)["mac-event-event-6"].firstMatch
         XCTAssertFalse(sundayEvent.exists)
         range.buttons["Week"].tap()
@@ -791,20 +839,27 @@ final class CommonWeekScreenshots: XCTestCase {
 
         let task = app.descendants(matching: .any)["mac-planning-item-weekly-task-1"]
         XCTAssertTrue(task.waitForExistence(timeout: 5))
-        task.tap()
+        app.buttons["Details for Order groceries"].tap()
 
         let editor = app.textFields["What needs doing?"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
         editor.typeText(" updated")
 
-        app.descendants(matching: .any)["mac-sidebar-events"].tap()
+        // An outside click must not discard an unsaved popover draft.
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.2)).tap()
+        XCTAssertTrue(editor.exists)
+        XCTAssertTrue((editor.value as? String)?.contains("updated") == true)
+
+        app.buttons["mac-close-details"].tap()
         XCTAssertTrue(app.staticTexts["Discard unsaved changes?"].waitForExistence(timeout: 5))
         app.buttons["Keep Editing"].tap()
         XCTAssertTrue(editor.exists)
 
-        app.descendants(matching: .any)["mac-sidebar-events"].tap()
+        app.buttons["mac-close-details"].tap()
         app.buttons["Discard Changes"].tap()
+        XCTAssertFalse(editor.exists)
+        app.descendants(matching: .any)["mac-sidebar-events"].tap()
         XCTAssertTrue(app.navigationBars["Events"].waitForExistence(timeout: 5))
 
         app.typeKey("f", modifierFlags: .command)

@@ -435,6 +435,7 @@ struct ItemCollaborationFields: View {
     @ObservedObject var viewModel: PlannerViewModel
     var includePlacement = true
     var showsSaveNotice = true
+    var compact = false
     @ObservedObject var files: ItemFilePresentation
     @State private var payload: TaskWorkspacePayload?
     @State private var error: String?
@@ -455,7 +456,7 @@ struct ItemCollaborationFields: View {
         if payload == nil && error == nil { ProgressView("Loading shared details…") }
         if showsSaveNotice { Section { Text("Changes to shared details save immediately.").font(.footnote).foregroundStyle(.secondary) } }
         if let task, task.type == "task" { taskFields(task) }
-        Section("Checklist") {
+        ItemCollaborationSection("Checklist", compact: compact) {
             ForEach(payload?.entries.filter { $0.kind == "checklist" } ?? []) { entry in
                 Toggle(entry.text, isOn: Binding(get: { entry.completed }, set: { value in Task { await save("check", fields: ["id": .string(entry.id), "completed": .bool(value)]) } }))
                     .disabled(busy || !viewModel.canEditHousehold)
@@ -466,7 +467,7 @@ struct ItemCollaborationFields: View {
                 Button("Add step") { Task { if await addEntry("checklist", text: step) { step = ""; editingField = nil } } }.disabled(busy || step.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        Section("Discussion") {
+        ItemCollaborationSection("Discussion", compact: compact) {
             ForEach(payload?.entries.filter { $0.kind == "comment" } ?? []) { entry in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(entry.author).font(.caption.bold())
@@ -480,7 +481,7 @@ struct ItemCollaborationFields: View {
                 Button("Post comment") { Task { if await addEntry("comment", text: comment) { comment = ""; editingField = nil } } }.disabled(busy || comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        Section {
+        ItemCollaborationSection("Files", compact: compact, footer: "Tap a file to preview it or open it in another app. Shared with people who can view this item. Up to 5 MB per file.") {
             ForEach(payload?.entries.filter { $0.kind == "file" } ?? []) { entry in
                 Button {
                     files.open(entry, planner: planner)
@@ -497,23 +498,29 @@ struct ItemCollaborationFields: View {
                     .swipeActions { if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Delete", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } } } }
             }
             if viewModel.canEditHousehold { Button("Attach a file") { files.beginImport(completion: importFile) }.disabled(busy) }
-        } header: { Text("Files") } footer: { Text("Tap a file to preview it or open it in another app. Shared with people who can view this item. Up to 5 MB per file.") }
+        }
     }
     @ViewBuilder private func taskFields(_ task: WorkspaceTask) -> some View {
-        Section("Responsibility & timing") {
+        ItemCollaborationSection("Responsibility & timing", compact: compact) {
             if includePlacement {
                 TextField("Task name", text: Binding(get: { nameDraft ?? task.text }, set: { nameDraft = $0 }))
                 if let nameDraft, nameDraft != task.text { Button("Save task name") { Task { await save("task", fields: ["text": .string(nameDraft.trimmingCharacters(in: .whitespacesAndNewlines))]) } }.disabled(nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
             }
-            Picker("Responsible person", selection: Binding(get: { task.responsibleMemberId ?? "" }, set: { value in Task { await save("task", fields: ["responsibleMemberId": value.isEmpty ? .null : .string(value)]) } })) {
-                Text("Unassigned").tag("")
-                ForEach(planner.members) { Text($0.displayName).tag($0.userId) }
-                ForEach(planner.childProfiles ?? []) { Text($0.name).tag($0.id) }
-            }.id("responsibility-\(task.responsibleMemberId ?? "unassigned")")
+            ItemCollaborationRow("Responsible person", systemImage: "person", compact: compact) {
+                Picker("Responsible person", selection: Binding(get: { task.responsibleMemberId ?? "" }, set: { value in Task { await save("task", fields: ["responsibleMemberId": value.isEmpty ? .null : .string(value)]) } })) {
+                    Text("Unassigned").tag("")
+                    ForEach(planner.members) { Text($0.displayName).tag($0.userId) }
+                    ForEach(planner.childProfiles ?? []) { Text($0.name).tag($0.id) }
+                }.id("responsibility-\(task.responsibleMemberId ?? "unassigned")")
+            }
             if task.responsibleMemberId == nil { Button("I’ll take this") { Task { await save("task", fields: ["claim": .bool(true)]) } } }
-            Toggle("Has a deadline", isOn: Binding(get: { task.deadline != nil }, set: { value in Task { await save("task", fields: ["deadline": value ? .string(planner.weekStart) : .null]) } }))
+            ItemCollaborationRow("Has a deadline", systemImage: "calendar", compact: compact) {
+                Toggle("Has a deadline", isOn: Binding(get: { task.deadline != nil }, set: { value in Task { await save("task", fields: ["deadline": value ? .string(planner.weekStart) : .null]) } }))
+            }
             if let deadline = task.deadline {
-                DatePicker("Must be done by", selection: Binding(get: { WeekDate.calendarDate(deadline) }, set: { value in Task { await save("task", fields: ["deadline": .string(WeekDate.string(value, timeZoneIdentifier: TimeZone.current.identifier))]) } }), displayedComponents: .date)
+                ItemCollaborationRow("Due", systemImage: "clock", compact: compact) {
+                    DatePicker("Must be done by", selection: Binding(get: { WeekDate.calendarDate(deadline) }, set: { value in Task { await save("task", fields: ["deadline": .string(WeekDate.string(value, timeZoneIdentifier: TimeZone.current.identifier))]) } }), displayedComponents: .date)
+                }
             }
             if includePlacement {
                 Picker("Placement", selection: Binding(get: { task.isBacklog ? "backlog" : task.planningDate == nil ? "week" : "day" }, set: { value in Task { await save("task", fields: ["isBacklog": .bool(value == "backlog"), "planningDate": value == "day" ? .string(planner.weekStart) : .null, "weekStartDate": .string(planner.weekStart)]) } })) {
@@ -523,7 +530,9 @@ struct ItemCollaborationFields: View {
                     DatePicker("Plan to do on", selection: Binding(get: { WeekDate.calendarDate(date) }, set: { value in Task { await save("task", fields: ["planningDate": .string(WeekDate.string(value, timeZoneIdentifier: TimeZone.current.identifier))]) } }), displayedComponents: .date)
                 }
             }
-            Toggle("Task complete", isOn: Binding(get: { task.isCompleted }, set: { value in Task { await save("task", fields: ["isCompleted": .bool(value)]) } }))
+            if !compact {
+                Toggle("Task complete", isOn: Binding(get: { task.isCompleted }, set: { value in Task { await save("task", fields: ["isCompleted": .bool(value)]) } }))
+            }
         }.disabled(busy || !viewModel.canEditHousehold)
     }
     private func reload() async { do { payload = try await WorkspaceAccess.load(planner: planner, resource: resource) } catch { self.error = error.localizedDescription } }
@@ -545,5 +554,75 @@ struct ItemCollaborationFields: View {
                 await save("add", fields: ["id": .string(UUID().uuidString), "kind": .string("file"), "text": .string(url.lastPathComponent), "fileData": .string(bytes.base64EncodedString())])
             } catch { self.error = error.localizedDescription }
         }
+    }
+}
+
+// Keep native Form sections on iPhone; the Mac details window uses compact cards.
+private struct ItemCollaborationSection<Content: View>: View {
+    let title: String
+    let compact: Bool
+    let footer: String?
+    let content: Content
+
+    init(_ title: String, compact: Bool, footer: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.compact = compact
+        self.footer = footer
+        self.content = content()
+    }
+
+    var body: some View {
+        #if targetEnvironment(macCatalyst)
+        if compact {
+            VStack(alignment: .leading, spacing: 7) {
+                MacInspectorSection(title: title) {
+                    VStack(alignment: .leading, spacing: 12) { content }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                }
+                if let footer {
+                    Text(footer).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 12)
+                }
+            }
+        } else {
+            formSection
+        }
+        #else
+        formSection
+        #endif
+    }
+
+    private var formSection: some View {
+        Section { content } header: { Text(title) } footer: {
+            if let footer { Text(footer) }
+        }
+    }
+}
+
+private struct ItemCollaborationRow<Content: View>: View {
+    let title: String
+    let systemImage: String
+    let compact: Bool
+    let content: Content
+
+    init(_ title: String, systemImage: String, compact: Bool, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.systemImage = systemImage
+        self.compact = compact
+        self.content = content()
+    }
+
+    var body: some View {
+        #if targetEnvironment(macCatalyst)
+        if compact {
+            MacInspectorRow(title: title, systemImage: systemImage) { content.labelsHidden() }
+                .padding(.horizontal, -12)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }

@@ -148,6 +148,7 @@ export async function hideCalendarEventAction(input: {
 
 export async function createPlanningItemAction(input: {
   id?: string;
+  afterItemId?: string;
   text: string;
   type: PlanningItemType;
   planningDate: string | null;
@@ -159,6 +160,7 @@ export async function createPlanningItemAction(input: {
   try {
     const parsed = z.object({
       id: uuid.optional(),
+      afterItemId: uuid.optional(),
       text: itemText,
       type: z.enum(["note", "task"]),
       planningDate: dateOnly.nullable(),
@@ -173,6 +175,8 @@ export async function createPlanningItemAction(input: {
     await validateChildForHousehold(context.householdId, parsed.childId);
     await validateAssignedMembers(context.householdId, parsed.assignedMemberIds);
     const saved = await withTransaction(async (database) => {
+      // Serialize sibling inserts, including an empty list, without affecting retries.
+      await database.query("select id from households where id = $1 for update", [context.householdId]);
       const inserted = await database.query<{ id: string }>(
         `insert into planning_items (
            id, household_id, created_by, planning_date, week_start_date, type, text, child_id, assigned_member_ids
@@ -193,6 +197,26 @@ export async function createPlanningItemAction(input: {
         ],
       );
       const itemId = inserted.rows[0]?.id ?? parsed.id;
+      if (inserted.rows[0]) {
+        const siblings = await database.query<{ id: string }>(
+          `select id from planning_items
+            where household_id = $1 and week_start_date = $2::date
+              and planning_date is not distinct from $3::date and type = $4::planning_item_type
+              and not is_backlog and id <> $5
+            order by sort_order, created_at, id for update`,
+          [context.householdId, parsed.weekStartDate, parsed.planningDate, parsed.type, itemId],
+        );
+        const orderedIds = siblings.rows.map((row) => row.id);
+        const anchor = parsed.afterItemId ? orderedIds.indexOf(parsed.afterItemId.toLowerCase()) : -1;
+        // A deleted or out-of-scope anchor falls back to the end of this list.
+        orderedIds.splice(anchor < 0 ? orderedIds.length : anchor + 1, 0, itemId!);
+        await database.query(
+          `update planning_items pi set sort_order = position.ordinality::integer
+             from unnest($1::uuid[]) with ordinality as position(id, ordinality)
+            where pi.id = position.id and pi.household_id = $2`,
+          [orderedIds, context.householdId],
+        );
+      }
       const result = itemId ? await database.query<PlanningRow>(
         `select pi.id, pi.responsible_member_id, pi.deadline::text, pi.is_backlog, pi.assigned_member_ids, pi.child_id, pi.routine_id, pi.routine_occurrence_date::text, pi.planning_date::text, pi.week_start_date::text, pi.type,
                 pi.text, pi.is_completed, pi.sort_order, pi.created_by,

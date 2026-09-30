@@ -6,6 +6,179 @@ import XCTest
 
 final class AppleRemindersStoreTests: XCTestCase {
     @MainActor
+    func testInlineEntryRetryKeepsTextIDAndWeeklyPlacement() async throws {
+        let composer = MacInlineComposer()
+        let placement = MacInlinePlacement(weekStart: "2026-09-28", date: nil, type: .note)
+        let id = composer.begin(placement, after: "existing-plan")
+        XCTAssertEqual(id, id.lowercased(), "Match PostgreSQL UUIDs so a refresh keeps the inline anchor")
+        composer.setText("  Plan the weekend  ", for: id)
+        await composer.submit(id, thenAddAnother: true) { _ in
+            throw NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Try again"])
+        }
+        let failed = try XCTUnwrap(composer.drafts.first)
+        XCTAssertEqual(failed.id, id)
+        XCTAssertEqual(failed.text, "Plan the weekend")
+        XCTAssertEqual(failed.error, "Try again")
+        XCTAssertFalse(failed.isSaving)
+        await composer.submit(id, thenAddAnother: true) { draft in
+            XCTAssertEqual(draft.id, id)
+            XCTAssertNil(draft.placement.date)
+            XCTAssertEqual(draft.afterItemId, "existing-plan")
+            return draft.id
+        }
+        let next = try XCTUnwrap(composer.drafts.first)
+        XCTAssertNotEqual(next.id, id)
+        XCTAssertEqual(next.afterItemId, id)
+        XCTAssertEqual(next.placement, placement)
+        XCTAssertEqual(next.text, "")
+        XCTAssertEqual(composer.focusedID, next.id)
+    }
+
+    @MainActor
+    func testInlineEntrySkipsBlankRowsAndDuplicateSubmits() async {
+        let composer = MacInlineComposer()
+        let placement = MacInlinePlacement(weekStart: "2026-09-28", date: "2026-09-30", type: .task)
+        let blank = composer.begin(placement)
+        composer.setText("   ", for: blank)
+        await composer.submit(blank, thenAddAnother: true) { _ in XCTFail("Blank rows must not save"); return "" }
+        XCTAssertTrue(composer.drafts.isEmpty)
+        let id = composer.begin(placement)
+        composer.setText("Buy milk", for: id)
+        await composer.submit(id, thenAddAnother: true) { draft in
+            await composer.submit(id, thenAddAnother: true) { _ in XCTFail("Save already in flight"); return "" }
+            XCTAssertEqual(draft.placement.date, "2026-09-30")
+            return draft.id
+        }
+        XCTAssertEqual(composer.drafts.count, 1)
+    }
+
+    @MainActor
+    func testSlowInlineSaveDoesNotTakeFocusFromAnotherEntry() async {
+        let composer = MacInlineComposer()
+        let weekly = MacInlinePlacement(weekStart: "2026-09-28", date: nil, type: .note)
+        let first = composer.begin(weekly)
+        composer.setText("Weekend plan", for: first)
+        var second: String?
+        await composer.submit(first, thenAddAnother: true) { draft in
+            second = composer.begin(MacInlinePlacement(weekStart: "2026-09-28", date: "2026-09-29", type: .task))
+            return draft.id
+        }
+        XCTAssertEqual(composer.focusedID, second)
+        XCTAssertEqual(composer.drafts.map(\.id), [second!])
+    }
+
+    @MainActor
+    func testInlineDraftsKeepSeparateWeekAndProviderContexts() {
+        let composer = MacInlineComposer()
+        let weekly = MacInlinePlacement(weekStart: "2026-09-28", date: nil, type: .task)
+        let first = composer.begin(weekly)
+        composer.setText("Unfinished task", for: first)
+        let reminder = MacInlinePlacement(weekStart: "2026-10-05", date: "2026-10-06", type: .task,
+                                          destination: .appleReminders("personal"))
+        composer.begin(reminder)
+        XCTAssertEqual(composer.drafts.first?.text, "Unfinished task")
+        XCTAssertEqual(composer.drafts.first?.placement, weekly)
+        XCTAssertEqual(composer.drafts.last?.placement, reminder)
+    }
+
+    func testInlineInsertionAnchorSurvivesOfflineEncoding() throws {
+        let draft = PlanningItemDraft(id: UUID().uuidString, text: "Plan", type: .note,
+                                      planningDate: nil, weekStartDate: "2026-09-28", remindAt: nil,
+                                      afterItemId: UUID().uuidString)
+        let restored = try JSONDecoder().decode(PlanningItemDraft.self, from: JSONEncoder().encode(draft))
+        XCTAssertEqual(restored, draft)
+    }
+
+    #if targetEnvironment(macCatalyst)
+    @MainActor
+    func testDetailsPopoverReusesItsSessionWithoutReplacingTheOpenEditor() {
+        let windows = MacDetailsPopoverStore()
+        let original = PreviewData.planner
+        let id = windows.open(selection: .planningItem("task-0"), data: original, userId: "user-1")
+        var changed = original
+        changed.weeklyItems.removeAll()
+        let reopened = windows.open(selection: .planningItem("task-0"), data: changed, userId: "user-1")
+        XCTAssertEqual(reopened, id)
+        XCTAssertEqual(windows.sessions[id]?.data.weeklyItems.count, original.weeklyItems.count)
+        let other = windows.open(selection: .event("event-0"), data: changed, userId: "user-1")
+        XCTAssertNotEqual(other, id)
+        XCTAssertEqual(windows.sessions[id]?.selection, .planningItem("task-0"))
+        windows.remove(id)
+        XCTAssertNil(windows.sessions[id])
+        XCTAssertNotNil(windows.sessions[other])
+    }
+
+    @MainActor
+    func testDetailsPopoverUsesVisibleItemAndFallsBackForOffscreenResults() {
+        let popover = MacDetailsPopoverStore()
+        let selection = MacPlannerSelection.planningItem("task-0")
+        popover.visibleAnchors.insert(selection)
+        let anchored = popover.open(selection: selection, data: PreviewData.planner, userId: "user-1")
+        XCTAssertEqual(popover.presentedAnchor, selection)
+        XCTAssertEqual(popover.presentedID, anchored)
+        popover.remove(anchored)
+        XCTAssertNil(popover.presentedID)
+
+        popover.visibleAnchors.remove(selection)
+        let fallback = popover.open(selection: selection, data: PreviewData.planner, userId: "user-1")
+        XCTAssertNil(popover.presentedAnchor)
+        XCTAssertEqual(popover.presentedID, fallback)
+        // A delayed dismissal from an older presentation must leave the new one open.
+        popover.remove(anchored)
+        XCTAssertEqual(popover.presentedID, fallback)
+    }
+
+    @MainActor
+    func testDetailsAnchorSurvivesOverlappingViewLifetimes() {
+        let popover = MacDetailsPopoverStore()
+        let event = MacPlannerSelection.event("event-0")
+        let list = UUID(), calendar = UUID()
+        popover.registerAnchor(event, id: list)
+        popover.registerAnchor(event, id: calendar)
+        popover.unregisterAnchor(id: list)
+        popover.open(selection: event, data: PreviewData.planner, userId: "user-1")
+        XCTAssertEqual(popover.presentedAnchor, event)
+        popover.unregisterAnchor(id: calendar)
+        XCTAssertFalse(popover.visibleAnchors.contains(event))
+    }
+
+    @MainActor
+    func testDetailsPopoverDoesNotReuseAnotherAccountsSession() {
+        let windows = MacDetailsPopoverStore()
+        let first = windows.open(selection: .planningItem("task-0"), data: PreviewData.planner, userId: "user-1")
+        let second = windows.open(selection: .planningItem("task-0"), data: PreviewData.planner, userId: "user-2")
+        XCTAssertNotEqual(first, second)
+    }
+    #endif
+
+    @MainActor
+    func testSavingOpenDetailsAfterNavigatingWeeksPreservesItemMetadata() async throws {
+        let previousDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"]
+        setenv("COMMON_WEEK_DEMO", "1", 1)
+        let model = PlannerViewModel()
+        if let previousDemo { setenv("COMMON_WEEK_DEMO", previousDemo, 1) }
+        else { unsetenv("COMMON_WEEK_DEMO") }
+        let originalData = PreviewData.planner
+        var item = try XCTUnwrap(originalData.days.flatMap(\.items).first { $0.type == .task })
+        item.isCompleted = true
+        let nextWeek = WeekDate.addDays(7, to: originalData.weekStart)
+        var nextData = PreviewData.planner(weekStart: nextWeek)
+        for index in nextData.days.indices { nextData.days[index].items.removeAll() }
+        nextData.weeklyItems.removeAll()
+        model.data = nextData
+        let draft = PlanningItemDraft(id: item.id, text: "Updated in the separate window", type: item.type,
+                                      planningDate: nextWeek, weekStartDate: nextWeek, remindAt: nil)
+        let saved = await model.saveItem(draft, originalItem: item)
+        XCTAssertTrue(saved)
+        let updated = try XCTUnwrap(model.data?.days.flatMap(\.items).first { $0.id == item.id })
+        XCTAssertTrue(updated.isCompleted)
+        XCTAssertEqual(updated.createdBy, item.createdBy)
+        XCTAssertEqual(updated.sortOrder, item.sortOrder)
+        XCTAssertEqual(updated.text, draft.text)
+        XCTAssertEqual(model.data?.weekStart, nextWeek)
+    }
+
+    @MainActor
     func testMacNavigationClearsInspectorSelectionWhenChangingSections() {
         let navigation = MacPlannerNavigation(selectedDay: "2026-08-30")
 
@@ -70,6 +243,25 @@ final class AppleRemindersStoreTests: XCTestCase {
         XCTAssertTrue(coordinator.requiresConfirmation)
         XCTAssertEqual(coordinator.discardChanges(), .section(.events))
         XCTAssertFalse(coordinator.isDirty)
+    }
+
+    @MainActor
+    func testMacDetailsCloseKeepsEditsUntilDiscardedOrSaved() {
+        let coordinator = MacUnsavedChangesCoordinator()
+        coordinator.setDirty(true)
+
+        XCTAssertNil(coordinator.request(.closeDetails))
+        coordinator.cancelNavigation()
+        XCTAssertTrue(coordinator.isDirty)
+        XCTAssertFalse(coordinator.requiresConfirmation)
+
+        XCTAssertNil(coordinator.request(.closeDetails))
+        XCTAssertEqual(coordinator.discardChanges(), .closeDetails)
+        XCTAssertFalse(coordinator.isDirty)
+
+        coordinator.setDirty(true)
+        coordinator.setDirty(false)
+        XCTAssertEqual(coordinator.request(.closeDetails), .closeDetails)
     }
 
     func testMacDragPayloadRoundTripsIdentifiersContainingColons() {

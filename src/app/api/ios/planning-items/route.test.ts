@@ -52,6 +52,20 @@ describe("iOS planning items API", () => {
     expect(mocks.createPlanningItemAction).toHaveBeenCalledWith(input);
   });
 
+  it("passes the inline insertion anchor with the stable create id", async () => {
+    const input = {
+      id: "00000000-0000-4000-8000-000000000002",
+      afterItemId: "00000000-0000-4000-8000-000000000001",
+      text: "Next plan", type: "note", planningDate: null, weekStartDate: "2026-09-28",
+    };
+    mocks.createPlanningItemAction.mockResolvedValue({ ok: true, data: input });
+    const response = await POST(new NextRequest("https://weekofus.com/api/ios/planning-items", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }));
+    expect(response.status).toBe(200);
+    expect(mocks.createPlanningItemAction).toHaveBeenCalledWith(input);
+  });
+
   it.each(["task", "note"] as const)("normalizes an omitted planning date for a weekly %s", async (type) => {
     const input = {
       id: type === "task" ? "00000000-0000-4000-8000-000000000002" : "00000000-0000-4000-8000-000000000003",

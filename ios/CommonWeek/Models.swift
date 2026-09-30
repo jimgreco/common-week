@@ -627,15 +627,17 @@ struct PlanningItemDraft: Codable, Equatable {
     let planningDate: String?
     let weekStartDate: String
     let remindAt: String?
+    var afterItemId: String? = nil
     var childId: String? = nil
     var assignedMemberIds: [String]? = nil
     var childAssignmentIsSet = false
 
     private enum CodingKeys: String, CodingKey {
-        case id, text, type, planningDate, weekStartDate, remindAt, childId, assignedMemberIds
+        case id, afterItemId, text, type, planningDate, weekStartDate, remindAt, childId, assignedMemberIds
     }
 
-    init(id: String?, text: String, type: PlanningItemType, planningDate: String?, weekStartDate: String, remindAt: String?, childId: String? = nil, childAssignmentIsSet: Bool = false, assignedMemberIds: [String]? = nil) {
+    init(id: String?, text: String, type: PlanningItemType, planningDate: String?, weekStartDate: String, remindAt: String?, childId: String? = nil, childAssignmentIsSet: Bool = false, assignedMemberIds: [String]? = nil, afterItemId: String? = nil) {
+        self.afterItemId = afterItemId
         self.id = id; self.text = text; self.type = type; self.planningDate = planningDate
         self.weekStartDate = weekStartDate; self.remindAt = remindAt
         self.assignedMemberIds = assignedMemberIds
@@ -644,6 +646,7 @@ struct PlanningItemDraft: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        afterItemId = try values.decodeIfPresent(String.self, forKey: .afterItemId)
         id = try values.decodeIfPresent(String.self, forKey: .id)
         text = try values.decode(String.self, forKey: .text)
         type = try values.decode(PlanningItemType.self, forKey: .type)
@@ -658,6 +661,7 @@ struct PlanningItemDraft: Codable, Equatable {
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encodeIfPresent(id, forKey: .id)
+        try values.encodeIfPresent(afterItemId, forKey: .afterItemId)
         try values.encode(text, forKey: .text)
         try values.encode(type, forKey: .type)
         try values.encodeIfPresent(planningDate, forKey: .planningDate)

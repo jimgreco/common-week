@@ -168,12 +168,13 @@ struct MacPlannerView: View {
     @ObservedObject var viewModel: PlannerViewModel
     @ObservedObject var auth: AuthStore
     let user: SessionIdentity
+    @StateObject private var inlineComposer = MacInlineComposer()
     @StateObject private var navigation: MacPlannerNavigation
     @StateObject private var commandRouter = MacPlannerCommandRouter()
-    @StateObject private var unsavedChanges = MacUnsavedChangesCoordinator()
     @StateObject private var appleReminders = AppleRemindersStore.shared
     @ObservedObject private var notifications = NotificationCoordinator.shared
     @State private var sheet: MacPlannerSheet?
+    @StateObject private var detailsPopover = MacDetailsPopoverStore()
     @State private var deletionTarget: MacDeletionTarget?
     @State private var searchText = ""
     @State private var calendarPresentation: CalendarPresentation = .list
@@ -213,9 +214,12 @@ struct MacPlannerView: View {
                     .padding(.bottom, 18)
             }
         }
-        .frame(minWidth: 980, minHeight: 640)
-        .focusedSceneValue(\.macPlannerCommandRouter, commandRouter)
-        .focusedSceneValue(\.macPlannerCommandAvailability, commandAvailability)
+        .environmentObject(detailsPopover)
+        .environmentObject(viewModel)
+        .frame(minWidth: 760, maxWidth: .infinity, minHeight: 560, maxHeight: .infinity)
+        .background(MacPlannerWindowSizing())
+        .focusedSceneValue(\.macPlannerCommandRouter, detailsPopover.commandRouter ?? commandRouter)
+        .focusedSceneValue(\.macPlannerCommandAvailability, detailsPopover.commandAvailability ?? commandAvailability)
         .searchable(text: $searchText, prompt: "Search this week")
         .searchFocused($searchFocused)
         .sheet(item: $sheet) { sheet in
@@ -235,27 +239,14 @@ struct MacPlannerView: View {
         } message: {
             Text(deletionMessage)
         }
-        .confirmationDialog(
-            "Discard unsaved changes?",
-            isPresented: Binding(
-                get: { unsavedChanges.requiresConfirmation },
-                set: { if !$0 { unsavedChanges.cancelNavigation() } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Discard Changes", role: .destructive) {
-                if let intent = unsavedChanges.discardChanges() { execute(intent) }
-            }
-            Button("Keep Editing", role: .cancel) { unsavedChanges.cancelNavigation() }
-        } message: {
-            Text("Save the selected item first, or discard the edits before changing sections, weeks, or selections.")
-        }
         .onChange(of: commandRouter.revision) { _, _ in handleCommand() }
         .onChange(of: navigation.selection) { _, _ in updateCommandAvailability() }
         .onChange(of: navigation.selections) { _, _ in updateCommandAvailability() }
         .onChange(of: navigation.section) { _, _ in updateCommandAvailability() }
-        .onChange(of: unsavedChanges.isDirty) { _, _ in updateCommandAvailability() }
         .task { updateCommandAvailability() }
+        .task(id: viewModel.data?.weekStart) {
+            if MacAppStoreScreenshot.current?.selection != nil { openDetails() }
+        }
         .task(id: "\(String(describing: notifications.pendingDestination))-\(viewModel.data?.weekStart ?? "loading")") { await openPendingNotification() }
         .task(id: appStoreScreenshotRevision) { await captureAppStoreScreenshotIfNeeded() }
     }
@@ -315,14 +306,11 @@ struct MacPlannerView: View {
         } else if let data = viewModel.data {
             NavigationSplitView(columnVisibility: columnVisibility) {
                 sidebar(data)
-                    .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
-            } content: {
-                mainColumn(data)
-                    .navigationSplitViewColumnWidth(min: 390, ideal: 520)
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 250)
             } detail: {
-                inspector(data)
-                    .navigationSplitViewColumnWidth(min: 350, ideal: 400, max: 460)
+                mainColumn(data)
             }
+            .navigationSplitViewStyle(.balanced)
             .task(id: "\(user.userId):\(data.weekStart):\(data.household.timezone)") {
                 synchronizeDay(with: data)
                 await appleReminders.activate(
@@ -335,7 +323,6 @@ struct MacPlannerView: View {
             .onChange(of: data.weekStart) { _, _ in
                 synchronizeDay(with: data)
                 navigation.clearSelection()
-                unsavedChanges.setDirty(false)
             }
         }
     }
@@ -363,6 +350,8 @@ struct MacPlannerView: View {
                 }
             }
             .listStyle(.sidebar)
+            .font(.system(size: 13))
+            .environment(\.defaultMinListRowHeight, 34)
 
             Divider()
 
@@ -462,33 +451,46 @@ struct MacPlannerView: View {
                 MacWeekHeader(
                     data: data,
                     section: navigation.section,
-                    selectedDay: navigation.selectedDay,
-                    selectDay: { request(.day($0)) },
                     previousWeek: { request(.weekOffset(-7)) },
                     currentWeek: { request(.currentWeek) },
                     nextWeek: { request(.weekOffset(7)) },
                     refresh: { commandRouter.perform(.refresh) },
                     create: { commandRouter.perform(.newItem) },
-                    createFromWeek: openWeekCreation,
-                    dropOnDay: reschedule(_:to:)
+                    createFromWeek: openWeekCreation
                 )
                 if navigation.section == .week || navigation.section == .events {
-                    CalendarPresentationPicker(range: $calendarRange, selection: $calendarPresentation)
-                        .padding(.horizontal, 16).padding(.top, 10)
-                    CalendarFilterControls(
-                        calendars: CalendarEventFilter.calendars(in: data),
-                        members: data.members,
-            children: data.childProfiles ?? [],
-                        calendarId: $calendarFilterId,
-                        personId: $personFilterId
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    VStack(alignment: .leading, spacing: 10) {
+                        if calendarRange == .day {
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 20) {
+                                    CalendarPresentationPicker(range: $calendarRange, selection: $calendarPresentation)
+                                        .frame(width: 346)
+                                    dayPicker(data).frame(minWidth: 350)
+                                }
+                                VStack(spacing: 10) {
+                                    CalendarPresentationPicker(range: $calendarRange, selection: $calendarPresentation)
+                                    dayPicker(data)
+                                }
+                            }
+                        } else {
+                            CalendarPresentationPicker(range: $calendarRange, selection: $calendarPresentation)
+                        }
+                        CalendarFilterControls(
+                            calendars: CalendarEventFilter.calendars(in: data),
+                            members: data.members,
+                            children: data.childProfiles ?? [],
+                            calendarId: $calendarFilterId,
+                            personId: $personFilterId
+                        )
+                        .controlSize(.small)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(uiColor: .secondarySystemBackground))
                     .overlay(alignment: .bottom) { Divider() }
                 }
-                if navigation.section == .week, calendarPresentation == .calendar,
+                if navigation.section == .week, calendarPresentation == .calendar, calendarRange == .day,
                    let day = data.days.first(where: { $0.date == navigation.selectedDay }) {
                     MacDayContextBar(
                         day: day,
@@ -519,7 +521,7 @@ struct MacPlannerView: View {
                         },
                         timezone: data.household.timezone,
                         sourceState: data.calendarState,
-                        onEvent: { request(.selections([.event($0.id)])) },
+                        onEvent: { request(.selection(.event($0.id))) },
                         onDay: { request(.day($0)); calendarRange = .day },
                         canCreate: !data.editableCalendars.isEmpty,
                         onCreate: { slot in sheet = .event(date: slot.date, slot: slot, calendarId: data.editableCalendars.first(where: { $0.id == calendarFilterId })?.id) },
@@ -530,15 +532,18 @@ struct MacPlannerView: View {
                             weeklyItems: data.weeklyItems, personId: personFilterId,
                             currentUserId: user.userId, canEdit: user.role != "viewer", searchText: searchText,
                             viewModel: viewModel, appleReminders: appleReminders,
-                            onEdit: { request(.selections([.planningItem($0.id)])) },
+                            onEdit: { request(.selection(.planningItem($0.id))) },
                             onAdd: { sheet = .item(date: $0, type: $1, allowsAppleReminderDestination: $0 != nil && $1 == .task) },
-                            onReminder: { request(.selections([.appleReminder($0.id)])) }
+                            onReminder: { request(.selection(.appleReminder($0.id))) }
                         )
                     }.padding(16)
                     Spacer(minLength: 0)
                 } else {
                     MacPlannerListPane(
                         data: data,
+                        composer: inlineComposer,
+                        canEdit: viewModel.canEditHousehold,
+                        saveDraft: saveInlineDraft,
                         section: navigation.section,
                         selectedDay: navigation.selectedDay,
                         calendarRange: calendarRange,
@@ -547,6 +552,7 @@ struct MacPlannerView: View {
                             get: { navigation.selections },
                             set: { request(.selections($0)) }
                         ),
+                        openSelection: { request(.selection($0)) },
                         searchText: searchText,
                         calendarFilterId: calendarFilterId,
                         personFilterId: personFilterId,
@@ -561,58 +567,19 @@ struct MacPlannerView: View {
                 }
             }
             .navigationTitle(navigation.section.title)
+            .background(alignment: .topTrailing) {
+                // Search and notifications can open items whose rows are offscreen.
+                Color.clear.frame(width: 1, height: 1)
+                    .modifier(MacDetailsPopoverAnchor(selection: nil))
+            }
         }
     }
 
-    @ViewBuilder
-    private func inspector(_ data: WeeklyPlannerData) -> some View {
-        switch navigation.selection {
-        case .planningItem(let id):
-            if let item = planningItem(id: id, in: data) {
-                MacPlanningItemInspector(
-                    item: item,
-                    data: data,
-                    viewModel: viewModel,
-                    appleReminders: appleReminders,
-                    commandRouter: commandRouter,
-                    requestDelete: { deletionTarget = .planningItem(item) },
-                    dirtyChanged: { unsavedChanges.setDirty($0) }
-                )
-                .id(item.id)
-            } else {
-                MacEmptyInspector(section: navigation.section)
-            }
-        case .event(let id):
-            if let event = calendarEvent(id: id, in: data) {
-                MacEventInspector(
-                    event: event,
-                    data: data,
-                    viewModel: viewModel,
-                    commandRouter: commandRouter,
-                    dirtyChanged: { unsavedChanges.setDirty($0) },
-                    deleted: { navigation.clearSelection() }
-                )
-                .id(event.id)
-            } else {
-                MacEmptyInspector(section: navigation.section)
-            }
-        case .appleReminder(let id):
-            if let reminder = appleReminders.tasks.first(where: { $0.id == id }) {
-                MacAppleReminderInspector(
-                    task: reminder,
-                    data: data,
-                    store: appleReminders,
-                    commandRouter: commandRouter,
-                    requestDelete: { deletionTarget = .reminder(reminder) },
-                    dirtyChanged: { unsavedChanges.setDirty($0) }
-                )
-                .id(reminder.id)
-            } else {
-                MacEmptyInspector(section: navigation.section)
-            }
-        case nil:
-            MacEmptyInspector(section: navigation.section)
-        }
+    private func dayPicker(_ data: WeeklyPlannerData) -> some View {
+        MacDayPicker(
+            days: data.days, selectedDay: navigation.selectedDay,
+            selectDay: { request(.day($0)) }, dropOnDay: reschedule(_:to:)
+        )
     }
 
     @ViewBuilder
@@ -691,7 +658,7 @@ struct MacPlannerView: View {
         case .delete:
             beginDeleteSelectedItem()
         case .save:
-            break // The selected inspector handles Command-S using the same router revision.
+            break // The active details popover owns Save commands.
         case .settings:
             openWindow(id: "settings")
         }
@@ -755,13 +722,11 @@ struct MacPlannerView: View {
             switch deletionTarget {
             case .planningItem(let item):
                 if await viewModel.deleteItem(item) {
-                    unsavedChanges.setDirty(false)
                     navigation.clearSelection()
                 }
             case .reminder(let reminder):
                 do {
                     try await appleReminders.delete(reminder)
-                    unsavedChanges.setDirty(false)
                     navigation.clearSelection()
                 } catch {
                     appleReminders.notice = error.localizedDescription
@@ -847,7 +812,7 @@ struct MacPlannerView: View {
     }
 
     private func request(_ intent: MacNavigationIntent) {
-        if let approved = unsavedChanges.request(intent) { execute(approved) }
+        execute(intent)
     }
 
     private func execute(_ intent: MacNavigationIntent) {
@@ -855,13 +820,21 @@ struct MacPlannerView: View {
         case .section(let section):
             navigation.select(section)
         case .day(let date):
-            navigation.selectDay(date)
+            if navigation.section == .events {
+                navigation.selectedDay = date
+                navigation.clearSelection()
+            } else {
+                navigation.selectDay(date)
+            }
+        case .closeDetails:
+            break
         case .selection(let selection):
             switch selection {
             case .planningItem(let id): navigation.selectPlanningItem(id)
             case .event(let id): navigation.selectEvent(id)
             case .appleReminder(let id): navigation.selectAppleReminder(id)
             }
+            openDetails()
         case .selections(let selections):
             navigation.selectMany(selections)
         case .weekOffset(let days):
@@ -872,15 +845,46 @@ struct MacPlannerView: View {
         }
     }
 
+    private func saveInlineDraft(_ entry: MacInlineDraft) async throws -> String {
+        switch entry.placement.destination {
+        case .weekOfUs:
+            let draft = PlanningItemDraft(
+                id: entry.id, text: entry.text, type: entry.placement.type,
+                planningDate: entry.placement.date, weekStartDate: entry.placement.weekStart,
+                remindAt: nil, assignedMemberIds: entry.placement.assignedMemberIds,
+                afterItemId: entry.afterItemId
+            )
+            guard await viewModel.saveItem(draft, creating: true) else {
+                throw NSError(domain: "InlinePlanning", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: viewModel.toast ?? "Couldn’t save. Your text is still here; try again."])
+            }
+            return entry.id
+        case .appleReminders(let listId):
+            guard let date = entry.placement.date else { throw APIError.invalidResponse }
+            let timezone = viewModel.data?.household.timezone ?? TimeZone.current.identifier
+            return try await appleReminders.createReminder(
+                title: entry.text, listId: listId,
+                dueDate: WeekDate.calendarDate(date, hour: 9, timeZoneIdentifier: timezone),
+                includesTime: false, timeZoneIdentifier: timezone
+            )
+        }
+    }
+
+    private func openDetails() {
+        guard let selection = navigation.selection, let data = viewModel.data else { return }
+        detailsPopover.open(selection: selection, data: data, userId: user.userId,
+                            reminder: appleReminders.tasks.first { .appleReminder($0.id) == selection })
+    }
+
     private func openSearchResult(_ result: PlannerSearchResult) {
         sheet = nil
-        unsavedChanges.setDirty(false)
         switch result {
         case .planningItem(let item):
             Task {
                 await viewModel.move(toWeek: item.weekStartDate)
                 navigation.select(item.type == .task ? .weekOfUsTasks : .plans)
                 navigation.selectPlanningItem(item.id)
+                openDetails()
             }
         case .calendarEvent(let event):
             let week = WeekDate.weekStart(for: String(event.start.prefix(10)))
@@ -888,16 +892,13 @@ struct MacPlannerView: View {
                 await viewModel.move(toWeek: week)
                 navigation.select(.events)
                 navigation.selectEvent(event.id)
+                openDetails()
             }
         }
     }
 
     @discardableResult
     private func reschedule(_ payload: MacPlannerDragPayload, to date: String) -> Bool {
-        guard !unsavedChanges.isDirty else {
-            viewModel.toast = "Save or discard the selected edits before rescheduling."
-            return false
-        }
         guard let data = viewModel.data else { return false }
         switch payload {
         case .planningItem(let id):
@@ -993,7 +994,7 @@ struct MacPlannerView: View {
         }
         commandRouter.updateAvailability(MacPlannerCommandAvailability(
             canCreate: ![.notifications, .settings].contains(navigation.section),
-            canSave: unsavedChanges.isDirty,
+            canSave: false,
             canToggleCompletion: canToggleCompletion,
             canDelete: canDelete
         ))
@@ -1057,6 +1058,7 @@ struct MacPlannerView: View {
         case .inbox:
             break
         }
+        openDetails()
         notifications.consume(destination)
     }
 
@@ -1069,104 +1071,465 @@ struct MacPlannerView: View {
     }
 }
 
+// Keep the editor tied to its original item while its info-button popover is open.
+@MainActor
+final class MacDetailsPopoverStore: ObservableObject {
+    struct Session: Identifiable {
+        let id: UUID
+        let userId: String
+        let selection: MacPlannerSelection
+        let data: WeeklyPlannerData
+        let reminder: AppleReminderTask?
+    }
+
+    @Published private(set) var sessions: [UUID: Session] = [:]
+    @Published private(set) var presentedID: UUID?
+    @Published fileprivate var commandRouter: MacPlannerCommandRouter?
+    @Published fileprivate var commandAvailability: MacPlannerCommandAvailability?
+    private(set) var presentedAnchor: MacPlannerSelection?
+    var visibleAnchors: Set<MacPlannerSelection> = []
+    private var anchorInstances: [UUID: MacPlannerSelection] = [:]
+
+    func registerAnchor(_ selection: MacPlannerSelection, id: UUID) {
+        anchorInstances[id] = selection
+        visibleAnchors.insert(selection)
+    }
+
+    func unregisterAnchor(id: UUID) {
+        guard let selection = anchorInstances.removeValue(forKey: id),
+              !anchorInstances.values.contains(selection) else { return }
+        visibleAnchors.remove(selection)
+    }
+
+    @discardableResult
+    func open(selection: MacPlannerSelection, data: WeeklyPlannerData, userId: String,
+              reminder: AppleReminderTask? = nil) -> UUID {
+        if let existing = sessions.values.first(where: { $0.userId == userId && $0.selection == selection }) {
+            present(existing)
+            return existing.id
+        }
+        let session = Session(id: UUID(), userId: userId, selection: selection, data: data, reminder: reminder)
+        sessions[session.id] = session
+        present(session)
+        return session.id
+    }
+
+    private func present(_ session: Session) {
+        presentedAnchor = visibleAnchors.contains(session.selection) ? session.selection : nil
+        presentedID = session.id
+    }
+
+    func remove(_ id: UUID) {
+        sessions[id] = nil
+        if presentedID == id {
+            presentedID = nil
+            commandRouter = nil
+            commandAvailability = nil
+        }
+    }
+}
+
+// Prefer the visible item; offscreen search/notification results use the content corner.
+private struct MacDetailsPopoverAnchor: ViewModifier {
+    let selection: MacPlannerSelection?
+    @State private var anchorID = UUID()
+    @EnvironmentObject private var popover: MacDetailsPopoverStore
+    @EnvironmentObject private var viewModel: PlannerViewModel
+
+    func body(content: Content) -> some View {
+        let activeSession = popover.presentedAnchor == selection
+            ? popover.presentedID.flatMap { popover.sessions[$0] } : nil
+        content
+            .onAppear { if let selection { popover.registerAnchor(selection, id: anchorID) } }
+            .onDisappear { popover.unregisterAnchor(id: anchorID) }
+            .popover(item: Binding<MacDetailsPopoverStore.Session?>(
+                get: { activeSession },
+                set: { value in
+                    if value == nil, let activeSession { popover.remove(activeSession.id) }
+                }
+            ), attachmentAnchor: .rect(.bounds), arrowEdge: .leading) { session in
+                MacDetailsPopover(session: session, viewModel: viewModel)
+                    .environmentObject(popover)
+                    .tint(CWTheme.accent)
+                    .frame(width: 400, height: 600)
+                    .presentationCompactAdaptation(.popover)
+            }
+    }
+}
+
+private struct MacItemInfoButton: View {
+    let selection: MacPlannerSelection
+    let title: String
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 15))
+                .foregroundStyle(CWTheme.accentStrong)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show details")
+        .accessibilityLabel("Details for \(title)")
+        .accessibilityIdentifier(identifier)
+        .modifier(MacDetailsPopoverAnchor(selection: selection))
+    }
+
+    private var identifier: String {
+        switch selection {
+        case .planningItem(let id): "mac-info-item-\(id)"
+        case .event(let id): "mac-info-event-\(id)"
+        case .appleReminder(let id): "mac-info-reminder-\(id)"
+        }
+    }
+}
+
+private struct MacDetailsPopover: View {
+    let session: MacDetailsPopoverStore.Session
+    @ObservedObject var viewModel: PlannerViewModel
+    @StateObject private var commandRouter = MacPlannerCommandRouter()
+    @StateObject private var unsavedChanges = MacUnsavedChangesCoordinator()
+    @StateObject private var appleReminders = AppleRemindersStore.shared
+    @State private var deletionTarget: MacDeletionTarget?
+    @EnvironmentObject private var popover: MacDetailsPopoverStore
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openWindow) private var openWindow
+
+    private var detailsData: WeeklyPlannerData {
+        if let current = viewModel.data, current.weekStart == session.data.weekStart { return current }
+        return session.data
+    }
+
+    var body: some View {
+        NavigationStack {
+            inspector(detailsData)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(action: requestClose) { Image(systemName: "xmark") }
+                            .accessibilityLabel("Close")
+                            .help("Close details")
+                            .accessibilityIdentifier("mac-close-details")
+                    }
+                }
+        }
+        .interactiveDismissDisabled(unsavedChanges.isDirty)
+        .focusedSceneValue(\.macPlannerCommandRouter, commandRouter)
+        .focusedSceneValue(\.macPlannerCommandAvailability, commandAvailability)
+        .confirmationDialog(deletionTitle, isPresented: Binding(
+            get: { deletionTarget != nil }, set: { if !$0 { deletionTarget = nil } }
+        ), titleVisibility: .visible) {
+            Button(deletionButtonTitle, role: .destructive) { performDeletion() }
+            Button("Cancel", role: .cancel) { deletionTarget = nil }
+        } message: { Text(deletionMessage) }
+        .confirmationDialog("Discard unsaved changes?", isPresented: Binding(
+            get: { unsavedChanges.requiresConfirmation },
+            set: { if !$0 { unsavedChanges.cancelNavigation() } }
+        ), titleVisibility: .visible) {
+            Button("Discard Changes", role: .destructive) {
+                _ = unsavedChanges.discardChanges()
+                close()
+            }
+            Button("Keep Editing", role: .cancel) { unsavedChanges.cancelNavigation() }
+        } message: { Text("Save this item first, or discard the edits before closing its details.") }
+        .onChange(of: commandAvailability, initial: true) { _, value in
+            commandRouter.updateAvailability(value)
+            popover.commandRouter = commandRouter
+            popover.commandAvailability = value
+        }
+        .onChange(of: commandRouter.revision) { _, _ in
+            switch commandRouter.command {
+            case .delete: beginDeleteSelectedItem()
+            case .toggleCompletion: toggleCompletion()
+            case .settings: openWindow(id: "settings")
+            default: break // Save is handled by the active inspector.
+            }
+        }
+        .onDisappear { popover.remove(session.id) }
+    }
+
+    private func requestClose() {
+        if unsavedChanges.request(.closeDetails) != nil { close() }
+    }
+
+    private func close() {
+        unsavedChanges.setDirty(false)
+        dismiss()
+    }
+
+    private var commandAvailability: MacPlannerCommandAvailability {
+        let canToggle: Bool
+        let canDelete: Bool
+        switch session.selection {
+        case .planningItem(let id):
+            let item = planningItem(id: id, in: detailsData)
+            canToggle = item?.type == .task
+            canDelete = item != nil
+        case .event(let id):
+            canToggle = false
+            canDelete = calendarEvent(id: id, in: detailsData)?.canEdit == true
+        case .appleReminder(let id):
+            let reminder = appleReminders.tasks.first { $0.id == id } ?? session.reminder
+            canToggle = reminder?.canModify == true
+            canDelete = reminder?.canDelete == true
+        }
+        return MacPlannerCommandAvailability(canCreate: false, canSave: unsavedChanges.isDirty,
+                                             canToggleCompletion: canToggle, canDelete: canDelete)
+    }
+
+    private func toggleCompletion() {
+        switch session.selection {
+        case .planningItem(let id):
+            if let item = planningItem(id: id, in: detailsData), item.type == .task {
+                Task { await viewModel.toggle(item) }
+            }
+        case .appleReminder(let id):
+            if let task = appleReminders.tasks.first(where: { $0.id == id }) ?? session.reminder {
+                Task { await appleReminders.toggle(task) }
+            }
+        case .event: break
+        }
+    }
+
+    @ViewBuilder
+    private func inspector(_ data: WeeklyPlannerData) -> some View {
+        switch session.selection {
+        case .planningItem(let id):
+            if let item = planningItem(id: id, in: data) {
+                MacPlanningItemInspector(
+                    item: item,
+                    data: data,
+                    viewModel: viewModel,
+                    appleReminders: appleReminders,
+                    commandRouter: commandRouter,
+                    requestDelete: { deletionTarget = .planningItem(item) },
+                    dirtyChanged: { unsavedChanges.setDirty($0) }
+                )
+                .id(item.id)
+            } else {
+                MacEmptyInspector(section: .week)
+            }
+        case .event(let id):
+            if let event = calendarEvent(id: id, in: data) {
+                MacEventInspector(
+                    event: event,
+                    data: data,
+                    viewModel: viewModel,
+                    commandRouter: commandRouter,
+                    dirtyChanged: { unsavedChanges.setDirty($0) },
+                    deleted: close
+                )
+                .id(event.id)
+            } else {
+                MacEmptyInspector(section: .week)
+            }
+        case .appleReminder(let id):
+            if let reminder = appleReminders.tasks.first(where: { $0.id == id }) ?? session.reminder {
+                MacAppleReminderInspector(
+                    task: reminder,
+                    data: data,
+                    store: appleReminders,
+                    commandRouter: commandRouter,
+                    requestDelete: { deletionTarget = .reminder(reminder) },
+                    dirtyChanged: { unsavedChanges.setDirty($0) }
+                )
+                .id(reminder.id)
+            } else {
+                MacEmptyInspector(section: .week)
+            }
+        case nil:
+            MacEmptyInspector(section: .week)
+        }
+    }
+
+    private func beginDeleteSelectedItem() {
+        let data = detailsData
+        switch session.selection {
+        case .planningItem(let id):
+            if let item = planningItem(id: id, in: data) { deletionTarget = .planningItem(item) }
+        case .appleReminder(let id):
+            if let reminder = appleReminders.tasks.first(where: { $0.id == id }) ?? session.reminder {
+                deletionTarget = .reminder(reminder)
+            }
+        default:
+            break
+        }
+    }
+
+    private func performDeletion() {
+        guard let deletionTarget else { return }
+        self.deletionTarget = nil
+        Task {
+            switch deletionTarget {
+            case .planningItem(let item):
+                if await viewModel.deleteItem(item) {
+                    unsavedChanges.setDirty(false)
+                    close()
+                }
+            case .reminder(let reminder):
+                do {
+                    try await appleReminders.delete(reminder)
+                    unsavedChanges.setDirty(false)
+                    close()
+                } catch {
+                    appleReminders.notice = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private var deletionTitle: String {
+        switch deletionTarget {
+        case .planningItem: "Delete this Week of Us item?"
+        case .reminder(let reminder): reminder.isRecurring ? "Delete this recurring reminder?" : "Delete this reminder?"
+        case nil: "Delete item?"
+        }
+    }
+
+    private var deletionButtonTitle: String {
+        switch deletionTarget {
+        case .reminder(let reminder) where reminder.isRecurring: "Delete recurring series"
+        case .reminder: "Delete reminder"
+        default: "Delete item"
+        }
+    }
+
+    private var deletionMessage: String {
+        switch deletionTarget {
+        case .planningItem:
+            "This removes the item from the shared Week of Us planner."
+        case .reminder(let reminder) where reminder.isRecurring:
+            "This deletes the entire recurring series from Apple Reminders, not just the reminder shown here. This cannot be undone."
+        case .reminder:
+            "This deletes it for everyone who shares the Apple Reminders list. This cannot be undone."
+        case nil:
+            ""
+        }
+    }
+
+    private func planningItem(id: String, in data: WeeklyPlannerData) -> PlanningItem? {
+        (data.weeklyItems + data.days.flatMap(\.items)).first(where: { $0.id == id })
+    }
+
+    private func calendarEvent(id: String, in data: WeeklyPlannerData) -> CalendarEvent? {
+        data.days.lazy.flatMap(\.events).first(where: { $0.id == id })
+    }
+
+}
+
+// Catalyst needs scene limits after the window is attached, as well as the SwiftUI minimum.
+private struct MacPlannerWindowSizing: UIViewControllerRepresentable {
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard let scene = view.window?.windowScene, let restrictions = scene.sizeRestrictions else { return }
+            restrictions.minimumSize = CGSize(width: 760, height: 560)
+            restrictions.maximumSize = CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        }
+    }
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+}
+
 private struct MacWeekHeader: View {
     let data: WeeklyPlannerData
     let section: MacPlannerSection
-    let selectedDay: String
-    let selectDay: (String) -> Void
     let previousWeek: () -> Void
     let currentWeek: () -> Void
     let nextWeek: () -> Void
     let refresh: () -> Void
     let create: () -> Void
     let createFromWeek: (MacWeekCreationKind) -> Void
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 20) {
+                title
+                Spacer(minLength: 0)
+                actions
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                title
+                actions
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(Color(uiColor: .secondarySystemBackground))
+    }
+
+    private var title: some View {
+        Text(WeekDate.weekTitle(data.weekStart))
+            .font(.system(size: 22, weight: .semibold, design: .rounded))
+            .tracking(-0.5)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var actions: some View {
+        HStack(spacing: 6) {
+            Button(action: previousWeek) { Image(systemName: "chevron.left") }
+                .accessibilityLabel("Previous Week")
+            Button("Today", action: currentWeek)
+            Button(action: nextWeek) { Image(systemName: "chevron.right") }
+                .accessibilityLabel("Next Week")
+            Divider().frame(height: 16).padding(.horizontal, 4)
+            Button(action: refresh) { Image(systemName: "arrow.clockwise") }
+                .accessibilityLabel("Refresh")
+            if section == .week {
+                Menu {
+                    Button("New Event", systemImage: "calendar.badge.plus") { createFromWeek(.event) }
+                        .accessibilityIdentifier("mac-new-event")
+                    Button("New Note", systemImage: "note.text.badge.plus") { createFromWeek(.note) }
+                        .accessibilityIdentifier("mac-new-note")
+                    Button("New Task", systemImage: "checkmark.square") { createFromWeek(.task) }
+                        .accessibilityIdentifier("mac-new-task")
+                } label: {
+                    Label("New", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityLabel("New Item")
+                .accessibilityIdentifier("mac-new-menu")
+            } else {
+                Button(action: create) { Label("New", systemImage: "plus") }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("New Item")
+            }
+        }
+        .controlSize(.small)
+        .fixedSize()
+    }
+}
+
+private struct MacDayPicker: View {
+    let days: [DayPlan]
+    let selectedDay: String
+    let selectDay: (String) -> Void
     let dropOnDay: (MacPlannerDragPayload, String) -> Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Eyebrow(text: section.title)
-                    Text(WeekDate.weekTitle(data.weekStart))
-                        .font(CWTheme.display(30))
-                        .tracking(-0.8)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+        HStack(spacing: 6) {
+            ForEach(days) { day in
+                Button { selectDay(day.date) } label: {
+                    Text(WeekDate.shortDay(day.date))
+                        .font(.system(size: 12, weight: selectedDay == day.date ? .semibold : .regular))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .foregroundStyle(selectedDay == day.date ? Color.white : CWTheme.secondaryInk)
+                        .background(selectedDay == day.date ? CWTheme.brand : Color.clear, in: RoundedRectangle(cornerRadius: 7))
                 }
-                Spacer()
-                if data.isDemo {
-                    Label("Device-only preview", systemImage: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(CWTheme.accentStrong)
-                }
-            }
-            HStack(spacing: 8) {
-                Button(action: previousWeek) { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("Previous Week")
-                Button("Today", action: currentWeek)
-                Button(action: nextWeek) { Image(systemName: "chevron.right") }
-                    .accessibilityLabel("Next Week")
-                Spacer()
-                Button(action: refresh) { Image(systemName: "arrow.clockwise") }
-                    .accessibilityLabel("Refresh")
-                if section == .week {
-                    Menu {
-                        Button("New Event", systemImage: "calendar.badge.plus") {
-                            createFromWeek(.event)
-                        }
-                        .accessibilityIdentifier("mac-new-event")
-                        Button("New Note", systemImage: "note.text.badge.plus") {
-                            createFromWeek(.note)
-                        }
-                        .accessibilityIdentifier("mac-new-note")
-                        Button("New Task", systemImage: "checkmark.square") {
-                            createFromWeek(.task)
-                        }
-                        .accessibilityIdentifier("mac-new-task")
-                    } label: {
-                        Label("New", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityLabel("New Item")
-                    .accessibilityIdentifier("mac-new-menu")
-                } else {
-                    Button(action: create) { Label("New", systemImage: "plus") }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityLabel("New Item")
-                }
-            }
-            if section == .week || section == .appleReminders {
-                HStack(spacing: 6) {
-                    ForEach(data.days) { day in
-                        Button {
-                            selectDay(day.date)
-                        } label: {
-                            VStack(spacing: 2) {
-                                Text(WeekDate.shortDay(day.date).split(separator: " ").first.map(String.init) ?? "")
-                                    .font(.caption2.bold())
-                                Text(WeekDate.shortDay(day.date).split(separator: " ").last.map(String.init) ?? "")
-                                    .font(.caption)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .foregroundStyle(selectedDay == day.date ? Color.white : CWTheme.secondaryInk)
-                            .background(selectedDay == day.date ? CWTheme.brand : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                        .dropDestination(for: String.self) { values, _ in
-                            values.compactMap(MacPlannerDragPayload.init(encoded:)).contains {
-                                dropOnDay($0, day.date)
-                            }
-                        } isTargeted: { _ in }
-                        .accessibilityIdentifier("mac-day-\(day.date)")
-                    }
-                }
+                .buttonStyle(.plain)
+                .dropDestination(for: String.self) { values, _ in
+                    values.compactMap(MacPlannerDragPayload.init(encoded:)).contains { dropOnDay($0, day.date) }
+                } isTargeted: { _ in }
+                .accessibilityIdentifier("mac-day-\(day.date)")
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .background(Color(uiColor: .secondarySystemBackground))
-        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mac-day-picker")
     }
 }
 
@@ -1267,11 +1630,15 @@ private struct MacDayContextBar: View {
 
 private struct MacPlannerListPane: View {
     let data: WeeklyPlannerData
+    @ObservedObject var composer: MacInlineComposer
+    let canEdit: Bool
+    let saveDraft: (MacInlineDraft) async throws -> String
     let section: MacPlannerSection
     let selectedDay: String
     let calendarRange: CalendarRange
     let currentUserId: String
     @Binding var selections: Set<MacPlannerSelection>
+    let openSelection: (MacPlannerSelection) -> Void
     let searchText: String
     let calendarFilterId: String
     let personFilterId: String
@@ -1284,6 +1651,7 @@ private struct MacPlannerListPane: View {
     let openWeather: (DayPlan) -> Void
 
     var body: some View {
+        ScrollViewReader { proxy in
         Group {
             if section == .appleReminders {
                 reminderContent
@@ -1293,6 +1661,27 @@ private struct MacPlannerListPane: View {
                 plannerList
             }
         }
+        .onKeyPress(.return) {
+            guard selections.count == 1, let selection = selections.first else { return .ignored }
+            switch selection {
+            case .planningItem(let id):
+                guard canEdit, let item = (data.weeklyItems + data.days.flatMap(\.items)).first(where: { $0.id == id }) else { return .ignored }
+                beginInline(date: item.planningDate, type: item.type, after: id, destination: .weekOfUs)
+            case .appleReminder(let id):
+                guard let task = reminders.tasks.first(where: { $0.id == id }), task.canModify else { return .ignored }
+                beginInline(date: task.displayDate, type: .task, after: id, destination: .appleReminders(task.listId))
+            case .event: return .ignored
+            }
+            return .handled
+        }
+        .onChange(of: composer.focusedID) { _, id in
+            guard let id else { return }
+            Task { @MainActor in
+                await Task.yield()
+                proxy.scrollTo(id, anchor: .center)
+            }
+        }
+        }
     }
 
     private var visibleDays: [DayPlan] {
@@ -1301,12 +1690,7 @@ private struct MacPlannerListPane: View {
 
     private var weekList: some View {
         List(selection: $selections) {
-            Section {
-                cardHeading("This week", subtitle: "Plans and tasks for the whole week")
-                    .accessibilityIdentifier("mac-week-list-weekly-heading")
-                weekItems(data.weeklyItems, type: .note)
-                weekItems(data.weeklyItems, type: .task)
-            }
+            if calendarRange == .week { wholeWeekSection }
             ForEach(visibleDays) { day in
                 Section {
                     VStack(spacing: 0) {
@@ -1323,27 +1707,41 @@ private struct MacPlannerListPane: View {
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
                     .selectionDisabled()
+                    .dropDestination(for: String.self) { values, _ in
+                        values.compactMap(MacPlannerDragPayload.init(encoded:)).contains { reschedule($0, day.date) }
+                    } isTargeted: { _ in }
                     weekEvents(day.events)
-                    weekItems(day.items, type: .note)
-                    weekItems(day.items, type: .task, reminderTasks: reminders.tasks(for: day.date))
+                    weekItems(day.items, type: .note, date: day.date)
+                    weekItems(day.items, type: .task, date: day.date, reminderTasks: reminders.tasks(for: day.date))
                 }
             }
+            if calendarRange == .day { wholeWeekSection }
         }
         .listStyle(.insetGrouped)
-        .listSectionSpacing(18)
-        .environment(\.defaultMinListRowHeight, 44)
-        .font(.system(size: 17))
+        .listSectionSpacing(14)
+        .environment(\.defaultMinListRowHeight, 30)
+        .font(.system(size: 14))
+        .contentMargins(.top, 14, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background { AppBackground() }
         .accessibilityIdentifier("mac-week-list")
+    }
+
+    private var wholeWeekSection: some View {
+        Section {
+            cardHeading("This week", subtitle: "Plans and tasks for the whole week")
+                .accessibilityIdentifier("mac-week-list-weekly-heading")
+            weekItems(data.weeklyItems, type: .note, date: nil)
+            weekItems(data.weeklyItems, type: .task, date: nil)
+        }
     }
 
     private func cardHeading(_ title: String, subtitle: String? = nil, isToday: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title)
-                    .font(CWTheme.display(26))
-                    .tracking(-0.6)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .tracking(-0.3)
                     .foregroundStyle(CWTheme.ink)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
@@ -1357,11 +1755,12 @@ private struct MacPlannerListPane: View {
                 }
             }
             if let subtitle {
-                Text(subtitle).font(.subheadline).foregroundStyle(CWTheme.secondaryInk)
+                Text(subtitle).font(.system(size: 12)).foregroundStyle(CWTheme.secondaryInk)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(LinearGradient(
             colors: [CWTheme.mint.opacity(isToday ? 0.9 : 0.5), CWTheme.cream.opacity(0.45)],
             startPoint: .topLeading, endPoint: .bottomTrailing
@@ -1373,8 +1772,8 @@ private struct MacPlannerListPane: View {
 
     private func categoryHeading(_ title: String, supplemental: Bool = false) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
-            .tracking(1.7)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .tracking(1.2)
             .foregroundStyle(supplemental ? CWTheme.secondaryInk : CWTheme.accent)
             .padding(.top, 8)
             .listRowSeparator(.hidden)
@@ -1406,11 +1805,11 @@ private struct MacPlannerListPane: View {
     }
 
     @ViewBuilder
-    private func weekItems(_ items: [PlanningItem], type: PlanningItemType, reminderTasks: [AppleReminderTask] = []) -> some View {
+    private func weekItems(_ items: [PlanningItem], type: PlanningItemType, date: String?, reminderTasks: [AppleReminderTask] = []) -> some View {
         let visible = items.filter { $0.type == type && matches($0) }
         let visibleReminders = reminderTasks.filter(matches)
         categoryHeading(type == .note ? "Plans" : "Tasks")
-        if visible.isEmpty && visibleReminders.isEmpty {
+        if visible.isEmpty && visibleReminders.isEmpty && !canEdit {
             Text(searchText.isEmpty && personFilterId == CalendarEventFilter.allPeople
                  ? (type == .note ? "No plans yet" : "No tasks yet")
                  : (type == .note ? "No plans in this view" : "No tasks in this view"))
@@ -1420,6 +1819,7 @@ private struct MacPlannerListPane: View {
         }
         itemRows(visible)
         reminderRows(visibleReminders)
+        inlineTail(date: date, type: type, visibleIDs: Set(visible.map(\.id) + visibleReminders.map(\.id)))
     }
 
     private var plannerList: some View {
@@ -1430,14 +1830,14 @@ private struct MacPlannerListPane: View {
                     eventSection(day.events, title: WeekDate.longDay(day.date))
                 }
             case .plans:
-                itemSection(data.weeklyItems.filter { $0.type == .note }, title: "This Week")
+                itemSection(data.weeklyItems.filter { $0.type == .note }, title: "This Week", date: nil, type: .note)
                 ForEach(data.days) { day in
-                    itemSection(day.items.filter { $0.type == .note }, title: WeekDate.longDay(day.date))
+                    itemSection(day.items.filter { $0.type == .note }, title: WeekDate.longDay(day.date), date: day.date, type: .note)
                 }
             case .weekOfUsTasks:
-                itemSection(data.weeklyItems.filter { $0.type == .task }, title: "This Week")
+                itemSection(data.weeklyItems.filter { $0.type == .task }, title: "This Week", date: nil, type: .task)
                 ForEach(data.days) { day in
-                    itemSection(day.items.filter { $0.type == .task }, title: WeekDate.longDay(day.date))
+                    itemSection(day.items.filter { $0.type == .task }, title: WeekDate.longDay(day.date), date: day.date, type: .task)
                 }
             default:
                 EmptyView()
@@ -1445,7 +1845,7 @@ private struct MacPlannerListPane: View {
         }
         .listStyle(.inset)
         .overlay {
-            if isPlannerSectionEmpty {
+            if isPlannerSectionEmpty && (section == .events || !canEdit) {
                 ContentUnavailableView(
                     "Nothing here yet",
                     systemImage: section.icon,
@@ -1487,27 +1887,30 @@ private struct MacPlannerListPane: View {
         }
     }
 
-    @ViewBuilder
-    private func itemSection(_ items: [PlanningItem], title: String) -> some View {
+    private func itemSection(_ items: [PlanningItem], title: String, date: String?, type: PlanningItemType) -> some View {
         let visible = items.filter(matches)
-        if !visible.isEmpty {
-            Section(title) { itemRows(visible) }
+        return Section(title) {
+            itemRows(visible)
+            inlineTail(date: date, type: type, visibleIDs: Set(visible.map(\.id)))
         }
     }
 
     private func itemRows(_ items: [PlanningItem]) -> some View {
-        ForEach(items) { item in
+        ForEach(items.filter { item in !composer.drafts.contains { $0.id == item.id } }) { item in
             MacPlanningItemRow(
                 item: item,
                 usesWeekStyle: section == .week,
                 toggle: { toggleItem(item) },
                 select: { select(.planningItem(item.id)) },
-                delete: { deleteItem(item) }
+                delete: { deleteItem(item) },
+                addBelow: canEdit ? { beginInline(date: item.planningDate, type: item.type, after: item.id, destination: .weekOfUs) } : nil
             )
             .listRowSeparator(section == .week ? .hidden : .automatic)
-            .listRowInsets(section == .week ? EdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18) : nil)
+            .listRowInsets(section == .week ? EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16) : nil)
+            .onTapGesture(count: 2) { select(.planningItem(item.id)) }
             .tag(MacPlannerSelection.planningItem(item.id))
             .draggable(MacPlannerDragPayload.planningItem(item.id).encoded)
+            inlineRows(date: item.planningDate, type: item.type, after: item.id)
         }
     }
 
@@ -1526,17 +1929,17 @@ private struct MacPlannerListPane: View {
                     Text(event.attribution)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 28, height: 28)
                         .background(Color(hex: event.calendarColor), in: RoundedRectangle(cornerRadius: 8))
                 } else {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color(hex: event.calendarColor))
                         .frame(width: 5, height: 34)
                 }
-                VStack(alignment: .leading, spacing: usesWeekStyle ? 5 : 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     if usesWeekStyle {
                         Text(event.allDay ? "All day" : eventTimeRange(event))
-                            .font(.system(size: 14)).foregroundStyle(CWTheme.secondaryInk)
+                            .font(.system(size: 11)).foregroundStyle(CWTheme.secondaryInk)
                     }
                     Text(event.title)
                         .fontWeight(usesWeekStyle && event.sectionGroup != "supplemental" ? .semibold : .regular)
@@ -1545,7 +1948,7 @@ private struct MacPlannerListPane: View {
                     Text(usesWeekStyle
                          ? [event.calendarAlias, event.location].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                          : event.allDay ? "All day · \(event.calendarAlias)" : "\(eventTimeRange(event)) · \(event.calendarAlias)")
-                        .font(usesWeekStyle ? .system(size: 14) : .caption)
+                        .font(usesWeekStyle ? .system(size: 11) : .caption)
                         .foregroundStyle(CWTheme.secondaryInk)
                         .lineLimit(usesWeekStyle ? 1 : nil)
                 }
@@ -1553,10 +1956,12 @@ private struct MacPlannerListPane: View {
                 if usesWeekStyle, event.isConflict == true {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
                 }
+                MacItemInfoButton(selection: .event(event.id), title: event.title) { select(.event(event.id)) }
             }
             .listRowSeparator(usesWeekStyle ? .hidden : .automatic)
-            .listRowInsets(usesWeekStyle ? EdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18) : nil)
+            .listRowInsets(usesWeekStyle ? EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16) : nil)
             .contentShape(Rectangle())
+            .onTapGesture(count: 2) { select(.event(event.id)) }
             .tag(MacPlannerSelection.event(event.id))
             .draggable(MacPlannerDragPayload.event(event.id).encoded)
             .contextMenu {
@@ -1584,10 +1989,12 @@ private struct MacPlannerListPane: View {
             MacAppleReminderRow(
                 task: task,
                 usesWeekStyle: section == .week,
-                toggle: { Task { await reminders.toggle(task) } }
+                toggle: { Task { await reminders.toggle(task) } },
+                open: { select(.appleReminder(task.id)) }
             )
             .listRowSeparator(section == .week ? .hidden : .automatic)
-            .listRowInsets(section == .week ? EdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 18) : nil)
+            .listRowInsets(section == .week ? EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16) : nil)
+            .onTapGesture(count: 2) { select(.appleReminder(task.id)) }
             .tag(MacPlannerSelection.appleReminder(task.id))
             .draggable(MacPlannerDragPayload.appleReminder(task.id).encoded)
             .contextMenu {
@@ -1607,13 +2014,80 @@ private struct MacPlannerListPane: View {
                 }
             }
             .accessibilityIdentifier("mac-apple-reminder-\(task.id)")
+            inlineRows(date: task.displayDate, type: .task, after: task.id)
+        }
+    }
+
+    private func placement(date: String?, type: PlanningItemType, destination: TaskCreationDestination? = nil) -> MacInlinePlacement {
+        let useDefault = section == .week && type == .task && date != nil
+        let fallback = useDefault && reminders.writableSelectedLists.contains(where: {
+            reminders.defaultDestination == .appleReminders($0.id)
+        }) ? reminders.defaultDestination : .weekOfUs
+        let assigned: [String]? = personFilterId == CalendarEventFilter.allPeople ? nil
+            : personFilterId == CalendarEventFilter.unassigned ? [] : [personFilterId]
+        return MacInlinePlacement(weekStart: data.weekStart, date: date, type: type,
+                                  destination: destination ?? fallback, assignedMemberIds: section == .week ? assigned : nil)
+    }
+
+    private func beginInline(date: String?, type: PlanningItemType, after id: String? = nil,
+                             destination: TaskCreationDestination? = nil) {
+        selections = []
+        composer.begin(placement(date: date, type: type, destination: destination), after: id)
+    }
+
+    private func groupDrafts(date: String?, type: PlanningItemType) -> [MacInlineDraft] {
+        composer.drafts.filter {
+            $0.placement.weekStart == data.weekStart && $0.placement.date == date && $0.placement.type == type
+        }
+    }
+
+    private func inlineRows(date: String?, type: PlanningItemType, after id: String?) -> some View {
+        ForEach(groupDrafts(date: date, type: type).filter { $0.afterItemId == id }) { draft in
+            inlineRow(draft)
+        }
+    }
+
+    private func inlineRow(_ draft: MacInlineDraft) -> some View {
+        MacInlineEntryRow(draft: draft, composer: composer, save: saveDraft)
+            .id(draft.id)
+            .listRowSeparator(section == .week ? .hidden : .automatic)
+            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .selectionDisabled()
+    }
+
+    private func inlineTail(date: String?, type: PlanningItemType, visibleIDs: Set<String>) -> some View {
+        let target = placement(date: date, type: type)
+        let canAdd = target.destination != .weekOfUs || canEdit
+        return Group {
+            ForEach(groupDrafts(date: date, type: type).filter {
+                $0.afterItemId == nil || !visibleIDs.contains($0.afterItemId!)
+            }) { draft in inlineRow(draft) }
+            if canAdd {
+                Button {
+                    beginInline(date: date, type: type)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "plus").frame(width: 18)
+                        Text(type == .note ? "Add plan" : "Add task")
+                        if case .appleReminders(let id) = target.destination,
+                           let list = reminders.writableSelectedLists.first(where: { $0.id == id }) {
+                            Text("Reminders · \(list.title)").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }.foregroundStyle(CWTheme.secondaryInk)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("mac-inline-add-\(type.rawValue)-\(date ?? "week")")
+                .listRowSeparator(.hidden)
+                .selectionDisabled()
+            }
         }
     }
 
     private var filteredReminders: [AppleReminderTask] { reminders.tasks.filter(matches) }
 
     private func select(_ selection: MacPlannerSelection) {
-        selections = [selection]
+        openSelection(selection)
     }
 
     private var emptyDescription: String {
@@ -1676,12 +2150,127 @@ private struct MacPlannerListPane: View {
     }
 }
 
+private struct MacInlineEntryRow: View {
+    let draft: MacInlineDraft
+    @ObservedObject var composer: MacInlineComposer
+    let save: (MacInlineDraft) async throws -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 10) {
+                Image(systemName: draft.placement.type == .task ? "square" : "circle.fill")
+                    .font(.system(size: draft.placement.type == .task ? 18 : 7))
+                    .foregroundStyle(CWTheme.secondaryInk)
+                    .frame(width: 18)
+                MacInlineTextField(
+                    text: Binding(
+                        get: { composer.drafts.first(where: { $0.id == draft.id })?.text ?? "" },
+                        set: { composer.setText($0, for: draft.id) }
+                    ),
+                    placeholder: draft.placement.type == .note ? "New plan" : "New task",
+                    identifier: "mac-inline-text-\(draft.id)",
+                    wantsFocus: composer.focusedID == draft.id,
+                    isSaving: draft.isSaving,
+                    submit: { submit(thenAddAnother: true) },
+                    cancel: { composer.cancel(draft.id) },
+                    endedEditing: {
+                        if composer.focusedID == draft.id { composer.focusedID = nil }
+                        if draft.error == nil { submit(thenAddAnother: false) }
+                    }
+                ).frame(height: 24)
+                if draft.isSaving { ProgressView().controlSize(.small) }
+                else {
+                    Button { composer.cancel(draft.id) } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .accessibilityLabel("Cancel new item")
+                }
+            }
+            if let error = draft.error {
+                HStack {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                    Button("Retry") { submit(thenAddAnother: true) }.buttonStyle(.borderless)
+                }.padding(.leading, 28)
+            }
+        }
+    }
+
+    private func submit(thenAddAnother: Bool) {
+        Task { await composer.submit(draft.id, thenAddAnother: thenAddAnother, save: save) }
+    }
+}
+
+// Read the native field at Return so fast typing is committed before the next row takes focus.
+private struct MacInlineTextField: UIViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let identifier: String
+    let wantsFocus: Bool
+    let isSaving: Bool
+    let submit: () -> Void
+    let cancel: () -> Void
+    let endedEditing: () -> Void
+
+    final class Field: UITextField {
+        var cancelEntry: (() -> Void)?
+        override var keyCommands: [UIKeyCommand]? {
+            [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelInlineEntry))]
+        }
+        @objc private func cancelInlineEntry() { cancelEntry?() }
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: MacInlineTextField
+        init(_ parent: MacInlineTextField) { self.parent = parent }
+        @objc func changed(_ field: UITextField) { parent.text = field.text ?? "" }
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            changed(textField)
+            parent.submit()
+            return false
+        }
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            guard !parent.isSaving else { return }
+            changed(textField)
+            parent.endedEditing()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIView(context: Context) -> Field {
+        let field = Field()
+        field.font = .systemFont(ofSize: 14)
+        field.textColor = .label
+        field.returnKeyType = .next
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.changed(_:)), for: .editingChanged)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+    func updateUIView(_ field: Field, context: Context) {
+        context.coordinator.parent = self
+        field.placeholder = placeholder
+        field.accessibilityLabel = placeholder
+        field.accessibilityIdentifier = identifier
+        field.cancelEntry = cancel
+        // SwiftUI re-renders the list as the draft changes; never replace text mid-keystroke.
+        if !field.isFirstResponder { field.text = text }
+        field.isEnabled = !isSaving
+        if wantsFocus && !isSaving && !field.isFirstResponder {
+            DispatchQueue.main.async { [weak field, weak coordinator = context.coordinator] in
+                guard let field, field.window != nil, coordinator?.parent.wantsFocus == true,
+                      coordinator?.parent.isSaving == false else { return }
+                field.becomeFirstResponder()
+            }
+        }
+    }
+}
+
 private struct MacPlanningItemRow: View {
     let item: PlanningItem
     var usesWeekStyle = false
     let toggle: () -> Void
     let select: () -> Void
     let delete: () -> Void
+    var addBelow: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1711,13 +2300,17 @@ private struct MacPlanningItemRow: View {
                     if let deadline = item.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(.secondary) }
                     if let carryoverLabel = item.carryoverLabel { Text(carryoverLabel) }
                 }
-                .font(usesWeekStyle ? .system(size: 14) : .caption2)
+                .font(usesWeekStyle ? .system(size: 11) : .caption2)
                 .foregroundStyle(.secondary)
             }
+            MacItemInfoButton(selection: .planningItem(item.id), title: item.text, open: select)
         }
         .contentShape(Rectangle())
         .contextMenu {
             Button("Open") { select() }
+            if let addBelow {
+                Button(item.type == .note ? "New Plan Below" : "New Task Below", action: addBelow)
+            }
             if item.type == .task {
                 Button(item.isCompleted ? "Reopen Task" : "Complete Task", action: toggle)
             }
@@ -1731,6 +2324,7 @@ private struct MacAppleReminderRow: View {
     let task: AppleReminderTask
     var usesWeekStyle = false
     let toggle: () -> Void
+    let open: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -1755,7 +2349,7 @@ private struct MacAppleReminderRow: View {
                     if task.isRecurring { Image(systemName: "repeat") }
                     if !task.canModify { Image(systemName: "lock.fill") }
                 }
-                .font(usesWeekStyle ? .system(size: 14) : .caption2)
+                .font(usesWeekStyle ? .system(size: 11) : .caption2)
                 .foregroundStyle(.secondary)
                 if let carryoverLabel = task.carryoverLabel {
                     Text(carryoverLabel)
@@ -1763,6 +2357,7 @@ private struct MacAppleReminderRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            MacItemInfoButton(selection: .appleReminder(task.id), title: task.title, open: open)
         }
         .contentShape(Rectangle())
     }
@@ -1862,17 +2457,18 @@ private struct MacInspectorLayout<Content: View, Footer: View>: View {
             ScrollView {
                 content
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(.horizontal, 22)
-                    .padding(.top, 22)
-                    .padding(.bottom, 28)
+                    .padding(14)
             }
             Divider()
             footer
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .background(.regularMaterial)
         }
+        .font(.system(size: 13))
+        .controlSize(.small)
+        .toggleStyle(.switch)
         .background(Color(uiColor: .systemGroupedBackground))
     }
 }
@@ -1886,73 +2482,75 @@ private struct MacInspectorHeader: View {
     let edited: Bool
     let subtitle: String?
     let statuses: [MacInspectorStatus]
+    var notes: Binding<String>? = nil
+    var url: Binding<String>? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 13) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 38, height: 38)
-                    .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 7) {
-                        Text(kind.uppercased())
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(1.35)
-                            .foregroundStyle(.secondary)
-                        if edited {
-                            Label("Edited", systemImage: "circle.fill")
-                                .font(.caption2.weight(.semibold))
-                                .labelStyle(.titleAndIcon)
-                                .foregroundStyle(CWTheme.accent)
-                        }
-                    }
-
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                if editable {
+                    TextField(titlePrompt, text: $title, axis: .vertical)
+                        .font(.system(size: 21, weight: .semibold))
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...5)
+                        .accessibilityLabel(titlePrompt)
+                } else {
+                    Text(title)
+                        .font(.system(size: 21, weight: .semibold))
+                        .textSelection(.enabled)
+                }
+                if let notes {
                     if editable {
-                        TextField(titlePrompt, text: $title, axis: .vertical)
-                            .font(.title3.weight(.semibold))
+                        TextField("Notes", text: notes, axis: .vertical)
                             .textFieldStyle(.plain)
-                            .lineLimit(1...4)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(
-                                Color(uiColor: .secondarySystemGroupedBackground),
-                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            )
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .stroke(edited ? CWTheme.accent.opacity(0.45) : CWTheme.rule.opacity(0.55), lineWidth: 1)
-                            }
-                            .accessibilityLabel(titlePrompt)
-                    } else {
-                        Text(title)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(CWTheme.ink)
+                            .lineLimit(1...8)
+                            .accessibilityLabel("Notes")
+                    } else if !notes.wrappedValue.isEmpty {
+                        Text(notes.wrappedValue).textSelection(.enabled)
                     }
-
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                }
+                if let url, editable || !url.wrappedValue.isEmpty {
+                    Divider().padding(.vertical, 2)
+                    if editable {
+                        TextField("URL", text: url, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .lineLimit(1...3)
+                            .accessibilityLabel("URL")
+                    } else {
+                        Text(url.wrappedValue).textSelection(.enabled)
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color(uiColor: .secondarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            HStack(spacing: 6) {
+                Label {
+                    Text(subtitle ?? kind).foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: systemImage).foregroundStyle(tint)
+                }
+                Spacer(minLength: 4)
+                if edited {
+                    Text("Edited").foregroundStyle(CWTheme.accent)
+                }
+            }
+            .font(.system(size: 11))
+            .padding(.horizontal, 10)
 
             if !statuses.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 7) {
-                        ForEach(statuses) { status in
-                            Label(status.text, systemImage: status.systemImage)
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(status.tint)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 5)
-                                .background(status.tint.opacity(0.11), in: Capsule())
-                        }
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(statuses) { status in
+                        Label(status.text, systemImage: status.systemImage)
+                            .font(.system(size: 11))
+                            .foregroundStyle(status.tint)
                     }
                 }
+                .padding(.horizontal, 10)
             }
         }
     }
@@ -1962,37 +2560,29 @@ private struct MacInspectorHeader: View {
     }
 }
 
-private struct MacInspectorSection<Content: View>: View {
+struct MacInspectorSection<Content: View>: View {
     let title: String
-    let systemImage: String
     private let content: Content
 
-    init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
+    init(title: String, @ViewBuilder content: () -> Content) {
         self.title = title
-        self.systemImage = systemImage
         self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.leading, 2)
+                .padding(.leading, 12)
             VStack(spacing: 0) { content }
-                .background(
-                    Color(uiColor: .secondarySystemGroupedBackground).opacity(0.78),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(CWTheme.rule.opacity(0.5), lineWidth: 1)
-                }
+                .background(Color(uiColor: .secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 }
 
-private struct MacInspectorRow<Content: View>: View {
+struct MacInspectorRow<Content: View>: View {
     let title: String
     let systemImage: String
     private let content: Content
@@ -2004,77 +2594,28 @@ private struct MacInspectorRow<Content: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Label(title, systemImage: systemImage)
-                .font(.callout)
+        HStack(spacing: 9) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+                .accessibilityHidden(true)
+            Text(title)
                 .foregroundStyle(CWTheme.ink)
                 .layoutPriority(1)
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
             content
                 .controlSize(.small)
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 43)
-    }
-}
-
-private struct MacInspectorOptionalField: View {
-    let title: String
-    let systemImage: String
-    let prompt: String
-    @Binding var text: String
-    let lineLimit: ClosedRange<Int>
-    @State private var expanded: Bool
-
-    init(
-        title: String,
-        systemImage: String,
-        prompt: String,
-        text: Binding<String>,
-        lineLimit: ClosedRange<Int> = 1...4
-    ) {
-        self.title = title
-        self.systemImage = systemImage
-        self.prompt = prompt
-        self._text = text
-        self.lineLimit = lineLimit
-        self._expanded = State(initialValue: !text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-
-    var body: some View {
-        if expanded || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Label(title, systemImage: systemImage)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                TextField(prompt, text: $text, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(lineLimit)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityLabel(title)
-            }
-            .padding(14)
-        } else {
-            Button {
-                withAnimation(.easeOut(duration: 0.16)) { expanded = true }
-            } label: {
-                Label("Add \(title.lowercased())", systemImage: "plus")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(CWTheme.accentStrong)
-            .padding(.horizontal, 14)
-            .frame(minHeight: 43)
-        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(minHeight: 40)
     }
 }
 
 private struct MacInspectorDivider: View {
     var body: some View {
-        Divider().padding(.leading, 42)
+        Divider().padding(.leading, 41).padding(.trailing, 12)
     }
 }
 
@@ -2157,7 +2698,7 @@ private struct MacEventInspector: View {
 
     var body: some View {
         MacInspectorLayout {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 16) {
                 MacInspectorHeader(
                     kind: "Calendar event",
                     systemImage: "calendar",
@@ -2166,11 +2707,12 @@ private struct MacEventInspector: View {
                     editable: event.canEdit == true,
                     edited: isDirty,
                     subtitle: selectedCalendar?.name ?? event.calendarAlias,
-                    statuses: eventStatuses
+                    statuses: eventStatuses,
+                    notes: $notes
                 )
 
                 if event.canEdit == true {
-                    MacInspectorSection(title: "Schedule", systemImage: "clock") {
+                    MacInspectorSection(title: "Schedule") {
                         MacInspectorRow(title: "Calendar", systemImage: "calendar.badge.clock") {
                             Picker("Calendar", selection: $calendarId) {
                                 ForEach(data.editableCalendars) { calendar in Text(calendar.name).tag(calendar.id) }
@@ -2197,25 +2739,18 @@ private struct MacEventInspector: View {
                         }
                     }
 
-                    MacInspectorSection(title: "Details", systemImage: "text.alignleft") {
-                        MacInspectorOptionalField(
-                            title: "Location",
-                            systemImage: "mappin.and.ellipse",
-                            prompt: "Add a location",
-                            text: $location
-                        )
-                        MacInspectorDivider()
-                        MacInspectorOptionalField(
-                            title: "Notes",
-                            systemImage: "note.text",
-                            prompt: "Add notes",
-                            text: $notes,
-                            lineLimit: 2...7
-                        )
+                    MacInspectorSection(title: "Place") {
+                        MacInspectorRow(title: "Location", systemImage: "mappin.and.ellipse") {
+                            TextField("Add a location", text: $location, axis: .vertical)
+                                .textFieldStyle(.plain)
+                                .multilineTextAlignment(.trailing)
+                                .lineLimit(1...4)
+                                .accessibilityLabel("Location")
+                        }
                     }
 
                     if event.recurringEventId != nil {
-                        MacInspectorSection(title: "Recurring event", systemImage: "repeat") {
+                        MacInspectorSection(title: "Recurring event") {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Apply changes to")
                                     .font(.caption.weight(.semibold))
@@ -2236,7 +2771,7 @@ private struct MacEventInspector: View {
                         }
                     }
                 } else {
-                    MacInspectorSection(title: "Event details", systemImage: "lock") {
+                    MacInspectorSection(title: "Event details") {
                         MacInspectorRow(title: "Calendar", systemImage: "calendar") {
                             Text(event.calendarAlias).foregroundStyle(.secondary)
                         }
@@ -2258,7 +2793,7 @@ private struct MacEventInspector: View {
                 }
 
                 if let attendees = event.attendees, !attendees.isEmpty {
-                    MacInspectorSection(title: "Guests", systemImage: "person.2") {
+                    MacInspectorSection(title: "Guests") {
                         ForEach(attendees) { attendee in
                             HStack(spacing: 10) {
                                 Image(systemName: attendee.responseStatus == "accepted" ? "checkmark.circle.fill" : "person.crop.circle")
@@ -2292,7 +2827,7 @@ private struct MacEventInspector: View {
                 }
 
                 if !event.allDay {
-                    MacInspectorSection(title: "Week of Us reminder", systemImage: "bell") {
+                    MacInspectorSection(title: "Week of Us reminder") {
                         MacInspectorRow(title: "Notify me", systemImage: "bell.badge") {
                             Picker("Notify me", selection: $reminderSelection) {
                                 Text("None").tag("none")
@@ -2318,7 +2853,7 @@ private struct MacEventInspector: View {
                 }
                 Spacer()
                 if event.canEdit == true {
-                    Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
+                    Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
                         .buttonStyle(.borderedProminent)
                         .disabled(!canSave)
                 }
@@ -2567,7 +3102,7 @@ private struct MacPlanningItemInspector: View {
 
     var body: some View {
         MacInspectorLayout {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 16) {
                 MacInspectorHeader(
                     kind: "Week of Us item",
                     systemImage: type == .task ? "checkmark.square" : "note.text",
@@ -2579,7 +3114,7 @@ private struct MacPlanningItemInspector: View {
                     statuses: itemStatuses
                 )
 
-                MacInspectorSection(title: "Planning", systemImage: "calendar.badge.clock") {
+                MacInspectorSection(title: "Planning") {
                     MacInspectorRow(title: "Type", systemImage: type == .task ? "checkmark.square" : "note.text") {
                         Picker("Type", selection: $type) {
                             Text("Plan or note").tag(PlanningItemType.note)
@@ -2600,11 +3135,14 @@ private struct MacPlanningItemInspector: View {
                     }
                 }
 
-                MacInspectorSection(title: "Child", systemImage: "person.crop.circle") {
-                    PlanningChildPicker(planner: data, childId: $childId)
+                MacInspectorSection(title: "People") {
+                    MacInspectorRow(title: "For", systemImage: "person") {
+                        PlanningChildPicker(planner: data, childId: $childId)
+                            .labelsHidden()
+                    }
                 }
 
-                MacInspectorSection(title: "Reminder", systemImage: "bell") {
+                MacInspectorSection(title: "Reminder") {
                     MacInspectorRow(title: "Remind me", systemImage: "bell.badge") {
                         Toggle("Remind me", isOn: $reminderEnabled).labelsHidden()
                     }
@@ -2619,20 +3157,20 @@ private struct MacPlanningItemInspector: View {
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
-                    ItemCollaborationFields(resource: ["itemId": item.id], planner: data, viewModel: viewModel, includePlacement: false, files: itemFiles)
+                    ItemCollaborationFields(resource: ["itemId": item.id], planner: data, viewModel: viewModel, includePlacement: false, compact: true, files: itemFiles)
                 }
                 .id(item.id)
             }
         } footer: {
             HStack(spacing: 10) {
                 if item.type == .task {
-                    Button(item.isCompleted ? "Reopen Task" : "Complete Task") {
+                    Button(item.isCompleted ? "Reopen" : "Complete") {
                         Task { await viewModel.toggle(item) }
                     }
                     .buttonStyle(.bordered)
                 }
                 Spacer()
-                Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
+                Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSave)
                 Menu {
@@ -2692,7 +3230,7 @@ private struct MacPlanningItemInspector: View {
             childId: childId.isEmpty ? nil : childId,
             childAssignmentIsSet: true
         )
-        if await viewModel.saveItem(draft) {
+        if await viewModel.saveItem(draft, originalItem: item) {
             baseline = editorState
             dirtyChanged(false)
         }
@@ -2718,18 +3256,7 @@ private struct MacPlanningItemInspector: View {
     }
 
     private var itemStatuses: [MacInspectorStatus] {
-        var statuses = [
-            MacInspectorStatus(
-                text: type == .task ? "Task" : "Plan",
-                systemImage: type == .task ? "checkmark.square" : "note.text",
-                tint: CWTheme.accentStrong
-            ),
-            MacInspectorStatus(
-                text: item.planningDate.map(WeekDate.shortDay) ?? "This week",
-                systemImage: "calendar",
-                tint: CWTheme.accentStrong
-            )
-        ]
+        var statuses: [MacInspectorStatus] = []
         if item.isCompleted {
             statuses.append(MacInspectorStatus(text: "Completed", systemImage: "checkmark.circle.fill", tint: CWTheme.accentStrong))
         }
@@ -2800,7 +3327,7 @@ private struct MacAppleReminderInspector: View {
 
     var body: some View {
         MacInspectorLayout {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 16) {
                 MacInspectorHeader(
                     kind: "Apple Reminder",
                     systemImage: "checklist",
@@ -2809,30 +3336,12 @@ private struct MacAppleReminderInspector: View {
                     editable: task.canModify,
                     edited: isDirty,
                     subtitle: listChoices.first(where: { $0.id == listId })?.title ?? task.listTitle,
-                    statuses: reminderStatuses
+                    statuses: reminderStatuses,
+                    notes: $notes,
+                    url: $urlText
                 )
 
-                MacInspectorSection(title: "Reminder", systemImage: "checklist") {
-                    MacInspectorRow(title: "List", systemImage: "list.bullet") {
-                        Picker("List", selection: $listId) {
-                            ForEach(listChoices) { list in Text(list.title).tag(list.id) }
-                        }
-                        .labelsHidden()
-                        .frame(maxWidth: 180)
-                        .disabled(!task.canModify)
-                    }
-                    MacInspectorDivider()
-                    MacInspectorRow(title: "Priority", systemImage: "exclamationmark") {
-                        Picker("Priority", selection: $priority) {
-                            ForEach(AppleReminderPriority.allCases) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(maxWidth: 160)
-                        .disabled(!task.canModify)
-                    }
-                }
-
-                MacInspectorSection(title: "Due", systemImage: "calendar") {
+                MacInspectorSection(title: "Date & Time") {
                     MacInspectorRow(title: "Date", systemImage: "calendar") {
                         DatePicker("Date", selection: $dueDate, displayedComponents: .date)
                             .labelsHidden()
@@ -2840,7 +3349,7 @@ private struct MacAppleReminderInspector: View {
                             .disabled(!task.canModify)
                     }
                     MacInspectorDivider()
-                    MacInspectorRow(title: "Include time", systemImage: "clock") {
+                    MacInspectorRow(title: "Time", systemImage: "clock") {
                         Toggle("Include due time", isOn: $includesTime)
                             .labelsHidden()
                             .disabled(!task.canModify)
@@ -2856,25 +3365,22 @@ private struct MacAppleReminderInspector: View {
                     }
                 }
 
-                if task.canModify || !notes.isEmpty || !urlText.isEmpty {
-                    MacInspectorSection(title: "Details", systemImage: "text.alignleft") {
-                        MacInspectorOptionalField(
-                            title: "Notes",
-                            systemImage: "note.text",
-                            prompt: "Add notes",
-                            text: $notes,
-                            lineLimit: 2...7
-                        )
+                MacInspectorSection(title: "Organization") {
+                    MacInspectorRow(title: "List", systemImage: "list.bullet") {
+                        Picker("List", selection: $listId) {
+                            ForEach(listChoices) { list in Text(list.title).tag(list.id) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 180)
                         .disabled(!task.canModify)
-                        MacInspectorDivider()
-                        MacInspectorOptionalField(
-                            title: "URL",
-                            systemImage: "link",
-                            prompt: "Add a URL",
-                            text: $urlText,
-                            lineLimit: 1...3
-                        )
-                        .textInputAutocapitalization(.never)
+                    }
+                    MacInspectorDivider()
+                    MacInspectorRow(title: "Priority", systemImage: "exclamationmark") {
+                        Picker("Priority", selection: $priority) {
+                            ForEach(AppleReminderPriority.allCases) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 160)
                         .disabled(!task.canModify)
                     }
                 }
@@ -2905,14 +3411,14 @@ private struct MacAppleReminderInspector: View {
             }
         } footer: {
             HStack(spacing: 10) {
-                Button(task.isCompleted ? "Reopen Reminder" : "Complete Reminder") {
+                Button(task.isCompleted ? "Reopen" : "Complete") {
                     Task { await store.toggle(task) }
                 }
                 .buttonStyle(.bordered)
                 .disabled(!task.canModify)
                 Spacer()
                 if task.canModify {
-                    Button(isSaving ? "Saving…" : "Save Changes") { Task { await save() } }
+                    Button(isSaving ? "Saving…" : "Save") { Task { await save() } }
                         .buttonStyle(.borderedProminent)
                         .disabled(!canSave)
                     Menu {

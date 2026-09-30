@@ -23,7 +23,8 @@ struct CommonWeekApp: App {
                     handleScenePhase(phase)
                 }
         }
-        .defaultSize(width: 1280, height: 820)
+        .defaultSize(width: 1120, height: 780)
+        .windowResizability(.contentMinSize)
         .commands { MacPlannerCommands() }
         WindowGroup("Week of Us Settings", id: "settings") {
             MacSettingsSceneView(auth: auth, planner: planner)

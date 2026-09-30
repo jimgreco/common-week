@@ -229,10 +229,11 @@ final class PlannerViewModel: ObservableObject {
         }
     }
 
-    func saveItem(_ draft: PlanningItemDraft) async -> Bool {
+    func saveItem(_ draft: PlanningItemDraft, originalItem: PlanningItem? = nil, creating: Bool = false) async -> Bool {
+        let isNew = creating || draft.id == nil
         let visibleWeek = data?.weekStart ?? draft.weekStartDate
         if isDemo {
-            applyDraft(draft, id: draft.id ?? UUID().uuidString, saveState: "saved")
+            applyDraft(draft, id: draft.id ?? UUID().uuidString, saveState: "saved", originalItem: originalItem)
             return true
         }
         let onlineDraft = PlanningItemDraft(
@@ -244,21 +245,22 @@ final class PlannerViewModel: ObservableObject {
             remindAt: draft.remindAt,
             childId: draft.childId,
             childAssignmentIsSet: draft.childAssignmentIsSet,
-            assignedMemberIds: draft.assignedMemberIds
+            assignedMemberIds: draft.assignedMemberIds,
+            afterItemId: draft.afterItemId
         )
-        let previous = onlineDraft.id.flatMap(item(withId:))
-        applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saving")
+        let previous = onlineDraft.id.flatMap(item(withId:)) ?? originalItem
+        applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saving", originalItem: originalItem)
         persistCurrentPlanner()
         do {
-            if draft.id == nil { _ = try await api.createItem(onlineDraft) }
+            if isNew { _ = try await api.createItem(onlineDraft) }
             else { _ = try await api.updateItem(onlineDraft) }
-            applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saved")
+            applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saved", originalItem: previous)
             persistCurrentPlanner()
             show(onlineDraft.type == .task ? "Task saved" : "Plan saved")
             scheduleRefreshAfterMutation(week: visibleWeek)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
-            let mutation = OfflineMutation(kind: draft.id == nil ? .createItem : .updateItem, draft: onlineDraft)
+            let mutation = OfflineMutation(kind: isNew ? .createItem : .updateItem, draft: onlineDraft)
             if await enqueue(mutation) {
                 markSavedOffline()
                 return true
@@ -637,8 +639,8 @@ final class PlannerViewModel: ObservableObject {
         return (data.days.flatMap(\.items) + data.weeklyItems).first { $0.id == id }
     }
 
-    private func applyDraft(_ draft: PlanningItemDraft, id: String, saveState: String) {
-        let previous = item(withId: id)
+    private func applyDraft(_ draft: PlanningItemDraft, id: String, saveState: String, originalItem: PlanningItem? = nil) {
+        let previous = item(withId: id) ?? originalItem
         removeItem(id: id)
         let item = PlanningItem(
             id: id,
@@ -662,7 +664,7 @@ final class PlannerViewModel: ObservableObject {
             routineId: previous?.routineId,
             routineOccurrenceDate: previous?.routineOccurrenceDate
         )
-        insert(item)
+        insert(item, after: draft.afterItemId)
     }
 
     private func mutateItem(id: String, mutation: (inout PlanningItem) -> Void) {
@@ -700,14 +702,18 @@ final class PlannerViewModel: ObservableObject {
         data = planner
     }
 
-    private func insert(_ item: PlanningItem) {
+    private func insert(_ item: PlanningItem, after anchorId: String? = nil) {
         guard var planner = data else { return }
         if let date = item.planningDate {
             if let index = planner.days.firstIndex(where: { $0.date == date }) {
-                planner.days[index].items.append(item)
+                if let anchorId, let anchor = planner.days[index].items.firstIndex(where: { $0.id == anchorId }) {
+                    planner.days[index].items.insert(item, at: anchor + 1)
+                } else { planner.days[index].items.append(item) }
             }
         } else if item.weekStartDate == planner.weekStart {
-            planner.weeklyItems.append(item)
+            if let anchorId, let anchor = planner.weeklyItems.firstIndex(where: { $0.id == anchorId }) {
+                planner.weeklyItems.insert(item, at: anchor + 1)
+            } else { planner.weeklyItems.append(item) }
         }
         data = planner
     }

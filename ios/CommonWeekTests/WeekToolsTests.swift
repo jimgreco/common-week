@@ -2,6 +2,25 @@ import XCTest
 import PDFKit
 @testable import CommonWeek
 final class WeekToolsTests: XCTestCase {
+    @MainActor func testInlineCreateUsesPostWithAStableIdAndInsertsAfterItsAnchor() async throws {
+        let previousDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"]
+        unsetenv("COMMON_WEEK_DEMO")
+        let model = PlannerViewModel(api: coverageClient(fixture: "inline"))
+        if let previousDemo { setenv("COMMON_WEEK_DEMO", previousDemo, 1) }
+        model.data = PreviewData.planner
+        let anchor = try XCTUnwrap(model.data?.weeklyItems.first)
+        let id = "00000000-0000-4000-8000-000000000099"
+        let draft = PlanningItemDraft(id: id, text: "Inserted plan", type: .note,
+                                      planningDate: nil, weekStartDate: anchor.weekStartDate,
+                                      remindAt: nil, afterItemId: anchor.id)
+        let saved = await model.saveItem(draft, creating: true)
+        XCTAssertTrue(saved)
+        let items = try XCTUnwrap(model.data?.weeklyItems)
+        let anchorIndex = try XCTUnwrap(items.firstIndex { $0.id == anchor.id })
+        XCTAssertEqual(items[anchorIndex + 1].id, id)
+        XCTAssertNil(items[anchorIndex + 1].planningDate)
+    }
+
     @MainActor func testCoverageLoadsRowsFromSingleAPIEnvelope() async throws {
         let client = coverageClient(fixture: "saved")
         let rows = try await client.coverage()
@@ -46,7 +65,7 @@ final class WeekToolsTests: XCTestCase {
             else { unsetenv("COMMON_WEEK_SESSION_TOKEN") }
         }
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [CoverageURLProtocol.self]
+        configuration.protocolClasses = fixture == "inline" ? [InlineCreateURLProtocol.self] : [CoverageURLProtocol.self]
         let session = URLSession(configuration: configuration)
         addTeardownBlock { session.invalidateAndCancel() }
         return APIClient(session: session, baseURL: URL(string: "https://\(fixture).coverage.test")!)
@@ -115,5 +134,27 @@ private final class CoverageURLProtocol: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
 
+    override func stopLoading() {}
+}
+
+
+private final class InlineCreateURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        if request.url?.path == "/api/ios/planning-items" {
+            XCTAssertEqual(request.httpMethod, "POST", "A stable client-generated id must still create, not patch")
+            let item = PlanningItem(id: "00000000-0000-4000-8000-000000000099", planningDate: nil,
+                                    weekStartDate: PreviewData.planner.weekStart, type: .note, text: "Inserted plan",
+                                    isCompleted: false, sortOrder: 1, createdBy: "demo-jim", createdByName: "Jim",
+                                    updatedAt: "2026-09-29T12:00:00Z", saveState: "saved", reminder: nil)
+            let object = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(item))
+            let body = try! JSONSerialization.data(withJSONObject: ["ok": true, "data": object])
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
+                                 httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        } else { client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
+    }
     override func stopLoading() {}
 }

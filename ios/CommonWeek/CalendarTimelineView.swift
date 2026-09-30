@@ -65,18 +65,34 @@ struct CalendarPresentationPicker: View {
     @Binding var range: CalendarRange
     @Binding var selection: CalendarPresentation
     var body: some View {
-        VStack(spacing: 8) {
-            Picker("View", selection: $selection) {
-                ForEach(CalendarPresentation.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("calendar-view-picker")
-            Picker("Calendar range", selection: $range) {
-                ForEach(CalendarRange.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("calendar-range-picker")
+        #if targetEnvironment(macCatalyst)
+        HStack(spacing: 16) {
+            presentationPicker.frame(width: 190)
+            rangePicker.frame(width: 140)
+            Spacer(minLength: 0)
         }
+        #else
+        VStack(spacing: 8) {
+            presentationPicker
+            rangePicker
+        }
+        #endif
+    }
+
+    private var presentationPicker: some View {
+        Picker("View", selection: $selection) {
+            ForEach(CalendarPresentation.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("calendar-view-picker")
+    }
+
+    private var rangePicker: some View {
+        Picker("Calendar range", selection: $range) {
+            ForEach(CalendarRange.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("calendar-range-picker")
     }
 }
 
