@@ -264,7 +264,7 @@ jobs:
 
   testflight:
     name: TestFlight
-    if: github.event_name == 'workflow_dispatch' && inputs.upload_native && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.upload_native)) && github.ref == 'refs/heads/main'
     needs: [verify, ios, maccatalyst]
     uses: ./.github/workflows/testflight.yml
     with:

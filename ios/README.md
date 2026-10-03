@@ -132,7 +132,7 @@ EventKit and system permission behavior must be checked with a development-signe
 
 ## TestFlight releases
 
-The current prepared TestFlight path is iOS-only and uses pinned existing signing assets. Native upload remains manually gated until the coordinator clears ownership. Week Mac signing/export/upload is excluded; existing simulator and Mac unit tests still run. See [existing-assets-only native release](../docs/native-testflight-existing-assets.md) for the policy, checks, and release boundary.
+The current prepared TestFlight path is iOS-only and uses pinned existing signing assets. Main pushes upload through the guarded iOS path after the existing CI checks pass. Week Mac signing/export/upload is excluded; existing simulator and Mac unit tests still run. See [existing-assets-only native release](../docs/native-testflight-existing-assets.md) for the policy, checks, and release boundary.
 
 The server deployment also requires `COMMON_WEEK_RESEND_API_KEY`, both email-from secrets, and a dedicated `COMMON_WEEK_APNS_KEY_ID` / `COMMON_WEEK_APNS_PRIVATE_KEY_BASE64` pair.
 
