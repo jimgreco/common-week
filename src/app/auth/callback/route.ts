@@ -81,29 +81,33 @@ export async function GET(request: NextRequest) {
     const accessToken = encryptProviderToken(tokens.access_token);
     const refreshToken = tokens.refresh_token ? encryptProviderToken(tokens.refresh_token) : null;
     const session = await withTransaction(async (database) => {
-      const linkedUserId = connectToken && clientState ? await consumeNativeConnectionCode(connectToken, clientState) : null;
-      const userId = linkedUserId ?? await findOrCreateProviderUser(database, {
+      if (connectToken) {
+        if (oauthPlatform !== "ios" || !clientState) throw new Error("Invalid Calendar connection state.");
+        const linkedUserId = await consumeNativeConnectionCode(connectToken, clientState, database);
+        if (!linkedUserId) throw new Error("Calendar connection expired. Start again from the signed-in app.");
+        // The transferable initiation URL is not proof that this browser controls
+        // the native account. Save only an expiring proposal until authenticated exchange.
+        const pendingGoogleConnection = {
+          subject: payload.sub,
+          accessTokenEncrypted: accessToken,
+          refreshTokenEncrypted: refreshToken,
+          expiresAt: new Date(tokens.expiry_date ?? Date.now() + 55 * 60_000).toISOString(),
+          scope: tokens.scope || [...GOOGLE_SCOPES, ...(oauthMode === "calendar-write" ? [GOOGLE_CALENDAR_WRITE_SCOPE] : [])].join(" "),
+        };
+        return {
+          kind: "native" as const,
+          ...(await createNativeAuthorizationCode(database, linkedUserId, clientState, pendingGoogleConnection)),
+          householdId: null,
+          userId: linkedUserId,
+        };
+      }
+      const userId = await findOrCreateProviderUser(database, {
         provider: "google",
         subject: payload.sub,
         email,
         displayName,
         avatarUrl: payload.picture ?? null,
       });
-      if (linkedUserId) {
-        const existingGoogleIdentity = await database.query<{ user_id: string }>(
-          "select user_id from user_identities where provider = 'google' and provider_subject = $1",
-          [payload.sub],
-        );
-        if (existingGoogleIdentity.rows[0] && existingGoogleIdentity.rows[0].user_id !== linkedUserId) {
-          throw new Error("That Google account is already connected to another Week of Us account.");
-        }
-        await database.query(
-          `insert into user_identities (user_id, provider, provider_subject) values ($1, 'google', $2)
-           on conflict (provider, provider_subject) do nothing`,
-          [linkedUserId, payload.sub],
-        );
-        await database.query("update users set google_subject = $2, updated_at = now() where id = $1", [linkedUserId, payload.sub]);
-      }
 
       await database.query(
         `insert into google_connections (

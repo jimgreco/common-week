@@ -56,6 +56,13 @@ final class WeekToolsTests: XCTestCase {
         }
     }
 
+    @MainActor func testGoogleConnectionExchangeSendsExistingSessionButNormalSignInDoesNot() async throws {
+        let linked = try await coverageClient(fixture: "link").exchange(code: "completion", state: "state", connectingGoogle: true)
+        let signedIn = try await coverageClient(fixture: "signin").exchange(code: "completion", state: "state")
+        XCTAssertEqual(linked.token, "synthetic-new-session")
+        XCTAssertEqual(signedIn.token, "synthetic-new-session")
+    }
+
     @MainActor private func coverageClient(fixture: String) -> APIClient {
         // Use the existing debug credential override without touching the user's Keychain.
         let previous = ProcessInfo.processInfo.environment["COMMON_WEEK_SESSION_TOKEN"]
@@ -65,7 +72,7 @@ final class WeekToolsTests: XCTestCase {
             else { unsetenv("COMMON_WEEK_SESSION_TOKEN") }
         }
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = fixture == "inline" ? [InlineCreateURLProtocol.self] : [CoverageURLProtocol.self]
+        configuration.protocolClasses = fixture == "inline" ? [InlineCreateURLProtocol.self] : (fixture == "link" || fixture == "signin") ? [AuthExchangeURLProtocol.self] : [CoverageURLProtocol.self]
         let session = URLSession(configuration: configuration)
         addTeardownBlock { session.invalidateAndCancel() }
         return APIClient(session: session, baseURL: URL(string: "https://\(fixture).coverage.test")!)
@@ -155,6 +162,22 @@ private final class InlineCreateURLProtocol: URLProtocol {
             client?.urlProtocol(self, didLoad: body)
             client?.urlProtocolDidFinishLoading(self)
         } else { client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
+    }
+    override func stopLoading() {}
+}
+
+
+private final class AuthExchangeURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        XCTAssertEqual(request.url?.path, "/api/ios/auth/exchange")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), request.url?.host == "link.coverage.test" ? "Bearer coverage-test-token" : nil)
+        let body = Data(#"{"ok":true,"data":{"token":"synthetic-new-session","expiresAt":"2026-11-01T00:00:00Z"}}"#.utf8)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
 }

@@ -6,6 +6,7 @@ import type { PoolClient } from "pg";
 import { bearerTokenForAuthorization } from "@/lib/auth-token";
 import { shouldUseSecureCookies } from "@/lib/env";
 import { query, withTransaction } from "@/lib/server/database";
+import { finalizeGoogleConnection, type PendingGoogleConnection } from "@/lib/server/google-link";
 
 export const SESSION_COOKIE = "common_week_session";
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -46,29 +47,36 @@ export async function createDatabaseSession(client: PoolClient, userId: string) 
   return { token, expires };
 }
 
-export async function createNativeAuthorizationCode(client: PoolClient, userId: string, clientState: string) {
+export async function createNativeAuthorizationCode(client: PoolClient, userId: string, clientState: string, pendingGoogleConnection?: PendingGoogleConnection) {
   const code = randomBytes(32).toString("base64url");
   const expires = new Date(Date.now() + NATIVE_AUTHORIZATION_LIFETIME_MS);
   await client.query("delete from native_auth_codes where expires_at <= now()");
   await client.query(
-    `insert into native_auth_codes (code_hash, client_state_hash, user_id, expires_at)
-     values ($1, $2, $3, $4)`,
-    [hashSessionToken(code), hashSessionToken(clientState), userId, expires],
+    `insert into native_auth_codes (code_hash, client_state_hash, user_id, expires_at, pending_google_connection)
+     values ($1, $2, $3, $4, $5::jsonb)`,
+    [hashSessionToken(code), hashSessionToken(clientState), userId, expires, pendingGoogleConnection ? JSON.stringify(pendingGoogleConnection) : null],
   );
   return { code, expires };
 }
 
-export async function exchangeNativeAuthorizationCode(code: string, clientState: string) {
+export async function exchangeNativeAuthorizationCode(code: string, clientState: string, authenticatedUserId?: string) {
   if (code.length > 128 || clientState.length > 128) return null;
   return withTransaction(async (client) => {
-    const result = await client.query<{ user_id: string }>(
+    const result = await client.query<{ user_id: string; pending_google_connection: unknown | null }>(
       `delete from native_auth_codes
         where code_hash = $1 and client_state_hash = $2 and expires_at > now()
-        returning user_id`,
-      [hashSessionToken(code), hashSessionToken(clientState)],
+          and (pending_google_connection is null or user_id = $3::uuid)
+        returning user_id, pending_google_connection`,
+      [hashSessionToken(code), hashSessionToken(clientState), authenticatedUserId ?? null],
     );
     const row = result.rows[0];
-    return row ? createDatabaseSession(client, row.user_id) : null;
+    if (!row) return null;
+    if (row.pending_google_connection) {
+      // The database predicate is also enforced here to keep this invariant explicit.
+      if (authenticatedUserId !== row.user_id) return null;
+      await finalizeGoogleConnection(client, row.user_id, row.pending_google_connection);
+    }
+    return createDatabaseSession(client, row.user_id);
   });
 }
 
@@ -82,9 +90,9 @@ export async function createNativeConnectionCode(userId: string, clientState: st
   return code;
 }
 
-export async function consumeNativeConnectionCode(code: string, clientState: string) {
+export async function consumeNativeConnectionCode(code: string, clientState: string, client: PoolClient) {
   if (code.length > 128 || clientState.length > 128) return null;
-  const result = await query<{ user_id: string }>(
+  const result = await client.query<{ user_id: string }>(
     `delete from native_connection_codes where code_hash = $1 and client_state_hash = $2 and expires_at > now() returning user_id`,
     [hashSessionToken(code), hashSessionToken(clientState)],
   );

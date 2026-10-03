@@ -157,7 +157,7 @@ final class AuthStore: NSObject, ObservableObject, ASWebAuthenticationPresentati
         guard case .signedIn(let currentIdentity) = state else { throw AuthStoreError.unavailable }
         let previousToken = api.token
         let authorization = try await beginGoogleAuthorization(calendarWrite: writeAccess)
-        let nativeSession = try await api.exchange(code: authorization.code, state: authorization.state)
+        let nativeSession = try await api.exchange(code: authorization.code, state: authorization.state, connectingGoogle: true)
         api.token = nativeSession.token
         do {
             let refreshedIdentity = try await api.restoreSession()

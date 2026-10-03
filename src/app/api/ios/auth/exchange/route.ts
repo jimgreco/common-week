@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { exchangeNativeAuthorizationCode } from "@/lib/server/session";
+import { bearerTokenForAuthorization } from "@/lib/auth-token";
+import { exchangeNativeAuthorizationCode, sessionIdentityForToken } from "@/lib/server/session";
 
 export const runtime = "nodejs";
 
@@ -11,8 +12,9 @@ const exchangeSchema = z.object({
 export async function POST(request: Request) {
   try {
     const input = exchangeSchema.parse(await request.json());
-    const session = await exchangeNativeAuthorizationCode(input.code, input.state);
-    if (!session) return Response.json({ ok: false, error: "Sign-in expired. Please try again." }, { status: 401 });
+    const identity = await sessionIdentityForToken(bearerTokenForAuthorization(request.headers.get("authorization")));
+    const session = await exchangeNativeAuthorizationCode(input.code, input.state, identity?.userId);
+    if (!session) return Response.json({ ok: false, error: "Sign-in expired, or Calendar connection requires the current signed-in app. Update the app and start again." }, { status: 400, headers: { "Cache-Control": "no-store" } });
     return Response.json({ ok: true, data: { token: session.token, expiresAt: session.expires.toISOString() } }, {
       headers: { "Cache-Control": "no-store" },
     });

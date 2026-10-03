@@ -22,9 +22,16 @@ export async function GET(request: NextRequest) {
     if (isNative && !clientState?.match(/^[A-Za-z0-9_-]{20,128}$/)) {
       return NextResponse.json({ error: "Invalid native sign-in state." }, { status: 400 });
     }
+    if (connectToken && (!isNative || !/^[A-Za-z0-9_-]{20,128}$/.test(connectToken))) {
+      return NextResponse.json({ error: "Invalid Calendar connection." }, { status: 400 });
+    }
     const calendarWrite = request.nextUrl.searchParams.get("calendar_write") === "1";
     const authorization = await createGoogleAuthorization({ calendarWrite });
     const response = NextResponse.redirect(authorization.url);
+    // Every new flow replaces optional context from an abandoned earlier flow.
+    for (const name of [OAUTH_MODE_COOKIE, OAUTH_PLATFORM_COOKIE, OAUTH_CLIENT_STATE_COOKIE, OAUTH_CONNECT_COOKIE]) {
+      response.cookies.delete(name);
+    }
     response.cookies.set(OAUTH_STATE_COOKIE, authorization.state, oauthCookieOptions());
     response.cookies.set(OAUTH_VERIFIER_COOKIE, authorization.codeVerifier, oauthCookieOptions());
     if (calendarWrite) response.cookies.set(OAUTH_MODE_COOKIE, "calendar-write", oauthCookieOptions());

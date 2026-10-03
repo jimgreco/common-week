@@ -62,8 +62,8 @@ final class APIClient {
 #endif
     }
 
-    func exchange(code: String, state: String) async throws -> NativeSession {
-        try await send(path: "/api/ios/auth/exchange", method: "POST", body: ["code": code, "state": state], authenticated: false)
+    func exchange(code: String, state: String, connectingGoogle: Bool = false) async throws -> NativeSession {
+        try await send(path: "/api/ios/auth/exchange", method: "POST", body: ["code": code, "state": state], authenticated: connectingGoogle)
     }
 
     func signInWithApple(identityToken: String, authorizationCode: String, nonce: String, displayName: String?) async throws -> NativeSession {
