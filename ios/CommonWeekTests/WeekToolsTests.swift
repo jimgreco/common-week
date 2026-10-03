@@ -63,6 +63,51 @@ final class WeekToolsTests: XCTestCase {
         XCTAssertEqual(signedIn.token, "synthetic-new-session")
     }
 
+    @MainActor func testOfflineReplayRechecksHouseholdAndAccountBeforeSendingSavedDrafts() async throws {
+        for fixture in ["changed-household", "changed-user"] {
+            let directory = FileManager.default.temporaryDirectory.appending(path: "offline-preflight-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let store = OfflineStore(directory: directory)
+            let user = PreviewData.user
+            let householdId = try XCTUnwrap(user.householdId)
+            let draft = PlanningItemDraft(id: "draft-id", text: "Old household private draft", type: .note, planningDate: nil, weekStartDate: PreviewData.planner.weekStart, remindAt: nil)
+            try await store.enqueue(OfflineMutation(kind: .createItem, draft: draft), userId: user.userId, householdId: householdId)
+            try await store.savePlanner(PreviewData.planner, userId: user.userId)
+            let previousDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"]
+            unsetenv("COMMON_WEEK_DEMO")
+            let model = PlannerViewModel(api: coverageClient(fixture: fixture), offlineStore: store)
+            if let previousDemo { setenv("COMMON_WEEK_DEMO", previousDemo, 1) }
+            await model.activate(user: user)
+            XCTAssertNil(model.data)
+            XCTAssertTrue(model.errorMessage?.contains("account or household changed") == true)
+            model.deactivate()
+            let original = await store.pendingMutations(userId: user.userId, householdId: householdId)
+            XCTAssertEqual(original.first?.draft?.text, draft.text)
+            XCTAssertEqual(original.count, 1)
+            XCTAssertNil(model.data)
+        }
+    }
+
+    @MainActor func testRejectedOfflineReplayKeepsOriginalDraftAndSendsBothScopeHeaders() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "offline-rejected-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = OfflineStore(directory: directory)
+        let user = PreviewData.user
+        let householdId = try XCTUnwrap(user.householdId)
+        let draft = PlanningItemDraft(id: "draft-id", text: "Keep this failed draft", type: .note, planningDate: nil, weekStartDate: PreviewData.planner.weekStart, remindAt: nil)
+        try await store.enqueue(OfflineMutation(kind: .createItem, draft: draft), userId: user.userId, householdId: householdId)
+        let previousDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"]
+        unsetenv("COMMON_WEEK_DEMO")
+        let model = PlannerViewModel(api: coverageClient(fixture: "replay-failure"), offlineStore: store)
+        if let previousDemo { setenv("COMMON_WEEK_DEMO", previousDemo, 1) }
+        await model.activate(user: user)
+        XCTAssertTrue(model.errorMessage?.contains("still saved") == true)
+        model.deactivate()
+        let pending = await store.pendingMutations(userId: user.userId, householdId: householdId)
+        XCTAssertEqual(pending.first?.draft?.text, draft.text)
+        XCTAssertEqual(pending.count, 1)
+    }
+
     @MainActor private func coverageClient(fixture: String) -> APIClient {
         // Use the existing debug credential override without touching the user's Keychain.
         let previous = ProcessInfo.processInfo.environment["COMMON_WEEK_SESSION_TOKEN"]
@@ -72,7 +117,11 @@ final class WeekToolsTests: XCTestCase {
             else { unsetenv("COMMON_WEEK_SESSION_TOKEN") }
         }
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = fixture == "inline" ? [InlineCreateURLProtocol.self] : (fixture == "link" || fixture == "signin") ? [AuthExchangeURLProtocol.self] : [CoverageURLProtocol.self]
+        if ["changed-household", "changed-user", "replay-failure"].contains(fixture) {
+            configuration.protocolClasses = [OfflineReplayURLProtocol.self]
+        } else {
+            configuration.protocolClasses = fixture == "inline" ? [InlineCreateURLProtocol.self] : (fixture == "link" || fixture == "signin") ? [AuthExchangeURLProtocol.self] : [CoverageURLProtocol.self]
+        }
         let session = URLSession(configuration: configuration)
         addTeardownBlock { session.invalidateAndCancel() }
         return APIClient(session: session, baseURL: URL(string: "https://\(fixture).coverage.test")!)
@@ -176,6 +225,41 @@ private final class AuthExchangeURLProtocol: URLProtocol {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), request.url?.host == "link.coverage.test" ? "Bearer coverage-test-token" : nil)
         let body = Data(#"{"ok":true,"data":{"token":"synthetic-new-session","expiresAt":"2026-11-01T00:00:00Z"}}"#.utf8)
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+
+private final class OfflineReplayURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let fixture = request.url?.host?.components(separatedBy: ".").first
+        let body: Data
+        let status: Int
+        if request.url?.path == "/api/ios/session" {
+            XCTAssertEqual(request.httpMethod, "GET")
+            let user = PreviewData.user
+            let object: [String: Any] = ["ok": true, "data": [
+                "userId": fixture == "changed-user" ? "new-user" : user.userId,
+                "householdId": fixture == "changed-household" ? "new-household" : user.householdId!,
+                "email": "synthetic@example.invalid", "displayName": "Synthetic", "role": "owner"
+            ]]
+            body = try! JSONSerialization.data(withJSONObject: object)
+            status = 200
+        } else if request.url?.path == "/api/ios/planning-items" {
+            XCTAssertEqual(fixture, "replay-failure", "A changed account or household must not receive the old draft")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Week-Of-Us-User"), PreviewData.user.userId)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Week-Of-Us-Household"), PreviewData.user.householdId)
+            body = Data(#"{"ok":false,"error":"Synthetic rejected replay"}"#.utf8)
+            status = 400
+        } else {
+            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            return
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }

@@ -347,8 +347,8 @@ final class WeekDateTests: XCTestCase {
 
         try await store.savePlanner(planner, userId: "user-a")
 
-        let restored = await store.cachedPlanner(userId: "user-a", weekStart: planner.weekStart)
-        let otherAccount = await store.cachedPlanner(userId: "user-b", weekStart: planner.weekStart)
+        let restored = await store.cachedPlanner(userId: "user-a", householdId: PreviewData.planner.household.id, weekStart: planner.weekStart)
+        let otherAccount = await store.cachedPlanner(userId: "user-b", householdId: PreviewData.planner.household.id, weekStart: planner.weekStart)
         XCTAssertEqual(restored?.weekStart, planner.weekStart)
         XCTAssertNil(otherAccount)
     }
@@ -363,19 +363,58 @@ final class WeekDateTests: XCTestCase {
             itemId: "00000000-0000-4000-8000-000000000001",
             completed: true
         )
-        try await firstStore.enqueue(mutation, userId: "user-a")
+        try await firstStore.enqueue(mutation, userId: "user-a", householdId: "household-a")
 
         let reloadedStore = OfflineStore(directory: directory)
-        let userAMutations = await reloadedStore.pendingMutations(userId: "user-a")
-        let userBMutations = await reloadedStore.pendingMutations(userId: "user-b")
+        let userAMutations = await reloadedStore.pendingMutations(userId: "user-a", householdId: "household-a")
+        let userBMutations = await reloadedStore.pendingMutations(userId: "user-b", householdId: "household-a")
         XCTAssertEqual(userAMutations.map(\.id), [mutation.id])
         XCTAssertEqual(userAMutations.map(\.kind), [.toggleItem])
         XCTAssertEqual(userAMutations.first?.completed, true)
         XCTAssertTrue(userBMutations.isEmpty)
 
-        try await reloadedStore.removeMutation(mutation.id, userId: "user-a")
-        let remaining = await reloadedStore.pendingMutations(userId: "user-a")
+        try await reloadedStore.removeMutation(mutation.id, userId: "user-a", householdId: "household-a")
+        let remaining = await reloadedStore.pendingMutations(userId: "user-a", householdId: "household-a")
         XCTAssertTrue(remaining.isEmpty)
+    }
+
+    func testOfflineQueuesKeepOtherHouseholdsAndLegacyDraftsWithoutReplayingOrDeletingThem() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "offline-scope-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = OfflineStore(directory: directory)
+        let mutation = OfflineMutation(kind: .createItem, draft: PlanningItemDraft(id: "new-id", text: "Original household draft", type: .note, planningDate: nil, weekStartDate: "2026-09-28", remindAt: nil))
+        try await store.enqueue(mutation, userId: "user-a", householdId: "household-a")
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let legacyData = try encoder.encode([mutation])
+        let legacyURL = directory.appending(path: "mutations-user-a.json")
+        try legacyData.write(to: legacyURL)
+        let newHousehold = await store.pendingMutations(userId: "user-a", householdId: "household-b")
+        let held = await store.heldMutationCount(userId: "user-a", householdId: "household-b")
+        XCTAssertTrue(newHousehold.isEmpty)
+        XCTAssertEqual(held, 2)
+        XCTAssertEqual(try Data(contentsOf: legacyURL), legacyData)
+        let original = await store.pendingMutations(userId: "user-a", householdId: "household-a")
+        XCTAssertEqual(original.first?.identity, OfflineIdentity(userId: "user-a", householdId: "household-a"))
+        XCTAssertEqual(original.first?.draft?.text, "Original household draft")
+        try await store.savePlanner(PreviewData.planner, userId: "user-a")
+        let wrongCache = await store.cachedPlanner(userId: "user-a", householdId: "other-household", weekStart: PreviewData.planner.weekStart)
+        XCTAssertNil(wrongCache)
+    }
+
+    func testCorruptOfflineQueueIsPreservedWhenEnqueueOrRemovalFails() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "offline-corrupt-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "mutations-v2-user-a-household-a.json")
+        let original = Data("partially recoverable draft data".utf8)
+        try original.write(to: url)
+        let store = OfflineStore(directory: directory)
+        let mutation = OfflineMutation(kind: .toggleItem, itemId: "item", completed: true)
+        do { try await store.enqueue(mutation, userId: "user-a", householdId: "household-a"); XCTFail("Corrupt queue must not be overwritten") } catch {}
+        do { try await store.removeMutation(mutation.id, userId: "user-a", householdId: "household-a"); XCTFail("Corrupt queue must not be overwritten") } catch {}
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        let held = await store.heldMutationCount(userId: "user-a", householdId: "household-a")
+        XCTAssertEqual(held, 1)
     }
 
     func testDailyCarryoverMovesOnlyOpenTasksAndPreservesIdentityAndReminder() {
@@ -540,8 +579,8 @@ final class WeekDateTests: XCTestCase {
         try await store.savePlanner(PreviewData.planner(weekStart: "2026-08-17"), userId: "user-a")
         try await store.savePlanner(PreviewData.planner(weekStart: "2026-08-24"), userId: "user-b")
 
-        let latest = await store.latestCachedPlanner(userId: "user-a", before: "2026-08-24")
-        let noneBeforeFirst = await store.latestCachedPlanner(userId: "user-a", before: "2026-08-10")
+        let latest = await store.latestCachedPlanner(userId: "user-a", householdId: PreviewData.planner.household.id, before: "2026-08-24")
+        let noneBeforeFirst = await store.latestCachedPlanner(userId: "user-a", householdId: PreviewData.planner.household.id, before: "2026-08-10")
 
         XCTAssertEqual(latest?.weekStart, "2026-08-17")
         XCTAssertNil(noneBeforeFirst)

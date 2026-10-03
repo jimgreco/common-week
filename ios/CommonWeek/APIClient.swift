@@ -135,27 +135,27 @@ final class APIClient {
         let _: EmptyResponse = try await send(path: "/api/ios/event-members", method: "PUT", body: EventMemberRequest(calendarPreferenceId: calendarId, providerEventId: providerId, memberIds: ids))
     }
 
-    func createItem(_ draft: PlanningItemDraft) async throws -> PlanningItem {
-        try await send(path: "/api/ios/planning-items", method: "POST", body: draft)
+    func createItem(_ draft: PlanningItemDraft, expectedIdentity: OfflineIdentity? = nil) async throws -> PlanningItem {
+        try await send(path: "/api/ios/planning-items", method: "POST", body: draft, expectedIdentity: expectedIdentity)
     }
 
-    func updateItem(_ draft: PlanningItemDraft) async throws -> EmptyResponse {
-        try await send(path: "/api/ios/planning-items", method: "PATCH", body: draft)
+    func updateItem(_ draft: PlanningItemDraft, expectedIdentity: OfflineIdentity? = nil) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/planning-items", method: "PATCH", body: draft, expectedIdentity: expectedIdentity)
     }
 
-    func toggleItem(id: String, completed: Bool) async throws -> EmptyResponse {
-        try await send(path: "/api/ios/planning-items", method: "PATCH", body: ToggleItemRequest(action: "toggle", id: id, completed: completed))
+    func toggleItem(id: String, completed: Bool, expectedIdentity: OfflineIdentity? = nil) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/planning-items", method: "PATCH", body: ToggleItemRequest(action: "toggle", id: id, completed: completed), expectedIdentity: expectedIdentity)
     }
 
-    func deleteItem(id: String) async throws -> EmptyResponse {
-        try await send(path: "/api/ios/planning-items", method: "DELETE", body: ["id": id])
+    func deleteItem(id: String, expectedIdentity: OfflineIdentity? = nil) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/planning-items", method: "DELETE", body: ["id": id], expectedIdentity: expectedIdentity)
     }
 
-    func setLocation(date: String, locationId: String, memberIds: [String], scope: String) async throws -> EmptyResponse {
-        try await send(path: "/api/ios/locations", method: "PATCH", body: SavedLocationAssignmentRequest(startDate: date, locationId: locationId, memberIds: memberIds, scope: scope))
+    func setLocation(date: String, locationId: String, memberIds: [String], scope: String, expectedIdentity: OfflineIdentity? = nil) async throws -> EmptyResponse {
+        try await send(path: "/api/ios/locations", method: "PATCH", body: SavedLocationAssignmentRequest(startDate: date, locationId: locationId, memberIds: memberIds, scope: scope), expectedIdentity: expectedIdentity)
     }
 
-    func setLocation(date: String, result: GeocodingResult, memberIds: [String], saveForReuse: Bool, scope: String) async throws -> HouseholdLocation {
+    func setLocation(date: String, result: GeocodingResult, memberIds: [String], saveForReuse: Bool, scope: String, expectedIdentity: OfflineIdentity? = nil) async throws -> HouseholdLocation {
         try await send(
             path: "/api/ios/locations",
             method: "PATCH",
@@ -165,7 +165,8 @@ final class APIClient {
                 scope: scope,
                 result: result,
                 saveForReuse: saveForReuse
-            )
+            ),
+            expectedIdentity: expectedIdentity
         )
     }
 
@@ -331,7 +332,8 @@ final class APIClient {
         method: String = "GET",
         query: [URLQueryItem] = [],
         body: (any Encodable)? = nil,
-        authenticated: Bool = true
+        authenticated: Bool = true,
+        expectedIdentity: OfflineIdentity? = nil
     ) async throws -> Response {
         var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)!
         components.queryItems = query.isEmpty ? nil : query
@@ -343,6 +345,10 @@ final class APIClient {
         if authenticated {
             guard let token else { throw APIError.unauthorized }
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let expectedIdentity {
+            request.setValue(expectedIdentity.userId, forHTTPHeaderField: "X-Week-Of-Us-User")
+            request.setValue(expectedIdentity.householdId, forHTTPHeaderField: "X-Week-Of-Us-Household")
         }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

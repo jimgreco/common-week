@@ -12,6 +12,12 @@ final class PlannerViewModel: ObservableObject {
     @Published var isSearching = false
     @Published private(set) var isOffline = false
     @Published private(set) var pendingChangeCount = 0
+    @Published private(set) var heldOfflineChangeCount = 0
+
+    private var currentOfflineIdentity: OfflineIdentity? {
+        guard let user = activeUser, let householdId = user.householdId else { return nil }
+        return OfflineIdentity(userId: user.userId, householdId: householdId)
+    }
 
     private let api: APIClient
     private let offlineStore: OfflineStore
@@ -25,6 +31,9 @@ final class PlannerViewModel: ObservableObject {
     private let isDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"] == "1"
 
     var syncStatusText: String? {
+        if heldOfflineChangeCount > 0 {
+            return "Saved offline changes need review and remain on this device. Rejoin the original household to sync; older or unreadable drafts stay preserved."
+        }
         if pendingChangeCount > 0 {
             return isOffline
                 ? "Offline · \(pendingChangeCount) change\(pendingChangeCount == 1 ? "" : "s") waiting to sync"
@@ -41,7 +50,13 @@ final class PlannerViewModel: ObservableObject {
 
     func activate(user: SessionIdentity) async {
         guard !isDemo else { return }
-        if activeUser?.userId != user.userId {
+        guard let householdId = user.householdId else {
+            deactivate()
+            errorMessage = "Household setup is required. Any saved offline changes are kept on this device."
+            return
+        }
+        if activeUser?.userId != user.userId || activeUser?.householdId != householdId {
+            loadGeneration += 1
             stopLiveUpdates()
             data = nil
             errorMessage = nil
@@ -52,14 +67,14 @@ final class PlannerViewModel: ObservableObject {
         if let data {
             latest = data
         } else {
-            latest = await offlineStore.latestCachedPlanner(userId: user.userId, before: nil)
+            latest = await offlineStore.latestCachedPlanner(userId: user.userId, householdId: householdId, before: nil)
         }
         let timeZone = latest?.household.timezone ?? TimeZone.current.identifier
         let selectedWeek = followsCurrentWeek
             ? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
             : data?.weekStart ?? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
         if data == nil {
-            if let cached = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selectedWeek) {
+            if let cached = await offlineStore.cachedPlanner(userId: user.userId, householdId: householdId, weekStart: selectedWeek) {
                 let current = WeekDate.currentWeekStart(timeZoneIdentifier: cached.household.timezone)
                 data = selectedWeek == current
                     ? cached.carryingOpenTasks(to: WeekDate.today(timeZoneIdentifier: cached.household.timezone))
@@ -73,7 +88,8 @@ final class PlannerViewModel: ObservableObject {
         if data != nil {
             isOffline = true
         }
-        pendingChangeCount = await offlineStore.pendingMutations(userId: user.userId).count
+        pendingChangeCount = await offlineStore.pendingMutations(userId: user.userId, householdId: householdId).count
+        heldOfflineChangeCount = await offlineStore.heldMutationCount(userId: user.userId, householdId: householdId)
         await load(week: selectedWeek, quietly: data != nil)
         if followsCurrentWeek,
            let planner = data,
@@ -94,24 +110,25 @@ final class PlannerViewModel: ObservableObject {
         errorMessage = nil
         isOffline = false
         pendingChangeCount = 0
+        heldOfflineChangeCount = 0
         followsCurrentWeek = true
     }
 
     func load(week: String? = nil, quietly: Bool = false, refreshSources: Bool = true) async {
         if isDemo { data = WorkspaceAccess.applying(to: FamilyPlanningDemo.shared.planner(weekStart: week ?? data?.weekStart ?? PreviewData.planner.weekStart, capturing: data)); return }
-        guard let user = activeUser else { return }
+        guard let user = activeUser, let householdId = user.householdId else { return }
         if syncInProgress { return }
         loadGeneration += 1
         let generation = loadGeneration
         let selected = week ?? data?.weekStart ?? WeekDate.string(WeekDate.monday())
         if data?.weekStart != selected {
-            if let cached = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selected) {
+            if let cached = await offlineStore.cachedPlanner(userId: user.userId, householdId: householdId, weekStart: selected) {
                 let current = WeekDate.currentWeekStart(timeZoneIdentifier: cached.household.timezone)
                 data = selected == current
                     ? cached.carryingOpenTasks(to: WeekDate.today(timeZoneIdentifier: cached.household.timezone))
                     : cached
             } else if followsCurrentWeek,
-                      let latest = await offlineStore.latestCachedPlanner(userId: user.userId, before: selected),
+                      let latest = await offlineStore.latestCachedPlanner(userId: user.userId, householdId: householdId, before: selected),
                       selected == WeekDate.currentWeekStart(timeZoneIdentifier: latest.household.timezone) {
                 data = latest.carryingOpenTasks(
                     to: WeekDate.today(timeZoneIdentifier: latest.household.timezone)
@@ -125,13 +142,17 @@ final class PlannerViewModel: ObservableObject {
         defer { if generation == loadGeneration { isLoading = false } }
 
         guard await flushPendingChanges() else {
-            isOffline = true
-            if data == nil { errorMessage = PlatformCopy.offlinePlannerUnavailable }
+            if data == nil && errorMessage == nil { errorMessage = PlatformCopy.offlinePlannerUnavailable }
             return
         }
         do {
-            var planner = try await api.planner(week: selected, coreOnly: true).planner
-            guard generation == loadGeneration, activeUser?.userId == user.userId, !Task.isCancelled else { return }
+            let payload = try await api.planner(week: selected, coreOnly: true)
+            guard generation == loadGeneration, activeUser?.userId == user.userId, activeUser?.householdId == householdId, !Task.isCancelled else { return }
+            guard payload.user.userId == user.userId, payload.user.householdId == householdId, payload.planner.household.id == householdId else {
+                await preserveChangesAfterIdentityChange(payload.user)
+                return
+            }
+            var planner = payload.planner
             if let previous = data, previous.weekStart == selected {
                 planner.calendarState = previous.calendarState
                 planner.weatherState = previous.weatherState
@@ -157,11 +178,11 @@ final class PlannerViewModel: ObservableObject {
                 _ = await (calendar, weather)
             }
         } catch {
-            guard generation == loadGeneration, activeUser?.userId == user.userId, !Task.isCancelled else { return }
+            guard generation == loadGeneration, activeUser?.userId == user.userId, activeUser?.householdId == householdId, !Task.isCancelled else { return }
             if APIClient.isConnectivityFailure(error) {
                 isOffline = true
                 if data == nil,
-                   let cached = await offlineStore.cachedPlanner(userId: user.userId, weekStart: selected) {
+                   let cached = await offlineStore.cachedPlanner(userId: user.userId, householdId: householdId, weekStart: selected) {
                     data = cached
                 }
             }
@@ -212,15 +233,16 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func toggle(_ item: PlanningItem) async {
+        let identity = currentOfflineIdentity
         let visibleWeek = data?.weekStart ?? item.weekStartDate
         mutateItem(id: item.id) { $0.isCompleted.toggle() }
         persistCurrentPlanner()
         guard !isDemo else { return }
         do {
-            _ = try await api.toggleItem(id: item.id, completed: !item.isCompleted)
+            _ = try await api.toggleItem(id: item.id, completed: !item.isCompleted, expectedIdentity: identity)
             await refreshAfterMutation(week: visibleWeek)
         } catch where APIClient.isConnectivityFailure(error) {
-            let mutation = OfflineMutation(kind: .toggleItem, itemId: item.id, completed: !item.isCompleted)
+            let mutation = OfflineMutation(kind: .toggleItem, identity: identity, itemId: item.id, completed: !item.isCompleted)
             if await enqueue(mutation) { markSavedOffline() }
             else { mutateItem(id: item.id) { $0.isCompleted = item.isCompleted } }
         } catch {
@@ -230,6 +252,7 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func saveItem(_ draft: PlanningItemDraft, originalItem: PlanningItem? = nil, creating: Bool = false) async -> Bool {
+        let identity = currentOfflineIdentity
         let isNew = creating || draft.id == nil
         let visibleWeek = data?.weekStart ?? draft.weekStartDate
         if isDemo {
@@ -252,15 +275,15 @@ final class PlannerViewModel: ObservableObject {
         applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saving", originalItem: originalItem)
         persistCurrentPlanner()
         do {
-            if isNew { _ = try await api.createItem(onlineDraft) }
-            else { _ = try await api.updateItem(onlineDraft) }
+            if isNew { _ = try await api.createItem(onlineDraft, expectedIdentity: identity) }
+            else { _ = try await api.updateItem(onlineDraft, expectedIdentity: identity) }
             applyDraft(onlineDraft, id: onlineDraft.id!, saveState: "saved", originalItem: previous)
             persistCurrentPlanner()
             show(onlineDraft.type == .task ? "Task saved" : "Plan saved")
             scheduleRefreshAfterMutation(week: visibleWeek)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
-            let mutation = OfflineMutation(kind: isNew ? .createItem : .updateItem, draft: onlineDraft)
+            let mutation = OfflineMutation(kind: isNew ? .createItem : .updateItem, identity: identity, draft: onlineDraft)
             if await enqueue(mutation) {
                 markSavedOffline()
                 return true
@@ -279,14 +302,15 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func deleteItem(_ item: PlanningItem) async -> Bool {
+        let identity = currentOfflineIdentity
         removeItem(id: item.id)
         persistCurrentPlanner()
         if isDemo { return true }
         do {
-            _ = try await api.deleteItem(id: item.id)
+            _ = try await api.deleteItem(id: item.id, expectedIdentity: identity)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
-            if await enqueue(OfflineMutation(kind: .deleteItem, itemId: item.id)) {
+            if await enqueue(OfflineMutation(kind: .deleteItem, identity: identity, itemId: item.id)) {
                 markSavedOffline()
                 return true
             }
@@ -299,16 +323,17 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func setLocation(_ location: HouseholdLocation, for date: String, memberIds: [String], scope: String) async -> Bool {
+        let identity = currentOfflineIdentity
         let previous = data
         applyLocation(location, for: date, memberIds: memberIds, scope: scope)
         persistCurrentPlanner()
         if isDemo { return true }
         do {
-            _ = try await api.setLocation(date: date, locationId: location.id, memberIds: memberIds, scope: scope)
+            _ = try await api.setLocation(date: date, locationId: location.id, memberIds: memberIds, scope: scope, expectedIdentity: identity)
             await refreshAfterMutation(week: data?.weekStart)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
-            let mutation = OfflineMutation(kind: .assignSavedLocation, startDate: date, scope: scope, locationId: location.id, memberIds: memberIds)
+            let mutation = OfflineMutation(kind: .assignSavedLocation, identity: identity, startDate: date, scope: scope, locationId: location.id, memberIds: memberIds)
             if await enqueue(mutation) { markSavedOffline(); return true }
         } catch { show(error.localizedDescription) }
         data = previous
@@ -316,6 +341,7 @@ final class PlannerViewModel: ObservableObject {
     }
 
     func setLocation(_ result: GeocodingResult, for date: String, memberIds: [String], scope: String, saveForReuse: Bool) async -> Bool {
+        let identity = currentOfflineIdentity
         let previous = data
         let localLocation = HouseholdLocation(
             id: "offline-\(UUID().uuidString)",
@@ -330,11 +356,11 @@ final class PlannerViewModel: ObservableObject {
         persistCurrentPlanner()
         if isDemo { return true }
         do {
-            _ = try await api.setLocation(date: date, result: result, memberIds: memberIds, saveForReuse: saveForReuse, scope: scope)
+            _ = try await api.setLocation(date: date, result: result, memberIds: memberIds, saveForReuse: saveForReuse, scope: scope, expectedIdentity: identity)
             await refreshAfterMutation(week: data?.weekStart)
             return true
         } catch where APIClient.isConnectivityFailure(error) {
-            let mutation = OfflineMutation(kind: .assignGeocodedLocation, startDate: date, scope: scope, memberIds: memberIds, location: result, saveForReuse: saveForReuse)
+            let mutation = OfflineMutation(kind: .assignGeocodedLocation, identity: identity, startDate: date, scope: scope, memberIds: memberIds, location: result, saveForReuse: saveForReuse)
             if await enqueue(mutation) { markSavedOffline(); return true }
         } catch { show(error.localizedDescription) }
         data = previous
@@ -524,13 +550,18 @@ final class PlannerViewModel: ObservableObject {
             guard let restored = try? await api.restoreSession(), restored.householdId != nil else { return false }
             activeUser = restored
         }
-        guard let user = activeUser, await flushPendingChanges() else { return false }
+        guard await flushPendingChanges(), let user = activeUser, let householdId = user.householdId else { return false }
         do {
             let timeZone = data?.household.timezone ?? TimeZone.current.identifier
             let week = followsCurrentWeek
                 ? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
                 : data?.weekStart ?? WeekDate.currentWeekStart(timeZoneIdentifier: timeZone)
-            let planner = try await api.planner(week: week).planner
+            let payload = try await api.planner(week: week)
+            guard payload.user.userId == user.userId, payload.user.householdId == householdId, payload.planner.household.id == householdId else {
+                await preserveChangesAfterIdentityChange(payload.user)
+                return false
+            }
+            let planner = payload.planner
             data = planner
             try await offlineStore.savePlanner(planner, userId: user.userId)
             isOffline = false
@@ -560,16 +591,42 @@ final class PlannerViewModel: ObservableObject {
         }
     }
 
+    private func preserveChangesAfterIdentityChange(_ identity: SessionIdentity) async {
+        loadGeneration += 1
+        stopLiveUpdates()
+        activeUser = identity
+        data = nil
+        isLoading = false
+        pendingChangeCount = 0
+        heldOfflineChangeCount = await offlineStore.heldMutationCount(userId: identity.userId, householdId: identity.householdId)
+        errorMessage = "Your account or household changed. Earlier offline changes are kept on this device and were not sent. Refresh to load your current household."
+    }
+
     private func flushPendingChanges() async -> Bool {
-        guard !syncInProgress, let user = activeUser else { return syncInProgress }
+        guard !syncInProgress, let user = activeUser, let householdId = user.householdId else { return false }
         syncInProgress = true
         defer { syncInProgress = false }
-        let mutations = await offlineStore.pendingMutations(userId: user.userId)
+        do {
+            // activeUser can be stale after another device changes membership.
+            let current = try await api.restoreSession()
+            guard activeUser?.userId == user.userId, activeUser?.householdId == householdId else { return false }
+            guard current.userId == user.userId, current.householdId == householdId else {
+                await preserveChangesAfterIdentityChange(current)
+                return false
+            }
+            activeUser = current
+        } catch {
+            if APIClient.isConnectivityFailure(error) { isOffline = true }
+            return false
+        }
+        let mutations = await offlineStore.pendingMutations(userId: user.userId, householdId: householdId)
         pendingChangeCount = mutations.count
+        heldOfflineChangeCount = await offlineStore.heldMutationCount(userId: user.userId, householdId: householdId)
         for mutation in mutations {
             do {
+                guard activeUser?.userId == user.userId, activeUser?.householdId == householdId else { return false }
                 try await execute(mutation)
-                try await offlineStore.removeMutation(mutation.id, userId: user.userId)
+                try await offlineStore.removeMutation(mutation.id, userId: user.userId, householdId: householdId)
                 pendingChangeCount -= 1
             } catch where APIClient.isConnectivityFailure(error) {
                 isOffline = true
@@ -577,44 +634,53 @@ final class PlannerViewModel: ObservableObject {
             } catch APIError.unauthorized {
                 return false
             } catch {
-                try? await offlineStore.removeMutation(mutation.id, userId: user.userId)
-                pendingChangeCount -= 1
-                show("One offline change could not be applied.")
+                // Failed or mismatched drafts remain recoverable; only confirmed
+                // successful mutations may be removed from the durable queue.
+                errorMessage = "An offline change could not be applied. It is still saved on this device for retry or review."
+                return false
             }
         }
         return true
     }
 
     private func execute(_ mutation: OfflineMutation) async throws {
+        guard let identity = mutation.identity,
+              identity.userId == activeUser?.userId, identity.householdId == activeUser?.householdId else {
+            throw APIError.server("This saved change belongs to another account or household.")
+        }
         switch mutation.kind {
         case .createItem:
             guard let draft = mutation.draft else { throw APIError.invalidResponse }
-            _ = try await api.createItem(draft)
+            _ = try await api.createItem(draft, expectedIdentity: identity)
         case .updateItem:
             guard let draft = mutation.draft else { throw APIError.invalidResponse }
-            _ = try await api.updateItem(draft)
+            _ = try await api.updateItem(draft, expectedIdentity: identity)
         case .toggleItem:
             guard let id = mutation.itemId, let completed = mutation.completed else { throw APIError.invalidResponse }
-            _ = try await api.toggleItem(id: id, completed: completed)
+            _ = try await api.toggleItem(id: id, completed: completed, expectedIdentity: identity)
         case .deleteItem:
             guard let id = mutation.itemId else { throw APIError.invalidResponse }
-            _ = try await api.deleteItem(id: id)
+            _ = try await api.deleteItem(id: id, expectedIdentity: identity)
         case .assignSavedLocation:
             guard let date = mutation.startDate, let scope = mutation.scope, let id = mutation.locationId else { throw APIError.invalidResponse }
             let memberIds = mutation.memberIds ?? data?.members.map(\.id) ?? []
-            _ = try await api.setLocation(date: date, locationId: id, memberIds: memberIds, scope: scope)
+            _ = try await api.setLocation(date: date, locationId: id, memberIds: memberIds, scope: scope, expectedIdentity: identity)
         case .assignGeocodedLocation:
             guard let date = mutation.startDate, let scope = mutation.scope, let location = mutation.location else { throw APIError.invalidResponse }
             let memberIds = mutation.memberIds ?? data?.members.map(\.id) ?? []
-            _ = try await api.setLocation(date: date, result: location, memberIds: memberIds, saveForReuse: mutation.saveForReuse ?? true, scope: scope)
+            _ = try await api.setLocation(date: date, result: location, memberIds: memberIds, saveForReuse: mutation.saveForReuse ?? true, scope: scope, expectedIdentity: identity)
         }
     }
 
     private func enqueue(_ mutation: OfflineMutation) async -> Bool {
-        guard let user = activeUser else { return false }
+        guard let identity = mutation.identity else { return false }
         do {
-            try await offlineStore.enqueue(mutation, userId: user.userId)
-            pendingChangeCount = await offlineStore.pendingMutations(userId: user.userId).count
+            // Capture identity before the network await; a late failure must not
+            // rebind the draft to whichever account is now active.
+            try await offlineStore.enqueue(mutation, userId: identity.userId, householdId: identity.householdId)
+            if identity == currentOfflineIdentity {
+                pendingChangeCount = await offlineStore.pendingMutations(userId: identity.userId, householdId: identity.householdId).count
+            }
             return true
         } catch {
             show("This change could not be saved offline.")
@@ -629,7 +695,7 @@ final class PlannerViewModel: ObservableObject {
     }
 
     private func persistCurrentPlanner() {
-        guard let user = activeUser, let data else { return }
+        guard let user = activeUser, let data, user.householdId == data.household.id else { return }
         let savedAt = Date()
         Task { try? await offlineStore.savePlanner(data, userId: user.userId, savedAt: savedAt) }
     }
