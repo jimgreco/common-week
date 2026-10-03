@@ -4,6 +4,17 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy this commit after release-coordinator approval
+        type: boolean
+        default: false
+      expected_live_build:
+        description: Exact currently deployed 40-character commit
+        type: string
+      recovery_evidence:
+        description: Reference to verified backup restore and migration staging evidence
+        type: string
 
 permissions:
   contents: read
@@ -45,327 +56,95 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run check
+      - run: node scripts/test-membership-migration.mjs
       - run: npm run db:migrate
       - run: npm run test:database
+      - run: npm run test:run -- src/lib/server/notifications.integration.test.ts
+        env:
+          NOTIFICATION_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+      - run: python3 .github/scripts/test-deploy-app.py
 
-  deploy:
+  publish:
     needs: verify
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
-    environment: production
     steps:
       - uses: actions/checkout@v7
-
       - uses: docker/setup-buildx-action@v4
-
-      - name: Sign in to GitHub Container Registry
-        uses: docker/login-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish ARM64 image
+      - name: Publish exact-commit ARM64 image
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/arm64
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
           build-args: |
             APP_BUILD=${{ github.sha }}
-            NEXT_PUBLIC_APP_URL=${{ vars.PRODUCTION_BASE_URL || 'https://weekofus.com' }}
+            NEXT_PUBLIC_APP_URL=https://weekofus.com
           cache-from: type=gha,scope=common-week-arm64
           cache-to: type=gha,mode=max,scope=common-week-arm64
 
-      - name: Validate deployment configuration
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate coordinated cutover
         env:
-          COMMON_WEEK_GOOGLE_CLIENT_ID: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_ID }}
-          COMMON_WEEK_GOOGLE_CLIENT_SECRET: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_SECRET }}
-          COMMON_WEEK_GOOGLE_PLACES_API_KEY: ${{ secrets.COMMON_WEEK_GOOGLE_PLACES_API_KEY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          COMMON_WEEK_APPLE_KEY_ID: ${{ secrets.COMMON_WEEK_APPLE_KEY_ID }}
-          COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64: ${{ secrets.COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 }}
-          COMMON_WEEK_APPLE_SERVICE_ID: ${{ secrets.COMMON_WEEK_APPLE_SERVICE_ID }}
-          COMMON_WEEK_RESEND_API_KEY: ${{ secrets.COMMON_WEEK_RESEND_API_KEY }}
-          COMMON_WEEK_INVITATION_EMAIL_FROM: ${{ secrets.COMMON_WEEK_INVITATION_EMAIL_FROM }}
-          COMMON_WEEK_NOTIFICATION_EMAIL_FROM: ${{ secrets.COMMON_WEEK_NOTIFICATION_EMAIL_FROM }}
-          COMMON_WEEK_APNS_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          COMMON_WEEK_APNS_KEY_ID: ${{ secrets.COMMON_WEEK_APNS_KEY_ID }}
-          COMMON_WEEK_APNS_PRIVATE_KEY_BASE64: ${{ secrets.COMMON_WEEK_APNS_PRIVATE_KEY_BASE64 }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://weekofus.com' }}
+          EXPECTED_LIVE_BUILD: ${{ inputs.expected_live_build }}
+          RECOVERY_EVIDENCE: ${{ inputs.recovery_evidence }}
         run: |
           set -euo pipefail
-          for name in COMMON_WEEK_GOOGLE_CLIENT_ID COMMON_WEEK_GOOGLE_CLIENT_SECRET COMMON_WEEK_GOOGLE_PLACES_API_KEY APPLE_TEAM_ID COMMON_WEEK_APPLE_KEY_ID COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 COMMON_WEEK_APPLE_SERVICE_ID COMMON_WEEK_RESEND_API_KEY COMMON_WEEK_INVITATION_EMAIL_FROM COMMON_WEEK_NOTIFICATION_EMAIL_FROM COMMON_WEEK_APNS_TEAM_ID COMMON_WEEK_APNS_KEY_ID COMMON_WEEK_APNS_PRIVATE_KEY_BASE64 EC2_HOST EC2_SSH_KEY EC2_USER; do
-            test -n "${!name}" || { echo "Missing required secret: $name"; exit 1; }
-          done
-          test "$PRODUCTION_BASE_URL" = "https://weekofus.com" || {
-            echo "PRODUCTION_BASE_URL must be https://weekofus.com."
-            exit 1
-          }
-
-      - name: Prepare SSH
+          [[ "$EXPECTED_LIVE_BUILD" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$RECOVERY_EVIDENCE" || { echo 'Backup, restore, and migration staging evidence is required.'; exit 1; }
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - name: Prepare existing SSH identity
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          printf '%s\n' "$EC2_SSH_KEY" > "$HOME/.ssh/common-week"
-          chmod 600 "$HOME/.ssh/common-week"
-          for attempt in 1 2 3; do
-            if ssh-keyscan -T 30 -t ed25519 -H "$EC2_HOST" > "$HOME/.ssh/known_hosts"; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "EC2 did not respond to SSH host-key discovery after three attempts."
-              exit 1
-            fi
-            sleep 5
-          done
-          chmod 600 "$HOME/.ssh/known_hosts"
-
-      - name: Transfer application to EC2
-        env:
-          COMMON_WEEK_GOOGLE_CLIENT_ID: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_ID }}
-          COMMON_WEEK_GOOGLE_CLIENT_SECRET: ${{ secrets.COMMON_WEEK_GOOGLE_CLIENT_SECRET }}
-          COMMON_WEEK_GOOGLE_PLACES_API_KEY: ${{ secrets.COMMON_WEEK_GOOGLE_PLACES_API_KEY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          COMMON_WEEK_APPLE_KEY_ID: ${{ secrets.COMMON_WEEK_APPLE_KEY_ID }}
-          COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64: ${{ secrets.COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 }}
-          COMMON_WEEK_APPLE_SERVICE_ID: ${{ secrets.COMMON_WEEK_APPLE_SERVICE_ID }}
-          COMMON_WEEK_RESEND_API_KEY: ${{ secrets.COMMON_WEEK_RESEND_API_KEY }}
-          COMMON_WEEK_INVITATION_EMAIL_FROM: ${{ secrets.COMMON_WEEK_INVITATION_EMAIL_FROM }}
-          COMMON_WEEK_NOTIFICATION_EMAIL_FROM: ${{ secrets.COMMON_WEEK_NOTIFICATION_EMAIL_FROM }}
-          COMMON_WEEK_APNS_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          COMMON_WEEK_APNS_KEY_ID: ${{ secrets.COMMON_WEEK_APNS_KEY_ID }}
-          COMMON_WEEK_APNS_PRIVATE_KEY_BASE64: ${{ secrets.COMMON_WEEK_APNS_PRIVATE_KEY_BASE64 }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          set -euo pipefail
-          ssh -i "$HOME/.ssh/common-week" \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            "$EC2_USER@$EC2_HOST" \
-            'mkdir -p "$HOME/common-week"'
-          rsync -avz --delete \
-            -e "ssh -i $HOME/.ssh/common-week -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o StrictHostKeyChecking=yes" \
-            --exclude '.git' \
-            --exclude '.env' \
-            --exclude '.env.*' \
-            --exclude '.next' \
-            --exclude '.playwright-cli' \
-            --exclude 'coverage' \
-            --exclude 'node_modules' \
-            --exclude '*.tsbuildinfo' \
-            ./ "$EC2_USER@$EC2_HOST:~/common-week/"
-
-          ssh -i "$HOME/.ssh/common-week" \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            "$EC2_USER@$EC2_HOST" \
-            'install -d -m 700 "$HOME/common-week/.docker"'
-          scp -i "$HOME/.ssh/common-week" \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            "$HOME/.docker/config.json" \
-            "$EC2_USER@$EC2_HOST:~/common-week/.docker/config.json"
-          ssh -i "$HOME/.ssh/common-week" \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            "$EC2_USER@$EC2_HOST" \
-            'chmod 600 "$HOME/common-week/.docker/config.json"'
-
-          secrets_file="$RUNNER_TEMP/common-week-production-secrets.env"
+          test -n "$EC2_HOST" && test -n "$EC2_SSH_KEY"
+          test -n "$EC2_KNOWN_HOSTS" || { echo 'Pinned host trust is not configured; use the release coordinator existing pinned SSH connection.'; exit 1; }
+          install -d -m 700 "$HOME/.ssh"
           umask 077
-          printf 'COMMON_WEEK_GOOGLE_CLIENT_ID=%s\nCOMMON_WEEK_GOOGLE_CLIENT_SECRET=%s\nCOMMON_WEEK_GOOGLE_PLACES_API_KEY=%s\nCOMMON_WEEK_APPLE_TEAM_ID=%s\nCOMMON_WEEK_APPLE_KEY_ID=%s\nCOMMON_WEEK_APPLE_PRIVATE_KEY_BASE64=%s\nCOMMON_WEEK_APPLE_SERVICE_ID=%s\nCOMMON_WEEK_RESEND_API_KEY=%s\nCOMMON_WEEK_INVITATION_EMAIL_FROM=%s\nCOMMON_WEEK_NOTIFICATION_EMAIL_FROM=%s\nCOMMON_WEEK_APNS_TEAM_ID=%s\nCOMMON_WEEK_APNS_KEY_ID=%s\nCOMMON_WEEK_APNS_PRIVATE_KEY_BASE64=%s\n' \
-            "$COMMON_WEEK_GOOGLE_CLIENT_ID" "$COMMON_WEEK_GOOGLE_CLIENT_SECRET" "$COMMON_WEEK_GOOGLE_PLACES_API_KEY" "$APPLE_TEAM_ID" \
-            "$COMMON_WEEK_APPLE_KEY_ID" "$COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64" "$COMMON_WEEK_APPLE_SERVICE_ID" \
-            "$COMMON_WEEK_RESEND_API_KEY" "$COMMON_WEEK_INVITATION_EMAIL_FROM" "$COMMON_WEEK_NOTIFICATION_EMAIL_FROM" \
-            "$COMMON_WEEK_APNS_TEAM_ID" "$COMMON_WEEK_APNS_KEY_ID" "$COMMON_WEEK_APNS_PRIVATE_KEY_BASE64" > "$secrets_file"
-          scp -i "$HOME/.ssh/common-week" \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            "$secrets_file" \
-            "$EC2_USER@$EC2_HOST:~/common-week/.env.production.pending"
-          ssh -i "$HOME/.ssh/common-week" \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            "$EC2_USER@$EC2_HOST" \
-            'chmod 600 "$HOME/common-week/.env.production.pending"'
-
-      - name: Pull and restart Week of Us
+          printf '%s\n' "$EC2_SSH_KEY" > "$HOME/.ssh/common-week"
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          test -s "$HOME/.ssh/known_hosts"
+      - name: Deploy only Week of Us with existing live configuration
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
-          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://weekofus.com' }}
+          EXPECTED_LIVE_BUILD: ${{ inputs.expected_live_build }}
         run: |
           set -euo pipefail
+          [[ "$EXPECTED_LIVE_BUILD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           ssh -i "$HOME/.ssh/common-week" \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
-            "COMMON_WEEK_APP_BUILD='$GITHUB_SHA' COMMON_WEEK_IMAGE='ghcr.io/$GITHUB_REPOSITORY:$GITHUB_SHA' COMMON_WEEK_APP_URL='$PRODUCTION_BASE_URL' bash -se" <<'REMOTE'
-          set -euo pipefail
-          cd "$HOME/deploy"
-          export COMMON_WEEK_APP_BUILD COMMON_WEEK_IMAGE COMMON_WEEK_APP_URL
-          export COMPOSE_PROFILES=common-week
-          export DOCKER_CONFIG="$HOME/common-week/.docker"
-          secrets_file="$HOME/common-week/.env.production.pending"
-
-          cleanup() {
-            rm -rf "$DOCKER_CONFIG"
-            rm -f "$secrets_file"
-          }
-          trap cleanup EXIT
-
-          test -s "$secrets_file" || { echo "Google credential payload was not transferred."; exit 1; }
-          google_client_id="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_CLIENT_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          google_client_secret="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_CLIENT_SECRET" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          google_places_api_key="$(awk -F= '$1 == "COMMON_WEEK_GOOGLE_PLACES_API_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          apple_team_id="$(awk -F= '$1 == "COMMON_WEEK_APPLE_TEAM_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          apple_key_id="$(awk -F= '$1 == "COMMON_WEEK_APPLE_KEY_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          apple_private_key_base64="$(awk -F= '$1 == "COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          apple_service_id="$(awk -F= '$1 == "COMMON_WEEK_APPLE_SERVICE_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          resend_api_key="$(awk -F= '$1 == "COMMON_WEEK_RESEND_API_KEY" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          invitation_email_from="$(awk -F= '$1 == "COMMON_WEEK_INVITATION_EMAIL_FROM" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          notification_email_from="$(awk -F= '$1 == "COMMON_WEEK_NOTIFICATION_EMAIL_FROM" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          apns_team_id="$(awk -F= '$1 == "COMMON_WEEK_APNS_TEAM_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          apns_key_id="$(awk -F= '$1 == "COMMON_WEEK_APNS_KEY_ID" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          apns_private_key_base64="$(awk -F= '$1 == "COMMON_WEEK_APNS_PRIVATE_KEY_BASE64" { sub(/^[^=]*=/, ""); print; exit }' "$secrets_file")"
-          test -n "$google_client_id" || { echo "COMMON_WEEK_GOOGLE_CLIENT_ID is empty."; exit 1; }
-          test -n "$google_client_secret" || { echo "COMMON_WEEK_GOOGLE_CLIENT_SECRET is empty."; exit 1; }
-          test -n "$google_places_api_key" || { echo "COMMON_WEEK_GOOGLE_PLACES_API_KEY is empty."; exit 1; }
-          test -n "$apple_team_id" || { echo "COMMON_WEEK_APPLE_TEAM_ID is empty."; exit 1; }
-          test -n "$apple_key_id" || { echo "COMMON_WEEK_APPLE_KEY_ID is empty."; exit 1; }
-          test -n "$apple_private_key_base64" || { echo "COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 is empty."; exit 1; }
-          test -n "$apple_service_id" || { echo "COMMON_WEEK_APPLE_SERVICE_ID is empty."; exit 1; }
-          test -n "$resend_api_key" || { echo "COMMON_WEEK_RESEND_API_KEY is empty."; exit 1; }
-          test -n "$invitation_email_from" || { echo "COMMON_WEEK_INVITATION_EMAIL_FROM is empty."; exit 1; }
-          test -n "$notification_email_from" || { echo "COMMON_WEEK_NOTIFICATION_EMAIL_FROM is empty."; exit 1; }
-          test -n "$apns_team_id" || { echo "COMMON_WEEK_APNS_TEAM_ID is empty."; exit 1; }
-          test -n "$apns_key_id" || { echo "COMMON_WEEK_APNS_KEY_ID is empty."; exit 1; }
-          test -n "$apns_private_key_base64" || { echo "COMMON_WEEK_APNS_PRIVATE_KEY_BASE64 is empty."; exit 1; }
-
-          update_env() {
-            key="$1"
-            value="$2"
-            temporary="$(mktemp)"
-            if [ -f .env ]; then
-              grep -v "^${key}=" .env > "$temporary" || true
-            fi
-            printf '%s=%s\n' "$key" "$value" >> "$temporary"
-            chmod 600 "$temporary"
-            mv "$temporary" .env
-          }
-
-          update_env COMMON_WEEK_GOOGLE_CLIENT_ID "$google_client_id"
-          update_env COMMON_WEEK_GOOGLE_CLIENT_SECRET "$google_client_secret"
-          update_env COMMON_WEEK_GOOGLE_PLACES_API_KEY "$google_places_api_key"
-          update_env COMMON_WEEK_APPLE_TEAM_ID "$apple_team_id"
-          update_env COMMON_WEEK_APPLE_KEY_ID "$apple_key_id"
-          update_env COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64 "$apple_private_key_base64"
-          update_env COMMON_WEEK_APPLE_SERVICE_ID "$apple_service_id"
-          update_env COMMON_WEEK_APPLE_BUNDLE_ID "com.jimgreco.commonweek"
-          update_env COMMON_WEEK_RESEND_API_KEY "$resend_api_key"
-          update_env COMMON_WEEK_INVITATION_EMAIL_FROM "$invitation_email_from"
-          update_env COMMON_WEEK_NOTIFICATION_EMAIL_FROM "$notification_email_from"
-          update_env COMMON_WEEK_APNS_TEAM_ID "$apns_team_id"
-          update_env COMMON_WEEK_APNS_KEY_ID "$apns_key_id"
-          update_env COMMON_WEEK_APNS_PRIVATE_KEY_BASE64 "$apns_private_key_base64"
-          update_env COMMON_WEEK_APP_URL "$COMMON_WEEK_APP_URL"
-
-          if ! grep -q '^COMMON_WEEK_DB_PASSWORD=' .env 2>/dev/null; then
-            umask 077
-            printf 'COMMON_WEEK_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env
-          fi
-          if ! grep -q '^COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY=' .env 2>/dev/null; then
-            umask 077
-            printf 'COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32 | tr -d '\n')" >> .env
-          fi
-          chmod 600 .env
-          common_week_db_password="$(awk -F= '$1 == "COMMON_WEEK_DB_PASSWORD" { sub(/^[^=]*=/, ""); print; exit }' .env)"
-          case "$common_week_db_password" in
-            (*[!0-9a-f]*|'') echo "COMMON_WEEK_DB_PASSWORD must be a non-empty hex value."; exit 1 ;;
-          esac
-
-          compose() {
-            docker-compose -f docker-compose.yml -f "$HOME/common-week/.github/deploy/common-week-apple.yml" "$@"
-          }
-
-          compose pull common-week
-          compose up -d db
-          for attempt in $(seq 1 30); do
-            if compose exec -T db pg_isready -U admin </dev/null >/dev/null 2>&1; then break; fi
-            if [ "$attempt" = "30" ]; then compose logs --tail=100 db; exit 1; fi
-            sleep 2
-          done
-          if ! compose exec -T db psql -U admin -d postgres -tAc \
-            "select 1 from pg_roles where rolname = 'common_week_app'" </dev/null | grep -qx 1; then
-            compose exec -T db createuser -U admin common_week_app </dev/null
-          fi
-          compose exec -T db psql -U admin -d postgres -v ON_ERROR_STOP=1 \
-            -c "alter role common_week_app login password '$common_week_db_password'" </dev/null
-          if ! compose exec -T db psql -U admin -d postgres -tAc \
-            "select 1 from pg_database where datname = 'common_week'" </dev/null | grep -qx 1; then
-            compose exec -T db createdb -U admin -O common_week_app common_week </dev/null
-          fi
-          compose exec -T db psql -U admin -d postgres -v ON_ERROR_STOP=1 \
-            -c "alter database common_week owner to common_week_app" </dev/null
-          compose run --rm --no-deps -T common-week node scripts/migrate.mjs </dev/null
-          compose up -d --force-recreate --no-build common-week
-
-          running_image="$(docker inspect --format '{{.Config.Image}}' "$(compose ps -q common-week)")"
-          if [ "$running_image" != "$COMMON_WEEK_IMAGE" ]; then
-            echo "Expected $COMMON_WEEK_IMAGE but Compose started $running_image."
-            exit 1
-          fi
-
-          for attempt in $(seq 1 60); do
-            if compose exec -T common-week node -e '
-              fetch("http://127.0.0.1:3000/api/health")
-                .then(async (response) => {
-                  const body = await response.json();
-                  process.exit(response.ok && body.status === "ok" && body.build === process.env.APP_BUILD ? 0 : 1);
-                })
-                .catch(() => process.exit(1));
-            ' </dev/null; then
-              echo "Week of Us is healthy at build $COMMON_WEEK_APP_BUILD."
-              docker images ghcr.io/jimgreco/common-week --format '{{.Repository}}:{{.Tag}}' \
-                | grep -Fvx "$COMMON_WEEK_IMAGE" \
-                | xargs -r docker image rm || true
-              exit 0
-            fi
-
-            if [ "$attempt" = "60" ]; then
-              compose ps common-week || true
-              compose logs --tail=100 common-week || true
-              exit 1
-            fi
-            sleep 2
-          done
-          REMOTE
-
-      - name: Check public endpoint
-        if: ${{ vars.PRODUCTION_BASE_URL != '' }}
-        env:
-          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+            "bash -s -- '$GITHUB_SHA' '$EXPECTED_LIVE_BUILD' --recovery-reviewed" < .github/scripts/deploy-app.sh
+      - name: Verify canonical public endpoint
         run: |
           set -euo pipefail
-          body="$(curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 3 \
-            "${PRODUCTION_BASE_URL%/}/api/health")"
-          BUILD="$GITHUB_SHA" BODY="$body" node -e '
-            const body = JSON.parse(process.env.BODY);
-            if (body.status !== "ok" || body.build !== process.env.BUILD) process.exit(1);
-          '
-
-      - name: Note missing public endpoint
-        if: ${{ vars.PRODUCTION_BASE_URL == '' }}
-        run: echo "::notice::PRODUCTION_BASE_URL is not configured; the container health check passed, but the public proxy was not tested."
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 3 \
+            https://weekofus.com/api/health | BUILD="$GITHUB_SHA" node -e '
+              let text = "";
+              process.stdin.on("data", (chunk) => { text += chunk; });
+              process.stdin.on("end", () => {
+                const body = JSON.parse(text);
+                if (body.status !== "ok" || body.database !== "ready" || body.build !== process.env.BUILD) process.exit(1);
+              });'
+      - name: Remove runner SSH copy
+        if: always()
+        run: rm -f "$HOME/.ssh/common-week"

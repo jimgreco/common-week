@@ -132,7 +132,7 @@ EventKit and system permission behavior must be checked with a development-signe
 
 ## TestFlight releases
 
-Every push to `main` runs the server checks plus iOS simulator and Mac Catalyst unit tests in `.github/workflows/ci.yml`. After those jobs pass, the reusable `.github/workflows/testflight.yml` creates separate signed iPhone and Mac Catalyst archives, validates both exported packages, and uploads both packages from that exact commit to TestFlight. A manually dispatched CI run on `main` follows the same release path. The Mac archive uses `generic/platform=macOS,variant=Mac Catalyst`; it does not expose the phone-shaped iOS build through the Apple-silicon compatibility setting.
+Every push to `main` runs the server checks plus iOS simulator and Mac Catalyst unit tests in `.github/workflows/ci.yml`. To upload after those jobs pass, explicitly dispatch CI on `main` with `upload_native: true`. The reusable `.github/workflows/testflight.yml` then creates separate signed iPhone and Mac Catalyst archives using existing signing assets, validates both packages, and uploads that exact commit to TestFlight. Ordinary pushes only validate native code. A direct TestFlight dispatch also requires `upload: true`. The Mac archive uses `generic/platform=macOS,variant=Mac Catalyst`; it does not expose the phone-shaped iOS build through the Apple-silicon compatibility setting.
 
 Configure these GitHub Actions secrets before the first release:
 
@@ -146,7 +146,7 @@ Configure these GitHub Actions secrets before the first release:
 - `APP_STORE_CONNECT_ISSUER_ID`
 - `APP_STORE_CONNECT_API_KEY` — PEM text or base64-encoded PEM
 
-The workflow creates or downloads separate `IOS_APP_STORE` and `MAC_CATALYST_APP_STORE` provisioning profiles for `com.jimgreco.commonweek` through the App Store Connect API. It stops if a named profile exists with the wrong type or is no longer active, and verifies the application identifier, Sign in with Apple, and production APNs entitlements before archiving.
+The workflow only downloads existing separate `IOS_APP_STORE` and `MAC_CATALYST_APP_STORE` provisioning profiles for `com.jimgreco.commonweek` through the App Store Connect API. It stops if a named profile or required capability is missing, has the wrong type, or is no longer active, and verifies the application identifier, Sign in with Apple, and production APNs entitlements before archiving.
 
 The server deployment also requires `COMMON_WEEK_RESEND_API_KEY`, both email-from secrets, and a dedicated `COMMON_WEEK_APNS_KEY_ID` / `COMMON_WEEK_APNS_PRIVATE_KEY_BASE64` pair.
 

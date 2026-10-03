@@ -2,55 +2,21 @@
 
 ## Consolidated EC2 server
 
-Every push to `main` runs `.github/workflows/deploy.yml`. The workflow:
+Every push to `main` validates the code and publishes only the exact-commit ARM64 image. It does not change the host, move a `latest` tag, upload native builds, or remove images. The release coordinator deploys apps one at a time.
 
-1. Runs lint, TypeScript, Vitest, a real PostgreSQL migration/isolation test, and the production build.
-2. Builds an ARM64 image and publishes exact-commit plus `latest` tags to GitHub Container Registry.
-3. Connects to the shared server and uses the canonical `common-week` service in `~/deploy/docker-compose.yml`.
-4. Starts the existing `db` service, creates the dedicated `common_week_app` login and `common_week` database if absent, and runs application migrations from the exact image.
-5. Restarts Week of Us and requires `/api/health` to report the exact Git SHA and a ready PostgreSQL connection.
-6. Checks the public endpoint when `PRODUCTION_BASE_URL` is configured.
+Before a Week of Us cutover, review a recoverable backup and successful restore test, rehearse migrations 020–021 against a staging copy, record expected quarantine counts, and confirm the exact current live SHA. Migration 020 preserves historical data but requires the new authorization and notification worker code. `88c34e7` is the minimum compatible rollback revision; never restart pre-audit workers after migration 020. Keep migration 021 during recovery, since reverting the old Google linking flow reintroduces the vulnerability.
 
-The service uses the `common-week` Compose profile so an unrelated infrastructure deployment does not replace the application image pinned by its own workflow. It uses the same PostgreSQL container as the other server apps but a separate database and restricted login. DynamoDB is not used.
+The coordinator can invoke `.github/scripts/deploy-app.sh` over the existing pinned SSH connection with the new SHA, expected current SHA, and `--recovery-reviewed`. The flag acknowledges completed backup/restore and migration review; it is not a substitute for those checks. All app release coordinators must share `~/deploy/.app-release.lock`.
 
-Configure these GitHub Actions secrets at the repository level or in the `production` environment:
+The script reconstructs the running container's exact recorded Compose project/files and compares its configuration hash with the live hash before changing anything. It changes only the image/build, uses existing host registry access, retains the old image under `common-week-retained:<sha>`, stops Week of Us and its embedded notification scheduler, runs migrations from the new image, and recreates only `common-week` with `--no-deps`. It neither transfers credentials nor edits shared environment files, database roles/grants, network settings, or dependencies. Configuration drift, unavailable registry access, a changed live SHA, or missing Compose files fail before cutover. Once cutover starts, failure leaves Week of Us stopped for a compatible corrected build; there is no automatic pre-audit rollback.
 
-- `EC2_HOST`
-- `EC2_USER`
-- `EC2_SSH_KEY`
-- `COMMON_WEEK_GOOGLE_CLIENT_ID`
-- `COMMON_WEEK_GOOGLE_CLIENT_SECRET`
-- `COMMON_WEEK_GOOGLE_PLACES_API_KEY`
-- `APPLE_TEAM_ID`
-- `COMMON_WEEK_APPLE_KEY_ID`
-- `COMMON_WEEK_APPLE_PRIVATE_KEY_BASE64`
-- `COMMON_WEEK_APPLE_SERVICE_ID`
-- `COMMON_WEEK_RESEND_API_KEY`
-- `COMMON_WEEK_INVITATION_EMAIL_FROM`
-- `COMMON_WEEK_NOTIFICATION_EMAIL_FROM`
-- `COMMON_WEEK_APNS_KEY_ID`
-- `COMMON_WEEK_APNS_PRIVATE_KEY_BASE64`
+A manually dispatched **Deploy to EC2** run can perform the same action only with `deploy: true`, the exact expected live SHA, and a reference to backup/restore/staging evidence. It requires existing `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`, and pinned `EC2_KNOWN_HOSTS` configuration. If pinned host trust is absent, it stops before writing runner SSH files: use the coordinator's existing pinned local SSH connection. Adding trust settings requires its own approval. Ordinary pushes never execute this host job.
 
-Set the Actions variable:
+Existing Google/Apple, email/APNs, database and encryption configuration must remain intact. Missing or mismatched values require separate reconciliation; the application release no longer generates keys, rewrites provider credentials, creates roles/databases, or changes ownership. Ensure later infrastructure deployments retain this exact app image/build pin and effective Compose layers rather than restoring an older binary.
 
-```text
-PRODUCTION_BASE_URL=https://weekofus.com
-```
+After local invocation, independently check the canonical `https://weekofus.com/api/health` for the exact SHA, `status: ok`, and `database: ready`. The script's container health check alone does not prove public proxy routing. Verify login/sync using authorized test accounts; do not trigger real provider consent or email/push sends merely for QA.
 
-The deployment transfers the Google, Google Maps Platform, and Apple credentials through a permission-restricted temporary file, updates `~/deploy/.env`, and removes the temporary copy. The Apple private key is base64 encoded so the one-line Compose environment file preserves it exactly. The first application deployment also generates `COMMON_WEEK_DB_PASSWORD` and `COMMON_WEEK_GOOGLE_TOKEN_ENCRYPTION_KEY` directly in that protected server file. The remaining runtime values are:
-
-```dotenv
-COMMON_WEEK_APP_URL=https://weekofus.com
-COMMON_WEEK_ENABLE_DEMO=false
-```
-
-Do not copy another app's OAuth client unless its Google configuration intentionally includes the Week of Us callback. The authorized production redirect URI must be:
-
-```text
-https://weekofus.com/auth/callback
-```
-
-In Nginx Proxy Manager, create a TLS proxy host for the canonical hostname with upstream `http://common-week:3000`. Keep the proxy on the shared Compose network. Server-sent events send `X-Accel-Buffering: no`; preserve streaming through the proxy for immediate collaboration updates.
+Native distribution is separate: dispatch **CI** on the same `main` SHA with `upload_native: true` after its upload is authorized. iOS test failures now fail CI. The signing helper only inspects/downloads existing approved Apple Developer assets and fails if bundles, capabilities or profiles are missing; it cannot create them. Confirm uploader acceptance and App Store Connect processing separately from device installation. Old clients retain ordinary sign-in but cannot finish new Calendar linking until updated. Older ambiguous offline drafts remain quarantined; never automatically reassign or delete them.
 
 ## Vercel note
 

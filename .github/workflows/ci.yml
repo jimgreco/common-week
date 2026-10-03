@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      upload_native:
+        description: Upload iOS and Mac builds using existing signing assets
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,8 +51,13 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:run
+      - run: node scripts/test-membership-migration.mjs
       - run: npm run db:migrate
       - run: npm run test:database
+      - run: npm run test:run -- src/lib/server/notifications.integration.test.ts
+        env:
+          NOTIFICATION_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+      - run: python3 .github/scripts/test-deploy-app.py
       - run: npm run build
       - run: npm run test:family
       - run: npm run test:smoke
@@ -90,8 +100,6 @@ jobs:
           # If we can't find simulators and have no Xcode, this may be a CI issue with the environment
 
       - name: Run iOS tests
-        if: always()  # Make this step run regardless of previous step success/failure
-        continue-on-error: true  # Continue workflow even if iOS tests fail
         run: |
           set -euo pipefail
           echo "=== Running iOS Tests ==="
@@ -256,7 +264,9 @@ jobs:
 
   testflight:
     name: TestFlight
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && inputs.upload_native && github.ref == 'refs/heads/main'
     needs: [verify, ios, maccatalyst]
     uses: ./.github/workflows/testflight.yml
+    with:
+      upload: true
     secrets: inherit

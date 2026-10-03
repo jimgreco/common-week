@@ -31,6 +31,7 @@ function token() {
 }
 
 async function request(authToken, method, path, body) {
+  if (method !== 'GET') throw new Error('Release signing inspection is read-only; request approval for Apple Developer changes separately.');
   const response = await fetch(`${API}${path}`, {
     method,
     headers: {
@@ -64,10 +65,6 @@ async function pages(authToken, path) {
 async function ensureBundle(authToken, identifier) {
   const found = await request(authToken, 'GET', `/bundleIds?filter[identifier]=${encodeURIComponent(identifier)}&filter[platform]=IOS&limit=200`);
   const exact = found.data?.find((bundle) => bundle.attributes?.identifier === identifier);
-  if (!exact && process.argv.includes('--widget')) {
-    const created = await request(authToken, 'POST', '/bundleIds', { data: { type: 'bundleIds', attributes: { identifier, name: 'Week of Us Widgets', platform: 'IOS' } } });
-    return created.data;
-  }
   if (!exact) throw new Error(`Bundle ID ${identifier} does not exist in Apple Developer.`);
   return exact;
 }
@@ -76,29 +73,13 @@ async function ensureAppleSignIn(authToken, bundleId) {
   const capabilities = await pages(authToken, `/bundleIds/${bundleId}/bundleIdCapabilities?fields[bundleIdCapabilities]=capabilityType`);
   const existing = capabilities.find((value) => value.attributes?.capabilityType === 'APPLE_ID_AUTH');
   if (existing) return;
-  const attributes = {
-    capabilityType: 'APPLE_ID_AUTH',
-    settings: [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }],
-  };
-  await request(authToken, 'POST', '/bundleIdCapabilities', {
-    data: {
-      type: 'bundleIdCapabilities',
-      attributes,
-      relationships: { bundleId: { data: { type: 'bundleIds', id: bundleId } } },
-    },
-  });
+  throw new Error('Sign in with Apple capability is missing; obtain approval before changing Apple Developer settings.');
 }
 
 async function ensurePushNotifications(authToken, bundleId) {
   const capabilities = await pages(authToken, `/bundleIds/${bundleId}/bundleIdCapabilities?fields[bundleIdCapabilities]=capabilityType`);
   if (capabilities.some((value) => value.attributes?.capabilityType === 'PUSH_NOTIFICATIONS')) return;
-  await request(authToken, 'POST', '/bundleIdCapabilities', {
-    data: {
-      type: 'bundleIdCapabilities',
-      attributes: { capabilityType: 'PUSH_NOTIFICATIONS' },
-      relationships: { bundleId: { data: { type: 'bundleIds', id: bundleId } } },
-    },
-  });
+  throw new Error('Push Notifications capability is missing; obtain approval before changing Apple Developer settings.');
 }
 
 async function matchingCertificate(authToken, certificatePath) {
@@ -132,7 +113,7 @@ async function main() {
     await ensureAppleSignIn(authToken, bundle.id);
     await ensurePushNotifications(authToken, bundle.id);
   }
-  const certificate = await matchingCertificate(authToken, certificatePath);
+  await matchingCertificate(authToken, certificatePath);
   const existingProfiles = await pages(
     authToken,
     `/profiles?filter[name]=${encodeURIComponent(profileName)}&fields[profiles]=name,uuid,profileType,profileState,profileContent&limit=200`,
@@ -149,21 +130,7 @@ async function main() {
     console.log(`Downloaded existing ${profileName} (${profileType}) for ${bundleIdentifier}.`);
     return;
   }
-  const created = await request(authToken, 'POST', '/profiles', {
-    data: {
-      type: 'profiles',
-      attributes: { name: profileName, profileType },
-      relationships: {
-        bundleId: { data: { type: 'bundleIds', id: bundle.id } },
-        certificates: { data: [{ type: 'certificates', id: certificate.id }] },
-      },
-    },
-  });
-  const profile = await request(authToken, 'GET', `/profiles/${created.data.id}?fields[profiles]=name,uuid,profileContent`);
-  const content = profile.data.attributes?.profileContent;
-  if (!content) throw new Error('App Store Connect did not return provisioning profile content.');
-  writeFileSync(output, Buffer.from(content, 'base64'));
-  console.log(`Created ${profileName} (${profileType}) for ${bundleIdentifier}.`);
+  throw new Error(`${profileName} (${profileType}) is missing; obtain approval to create the provisioning profile separately.`);
 }
 
 main().catch((error) => {
