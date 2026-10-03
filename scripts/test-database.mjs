@@ -367,7 +367,7 @@ try {
   assert.equal(rejectedInvalidCarryoverTarget, true, "carryover rejects a non-Monday target week");
 
   // Revoking membership must revoke provider access and pending delivery atomically,
-  // while retaining the user's own account and provider connection.
+  // while retaining historical records, files, ownership and provider credentials.
   const departingUser = (await client.query(
     "insert into users (google_subject,email,display_name) values ($1,$2,'Departing member') returning id",
     [`departing-${suffix}`, `departing-${suffix}@example.com`],
@@ -386,6 +386,8 @@ try {
   const calendarReminder = (await client.query("insert into notification_reminders(user_id,household_id,resource_kind,calendar_preference_id,provider_event_id,resource_title,remind_at) values($1,$2,'calendar_event',$3,'event','Former calendar event',now()+interval '1 day') returning id", [userA, householdA, departingCalendar])).rows[0].id;
   const departingNotification = (await client.query("insert into notification_outbox(user_id,household_id,dedupe_key,kind,title,body,scheduled_for) values($1,$2,$3,'reminder','Future reminder','Private body',now()) returning id", [departingUser, householdA, `departing:${suffix}`])).rows[0].id;
   await client.query("insert into notification_deliveries(outbox_id,channel,status) values($1,'email','pending')", [departingNotification]);
+  const calendarNotification = (await client.query("insert into notification_outbox(user_id,household_id,dedupe_key,kind,title,body,scheduled_for) values($1,$2,$3,'reminder','Calendar reminder','Historical calendar title',now()) returning id", [userA, householdA, `reminder:${calendarReminder}:synthetic`])).rows[0].id;
+  await client.query("insert into notification_deliveries(outbox_id,channel,status) values($1,'email','delivered'),($1,'push','pending')", [calendarNotification]);
   await client.query("delete from household_members where household_id=$1 and user_id=$2", [householdA, departingUser]);
   for (const [table, id] of [
     ["calendar_preferences", departingCalendar],
@@ -394,20 +396,29 @@ try {
     ["notification_reminders", calendarReminder],
     ["notification_outbox", departingNotification],
   ]) {
-    assert.equal((await client.query(`select 1 from ${table} where id=$1`, [id])).rowCount, 0, `${table} revokes departed membership data`);
+    assert.equal((await client.query(`select 1 from ${table} where id=$1`, [id])).rowCount, 1, `${table} preserves departed historical records`);
   }
-  assert.equal((await client.query("select 1 from notification_deliveries where outbox_id=$1", [departingNotification])).rowCount, 0, "pending deliveries are revoked");
-  assert.equal((await client.query("select 1 from calendar_event_cache where user_id=$1", [departingUser])).rowCount, 0, "departed provider caches are removed");
-  assert.equal((await client.query("select 1 from hidden_calendar_events where household_id=$1 and event_id=$2", [householdA, `departing-calendar-${suffix}:event`])).rowCount, 0, "departed provider titles are removed");
+  assert.equal((await client.query("select visibility from calendar_preferences where id=$1", [departingCalendar])).rows[0].visibility, "hide", "departed calendars require renewed sharing consent");
+  assert.equal((await client.query("select file_data from item_collaboration_entries where id=$1", [attachment])).rows[0].file_data.toString(), "synthetic private file", "original file bytes remain recoverable");
+  assert.equal((await client.query("select 1 from notification_reminders where id=any($1::uuid[]) and membership_revoked_at is not null", [[departingReminder, calendarReminder]])).rowCount, 2, "recipient and calendar-owner departure revoke reminders without deleting them");
+  assert.equal((await client.query("select 1 from notification_outbox where id=any($1::uuid[]) and membership_revoked_at is not null", [[departingNotification, calendarNotification]])).rowCount, 2, "related outbox rows are quarantined");
+  assert.equal((await client.query("select status from notification_deliveries where outbox_id=$1", [departingNotification])).rows[0].status, "skipped", "pending delivery is retained but disabled");
+  assert.deepEqual((await client.query("select channel,status from notification_deliveries where outbox_id=$1 order by channel", [calendarNotification])).rows, [{ channel: "email", status: "delivered" }, { channel: "push", status: "skipped" }], "delivery history is retained and unsent channels stop");
+  assert.equal((await client.query("select 1 from calendar_event_cache where user_id=$1 and expires_at <= now()", [departingUser])).rowCount, 1, "provider cache is expired without deleting its bytes");
+  assert.equal((await client.query("select 1 from hidden_calendar_events where household_id=$1 and event_id=$2", [householdA, `departing-calendar-${suffix}:event`])).rowCount, 1, "hidden records remain preserved behind calendar authorization");
   assert.equal((await client.query("select 1 from google_connections where user_id=$1", [departingUser])).rowCount, 1, "membership removal retains personal Google credentials");
   await client.query("savepoint departed_notification");
   try {
     await client.query("insert into notification_outbox(user_id,household_id,dedupe_key,kind,title,body,scheduled_for) values($1,$2,$3,'reminder','Stale job','Stale body',now())", [departingUser, householdA, `departed-stale:${suffix}`]);
     assert.fail("a stale background job must not enqueue after departure");
   } catch (error) {
-    assert.equal(error.code, "23503", "membership FK rejects stale notification jobs");
+    assert.equal(error.code, "23503", "membership trigger rejects stale notification jobs");
     await client.query("rollback to savepoint departed_notification");
   }
+  await client.query("insert into household_members(household_id,user_id) values($1,$2)", [householdA, departingUser]);
+  assert.equal((await client.query("select visibility from calendar_preferences where id=$1", [departingCalendar])).rows[0].visibility, "hide", "rejoining does not silently restore old sharing");
+  assert.equal((await client.query("select 1 from notification_outbox where id=$1 and membership_revoked_at is not null", [departingNotification])).rowCount, 1, "rejoining cannot reactivate historical notifications");
+  await client.query("delete from household_members where household_id=$1 and user_id=$2", [householdA, departingUser]);
   await client.query("insert into household_members(household_id,user_id) values($1,$2)", [householdB, departingUser]);
   const movedCalendar = (await client.query("insert into calendar_preferences(household_id,user_id,google_calendar_id,calendar_name) values($1,$2,$3,'Calendar') returning visibility", [householdB, departingUser, `departing-calendar-${suffix}`])).rows[0];
   assert.equal(movedCalendar.visibility, "hide", "joining another household requires fresh calendar sharing consent");

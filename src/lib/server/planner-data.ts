@@ -155,6 +155,7 @@ export async function getPlannerData(
            join users u on u.id = pi.created_by
            left join notification_reminders nr
              on nr.planning_item_id = pi.id and nr.user_id = $3 and nr.delivered_at is null
+            and nr.membership_revoked_at is null
           where pi.household_id = $1 and not pi.is_backlog and pi.week_start_date = $2::date
           order by pi.sort_order, pi.created_at`,
         [context.householdId, weekStart, context.userId],
@@ -255,6 +256,7 @@ export async function getPlannerData(
       `select id, calendar_preference_id, provider_event_id, remind_at
          from notification_reminders
         where user_id = $1 and resource_kind = 'calendar_event' and delivered_at is null
+          and membership_revoked_at is null
           and calendar_preference_id = any($2::uuid[])`,
       [
         context.userId,

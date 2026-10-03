@@ -90,6 +90,7 @@ describe("household calendar privacy", () => {
     expect(result).toMatchObject({ connected: true, calendars: [{ calendarName: "Personal", visibility: "hide" }] });
     const [insertSql, insertValues] = mocks.transactionQuery.mock.calls[0] as [string, unknown[]];
     expect(insertSql).toContain("insert into calendar_preferences");
+    expect(insertSql).toContain("on conflict (household_id, user_id, google_calendar_id)");
     expect(insertSql).toContain("false");
     expect(insertValues[7]).toBe("hide");
   });

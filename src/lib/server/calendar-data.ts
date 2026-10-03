@@ -110,7 +110,7 @@ async function ensurePreferences(
              section_group, access_role
            ) select $1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11
              where exists (select 1 from household_members hm where hm.household_id = $1 and hm.user_id = $2)
-           on conflict (user_id, google_calendar_id) do update set
+           on conflict (household_id, user_id, google_calendar_id) do update set
              calendar_name = excluded.calendar_name,
              color = excluded.color,
              is_primary = excluded.is_primary,
@@ -336,7 +336,8 @@ export async function searchHouseholdCalendarEvents(
   const reminders = await query<{ id: string; calendar_preference_id: string; provider_event_id: string; remind_at: Date }>(
     `select id, calendar_preference_id, provider_event_id, remind_at
        from notification_reminders
-      where user_id = $1 and resource_kind = 'calendar_event' and delivered_at is null`,
+      where user_id = $1 and resource_kind = 'calendar_event' and delivered_at is null
+        and membership_revoked_at is null`,
     [context.userId],
   );
   const reminderByEvent = new Map(reminders.rows.map((row) => [

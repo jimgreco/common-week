@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/server/database", () => ({ query: mocks.query }));
 vi.mock("@/lib/server/planner-data", () => ({ getPlannerData: vi.fn() }));
 
-import { getNotificationInbox, markNotificationRead, resolvePlannerNotificationTarget } from "@/lib/server/notifications";
+import { getNotificationInbox, markNotificationRead, resolvePlannerNotificationTarget, upsertCalendarReminder } from "@/lib/server/notifications";
 
 describe("notification history", () => {
   beforeEach(() => mocks.query.mockReset());
@@ -78,5 +78,14 @@ describe("notification history", () => {
       "123e4567-e89b-12d3-a456-426614174000",
       "user-id",
     ]);
+  });
+
+  it("does not reactivate a reminder when its calendar is no longer accessible", async () => {
+    mocks.query.mockResolvedValue({ rows: [], rowCount: 0 });
+    await expect(upsertCalendarReminder({
+      userId: "user-id", householdId: "household-id", calendarPreferenceId: "calendar-id",
+      providerEventId: "event-id", title: "Preserved title", eventStart: new Date(), remindAt: new Date(),
+    })).rejects.toThrow("no longer available");
+    expect(mocks.query).toHaveBeenCalledTimes(1);
   });
 });

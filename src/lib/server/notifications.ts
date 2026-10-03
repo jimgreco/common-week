@@ -77,6 +77,40 @@ const pendingChannelState = (): NotificationChannelState => ({
   lastError: null,
 });
 
+// These fixed SQL predicates are shared by history, scheduling, and the final
+// delivery claim. Membership restoration alone must not reactivate old work.
+const reminderAccessSql = `nr.membership_revoked_at is null
+  and exists (
+    select 1 from household_members recipient
+     where recipient.household_id = nr.household_id and recipient.user_id = nr.user_id
+  )
+  and (
+    (nr.resource_kind = 'planning_item' and exists (
+      select 1 from planning_items item
+       where item.id = nr.planning_item_id and item.household_id = nr.household_id
+    ))
+    or (nr.resource_kind = 'calendar_event' and exists (
+      select 1 from calendar_preferences calendar
+      join household_members calendar_owner
+        on calendar_owner.household_id = calendar.household_id and calendar_owner.user_id = calendar.user_id
+       where calendar.id = nr.calendar_preference_id and calendar.household_id = nr.household_id
+         and (calendar.visibility = 'share' or (calendar.visibility = 'private' and calendar.user_id = nr.user_id))
+    ))
+  )`;
+
+const outboxAccessSql = `no.membership_revoked_at is null
+  and exists (
+    select 1 from household_members recipient
+     where recipient.household_id = no.household_id and recipient.user_id = no.user_id
+  )
+  and (no.kind <> 'reminder' or exists (
+    select 1 from notification_reminders nr
+     where split_part(no.dedupe_key, ':', 1) = 'reminder'
+       and split_part(no.dedupe_key, ':', 2) = nr.id::text
+       and nr.user_id = no.user_id and nr.household_id = no.household_id
+       and ${reminderAccessSql}
+  ))`;
+
 function mappedPreferences(row: PreferenceRow): NotificationPreferences {
   return {
     emailEnabled: row.email_enabled,
@@ -159,7 +193,7 @@ export async function getNotificationInbox(userId: string, limit = 25): Promise<
          on split_part(no.dedupe_key, ':', 1) = 'reminder'
         and split_part(no.dedupe_key, ':', 2) = nr.id::text
        left join planning_items pi on pi.id = nr.planning_item_id
-      where no.user_id = $1
+      where no.user_id = $1 and ${outboxAccessSql}
       order by no.created_at desc
       limit $2`,
     [userId, Math.max(1, Math.min(limit, 100))],
@@ -208,15 +242,15 @@ export async function getNotificationInbox(userId: string, limit = 25): Promise<
 export async function markNotificationRead(userId: string, notificationId?: string): Promise<void> {
   if (notificationId) {
     await query(
-      `update notification_outbox set read_at = coalesce(read_at, now())
-        where id = $1 and user_id = $2`,
+      `update notification_outbox no set read_at = coalesce(read_at, now())
+        where id = $1 and user_id = $2 and ${outboxAccessSql}`,
       [notificationId, userId],
     );
     return;
   }
   await query(
-    `update notification_outbox set read_at = now()
-      where user_id = $1 and read_at is null`,
+    `update notification_outbox no set read_at = now()
+      where user_id = $1 and read_at is null and ${outboxAccessSql}`,
     [userId],
   );
 }
@@ -248,7 +282,8 @@ export async function resolvePlannerNotificationTarget(
        join households h on h.id = nr.household_id
        join household_members hm on hm.household_id = nr.household_id
       where nr.id = $1 and nr.user_id = $2 and nr.household_id = $3
-        and hm.user_id = $2 and nr.resource_kind = 'calendar_event'`,
+        and hm.user_id = $2 and nr.resource_kind = 'calendar_event'
+        and ${reminderAccessSql}`,
     [target.id, context.userId, context.householdId],
   );
   const row = result.rows[0];
@@ -262,8 +297,9 @@ export async function resolvePlannerNotificationTarget(
 
 export async function reminderForPlanningItem(userId: string, itemId: string): Promise<NotificationReminder | null> {
   const result = await query<{ id: string; remind_at: Date }>(
-    `select id, remind_at from notification_reminders
-      where user_id = $1 and planning_item_id = $2 and delivered_at is null`,
+    `select nr.id, nr.remind_at from notification_reminders nr
+      where nr.user_id = $1 and nr.planning_item_id = $2 and nr.delivered_at is null
+        and ${reminderAccessSql}`,
     [userId, itemId],
   );
   const row = result.rows[0];
@@ -276,8 +312,9 @@ export async function reminderForCalendarEvent(
   providerEventId: string,
 ): Promise<NotificationReminder | null> {
   const result = await query<{ id: string; remind_at: Date }>(
-    `select id, remind_at from notification_reminders
-      where user_id = $1 and calendar_preference_id = $2 and provider_event_id = $3 and delivered_at is null`,
+    `select nr.id, nr.remind_at from notification_reminders nr
+      where nr.user_id = $1 and nr.calendar_preference_id = $2 and nr.provider_event_id = $3 and nr.delivered_at is null
+        and ${reminderAccessSql}`,
     [userId, calendarPreferenceId, providerEventId],
   );
   const row = result.rows[0];
@@ -319,14 +356,21 @@ export async function upsertPlanningReminder(input: {
   const result = await query<{ id: string; remind_at: Date }>(
     `insert into notification_reminders (
        user_id, household_id, resource_kind, planning_item_id, resource_title, remind_at
-     ) values ($1, $2, 'planning_item', $3, $4, $5)
+     ) select $1, $2, 'planning_item', $3, $4, $5
+         from household_members hm
+         join planning_items pi on pi.household_id = hm.household_id and pi.id = $3
+        where hm.user_id = $1 and hm.household_id = $2
+        for key share of hm
      on conflict (user_id, planning_item_id) where resource_kind = 'planning_item'
      do update set resource_title = excluded.resource_title, remind_at = excluded.remind_at,
-                   delivered_at = null, updated_at = now()
+                   delivery_version = case when notification_reminders.membership_revoked_at is not null
+                     then gen_random_uuid() else notification_reminders.delivery_version end,
+                   delivered_at = null, membership_revoked_at = null, updated_at = now()
      returning id, remind_at`,
     [input.userId, input.householdId, input.itemId, input.title, input.remindAt],
   );
-  const row = result.rows[0]!;
+  const row = result.rows[0];
+  if (!row) throw new Error("This reminder is no longer available in your household.");
   return { id: row.id, resourceKind: "planning_item", remindAt: row.remind_at.toISOString() };
 }
 
@@ -350,10 +394,19 @@ export async function upsertCalendarReminder(input: {
     `insert into notification_reminders (
        user_id, household_id, resource_kind, calendar_preference_id, provider_event_id,
        resource_title, resource_start, remind_at
-     ) values ($1, $2, 'calendar_event', $3, $4, $5, $6, $7)
+     ) select $1, $2, 'calendar_event', $3, $4, $5, $6, $7
+         from household_members hm
+         join calendar_preferences cp on cp.household_id = hm.household_id and cp.id = $3
+         join household_members calendar_owner
+           on calendar_owner.household_id = cp.household_id and calendar_owner.user_id = cp.user_id
+        where hm.user_id = $1 and hm.household_id = $2
+          and (cp.visibility = 'share' or (cp.visibility = 'private' and cp.user_id = $1))
+        for key share of hm, calendar_owner
      on conflict (user_id, calendar_preference_id, provider_event_id) where resource_kind = 'calendar_event'
      do update set resource_title = excluded.resource_title, resource_start = excluded.resource_start,
-                   remind_at = excluded.remind_at, delivered_at = null, updated_at = now()
+                   delivery_version = case when notification_reminders.membership_revoked_at is not null
+                     then gen_random_uuid() else notification_reminders.delivery_version end,
+                   remind_at = excluded.remind_at, delivered_at = null, membership_revoked_at = null, updated_at = now()
      returning id, remind_at`,
     [
       input.userId,
@@ -365,7 +418,8 @@ export async function upsertCalendarReminder(input: {
       input.remindAt,
     ],
   );
-  const row = result.rows[0]!;
+  const row = result.rows[0];
+  if (!row) throw new Error("This reminder is no longer available in your household.");
   return { id: row.id, resourceKind: "calendar_event", remindAt: row.remind_at.toISOString() };
 }
 
@@ -378,10 +432,11 @@ async function materializeReminderDeliveries() {
     planning_item_id: string | null;
     resource_title: string;
     remind_at: Date;
+    delivery_version: string | null;
     week_start: string;
   }>(
     `select nr.id, nr.user_id, nr.household_id, nr.resource_kind, nr.planning_item_id,
-            nr.resource_title, nr.remind_at,
+            nr.resource_title, nr.remind_at, nr.delivery_version,
             coalesce(
               pi.week_start_date::text,
               to_char(date_trunc('week', nr.resource_start at time zone h.timezone), 'YYYY-MM-DD')
@@ -389,30 +444,43 @@ async function materializeReminderDeliveries() {
        from notification_reminders nr
        join households h on h.id = nr.household_id
        left join planning_items pi on pi.id = nr.planning_item_id
-      where nr.delivered_at is null and nr.remind_at <= now() + interval '1 minute'`,
+      where nr.delivered_at is null and nr.remind_at <= now() + interval '1 minute'
+        and ${reminderAccessSql}`,
   );
   for (const reminder of reminders.rows) {
+    // Preserve legacy dedupe keys until a revoked reminder is explicitly
+    // restored. Restoration needs a fresh delivery without reviving its history.
+    const dedupeKey = `reminder:${reminder.id}:${reminder.remind_at.toISOString()}${reminder.delivery_version ? `:${reminder.delivery_version}` : ""}`;
     const deepLink = reminder.resource_kind === "planning_item"
       ? plannerNotificationDeepLink({ kind: "planning_item", id: reminder.planning_item_id!, weekStart: reminder.week_start })
       : plannerNotificationDeepLink({ kind: "calendar_reminder", id: reminder.id, weekStart: reminder.week_start });
     await query(
       `insert into notification_outbox (
          user_id, household_id, dedupe_key, kind, title, body, deep_link, scheduled_for
-       ) values ($1, $2, $3, 'reminder', $4, $5, $6, $7)
+       ) select $1, $2, $3, 'reminder', $4, $5, $6, $7
+           from notification_reminders nr
+          where nr.id = $8 and nr.remind_at = $7 and nr.delivered_at is null
+            and nr.delivery_version is not distinct from $9::uuid
+            and ${reminderAccessSql}
        on conflict (dedupe_key) do nothing`,
       [
         reminder.user_id,
         reminder.household_id,
-        `reminder:${reminder.id}:${reminder.remind_at.toISOString()}`,
+        dedupeKey,
         reminder.resource_kind === "calendar_event" ? "Upcoming event" : "Household reminder",
         reminder.resource_title,
         deepLink,
         reminder.remind_at,
+        reminder.id,
+        reminder.delivery_version,
       ],
     );
     await query(
-      "update notification_reminders set delivered_at = coalesce(delivered_at, now()) where id = $1",
-      [reminder.id],
+      `update notification_reminders nr set delivered_at = coalesce(delivered_at, now())
+        where nr.id = $1 and nr.remind_at = $2 and ${reminderAccessSql}
+          and nr.delivery_version is not distinct from $4::uuid
+          and exists (select 1 from notification_outbox no where no.dedupe_key = $3 and no.membership_revoked_at is null)`,
+      [reminder.id, reminder.remind_at, dedupeKey, reminder.delivery_version],
     );
   }
 }
@@ -606,7 +674,7 @@ async function materializeChannelDeliveries() {
             case when coalesce(np.email_enabled, true) then null else 'Email is disabled in notification preferences.' end
        from notification_outbox no
        left join notification_preferences np on np.user_id = no.user_id
-      where no.scheduled_for <= now()
+      where no.scheduled_for <= now() and ${outboxAccessSql}
      on conflict (outbox_id, channel) do nothing`,
   );
   await query(
@@ -627,7 +695,7 @@ async function materializeChannelDeliveries() {
             end
        from notification_outbox no
        left join notification_preferences np on np.user_id = no.user_id
-      where no.scheduled_for <= now()
+      where no.scheduled_for <= now() and ${outboxAccessSql}
      on conflict (outbox_id, channel) do nothing`,
   );
 }
@@ -656,11 +724,12 @@ async function deliverOutbox() {
     `select nd.id, nd.outbox_id, no.user_id, u.email::text, no.title, no.body,
             no.deep_link, nd.channel, nd.attempts,
             (select count(*)::integer from notification_outbox unread
-              where unread.user_id = no.user_id and unread.read_at is null) as unread_count
+              where unread.user_id = no.user_id and unread.read_at is null
+                and exists (select 1 from notification_outbox no where no.id = unread.id and ${outboxAccessSql})) as unread_count
        from notification_deliveries nd
        join notification_outbox no on no.id = nd.outbox_id
        join users u on u.id = no.user_id
-      where (
+      where ${outboxAccessSql} and (
         (nd.status in ('pending', 'failed') and nd.next_attempt_at <= now() and nd.attempts < 5)
         or (nd.status = 'sending' and nd.updated_at < now() - interval '5 minutes' and nd.attempts < 5)
       )
@@ -669,13 +738,14 @@ async function deliverOutbox() {
   );
   for (const delivery of deliveries.rows) {
     const claimed = await query<{ attempts: number }>(
-      `update notification_deliveries
-          set status = 'sending', attempts = attempts + 1, last_attempt_at = now()
-        where id = $1 and (
-          (status in ('pending', 'failed') and next_attempt_at <= now() and attempts < 5)
-          or (status = 'sending' and updated_at < now() - interval '5 minutes' and attempts < 5)
+      `update notification_deliveries nd
+          set status = 'sending', attempts = nd.attempts + 1, last_attempt_at = now()
+         from notification_outbox no
+        where nd.id = $1 and no.id = nd.outbox_id and ${outboxAccessSql} and (
+          (nd.status in ('pending', 'failed') and nd.next_attempt_at <= now() and nd.attempts < 5)
+          or (nd.status = 'sending' and nd.updated_at < now() - interval '5 minutes' and nd.attempts < 5)
         )
-        returning attempts`,
+        returning nd.attempts`,
       [delivery.id],
     );
     const attempt = claimed.rows[0]?.attempts;
