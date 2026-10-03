@@ -1,0 +1,58 @@
+{
+  "app": "planner",
+  "appId": "6801189976",
+  "bundleId": "com.jimgreco.commonweek",
+  "teamId": "V6JPQCD336",
+  "certificateSha256": "7fb57dbf0cd7923f9ba97d8801824de79e1ba235dbe78d4a821f8195c30f0bf8",
+  "certificateSha1": "963A7A5107DB8D4C141371C285F71CCAE84A5452",
+  "testerEmailSha256": "a46343858cf3e5e2fda6339f7063190f295ece10dea50979932e69ec57ea4baa",
+  "groups": [
+    {
+      "id": "c9b3e3b8-06a3-4740-a3c6-60be1cfdbb91",
+      "name": "Internal Testers",
+      "internal": true,
+      "testers": 1,
+      "automatic": true
+    },
+    {
+      "id": "7023c4d6-7035-4f1d-b129-a031f8dfea91",
+      "name": "External",
+      "internal": false,
+      "testers": 0,
+      "automatic": false
+    }
+  ],
+  "profiles": {
+    "app": {
+      "uuid": "ad674c27-b01c-465c-8fac-e14113150367",
+      "name": "Week of Us App Store Widgets 20260908",
+      "bundleId": "com.jimgreco.commonweek",
+      "groups": [
+        "group.com.jimgreco.commonweek"
+      ],
+      "appleSignin": [
+        "Default"
+      ],
+      "push": "production"
+    },
+    "extension": {
+      "uuid": "a228a243-faf6-48d3-8888-d88d92edbede",
+      "name": "Week of Us Widgets App Store 20260908",
+      "bundleId": "com.jimgreco.commonweek.widgets",
+      "groups": [
+        "group.com.jimgreco.commonweek"
+      ],
+      "appleSignin": [],
+      "push": null
+    }
+  },
+  "marketingVersion": "1.1.1",
+  "apiOrigin": "https://weekofus.com",
+  "infoPlists": [
+    "ios/CommonWeek/Info.plist",
+    "ios/WeekWidgets/Info.plist"
+  ],
+  "configuredPlistKeys": [
+    "API_BASE_URL"
+  ]
+}
