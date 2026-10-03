@@ -7,10 +7,15 @@ function fixture() {
   const p = clone(policy);
   p.testerEmailSha256 = digest('jim@example.invalid');
   const tester = { type: 'betaTesters', id: 'jim', attributes: { email: 'Jim@Example.Invalid', inviteType: 'EMAIL' } };
+  const historical = p.excludedHistoricalTesters.map((h, i) => {
+    const email = `historical-${i}@example.invalid`;
+    h.emailSha256 = digest(email);
+    return { type: 'betaTesters', id: h.id, attributes: { email, inviteType: 'EMAIL' } };
+  });
   const routes = {
     [`/v1/apps/${p.appId}`]: { data: { type: 'apps', id: p.appId, attributes: { bundleId: p.bundleId } } },
     [`/v1/apps/${p.appId}/betaGroups?limit=200`]: { data: p.groups.map(g => ({ type: 'betaGroups', id: g.id, attributes: { name: g.name, isInternalGroup: g.internal, publicLinkEnabled: false, hasAccessToAllBuilds: g.automatic } })) },
-    [`/v1/betaTesters?filter[apps]=${p.appId}&limit=200`]: { data: [tester] },
+    [`/v1/betaTesters?filter[apps]=${p.appId}&limit=200`]: { data: [tester, ...historical] },
     [`/v1/preReleaseVersions?filter[app]=${p.appId}&filter[platform]=IOS&limit=200`]: { data: [{ type: 'preReleaseVersions', id: 'ios-train', attributes: { platform: 'IOS', version: p.marketingVersion } }] },
     '/v1/preReleaseVersions/ios-train/builds?limit=200': { data: [{ type: 'builds', id: 'previous', attributes: { version: '1' } }] },
   };
@@ -22,7 +27,7 @@ function fixture() {
     async get(path) { assert.ok(routes[path], `Unexpected API path: ${path}`); return clone(routes[path]); },
     async list(path) { return (await this.get(path)).data; },
   };
-  return { p, routes, client, tester };
+  return { p, routes, client, tester, historical };
 }
 test('Apple client permits only same-origin GET and refuses redirects', async () => {
   const requests = [];
@@ -58,6 +63,28 @@ test('API errors do not emit private response contents', async () => {
 });
 test('approved app-specific audience passes', async () => {
   const f = fixture(); assert.equal((await audience(f.client, f.p)).internalTesters, 1);
+});
+test('pinned historical app records do not become receiving testers', async () => {
+  const f = fixture(), result = await preflight(f.client, '3', 'a'.repeat(40), f.p);
+  assert.equal(result.internalTesters, 1);
+  assert.equal(result.externalTesters, 0);
+  assert.equal(result.excludedHistoricalTesters, 1);
+});
+test('historical tester cannot enter any existing receiving or excluded group', async () => {
+  for (const group of policy.groups) {
+    const f = fixture();
+    f.routes[`/v1/betaGroups/${group.id}/betaTesters?limit=200`].data.push(f.historical[0]);
+    await assert.rejects(() => audience(f.client, f.p));
+  }
+});
+test('historical record identity and invitation type stay pinned', async () => {
+  for (const field of ['id', 'email', 'inviteType']) {
+    const f = fixture(), record = f.routes[`/v1/betaTesters?filter[apps]=${f.p.appId}&limit=200`].data[1];
+    if (field === 'id') record.id = 'different-record';
+    if (field === 'email') record.attributes.email = 'different@example.invalid';
+    if (field === 'inviteType') record.attributes.inviteType = 'PUBLIC_LINK';
+    await assert.rejects(() => audience(f.client, f.p));
+  }
 });
 for (const change of ['app', 'group-id', 'extra-group', 'public', 'automatic', 'tester-count', 'tester-identity', 'app-tester']) {
   test(`audience fails closed on ${change}`, async () => {
@@ -124,6 +151,9 @@ test('processing success requires intended version, internal-only audience and a
   f.routes[`/v1/betaGroups/${f.p.groups[0].id}/builds?limit=200`] = { data: [{ id, type: 'builds' }] };
   f.routes[`/v1/builds/${id}/individualTesters?limit=200`] = { data: [] };
   assert.equal((await verifyUploaded(f.client, '3', 'a'.repeat(40), f.p)).approvedGroupAttached, true);
+  f.routes[`/v1/builds/${id}/individualTesters?limit=200`].data = [f.historical[0]];
+  await assert.rejects(() => verifyUploaded(f.client, '3', 'a'.repeat(40), f.p), /no individual testers/);
+  f.routes[`/v1/builds/${id}/individualTesters?limit=200`].data = [];
   f.routes[`/v1/betaGroups/${f.p.groups[0].id}/builds?limit=200`].data = [];
   assert.equal(await verifyUploaded(f.client, '3', 'a'.repeat(40), f.p), null);
   f.routes['/v1/preReleaseVersions/ios-train/builds?limit=200'].data[0].attributes.buildAudienceType = 'APP_STORE_ELIGIBLE';

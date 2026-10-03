@@ -54,5 +54,11 @@
   ],
   "configuredPlistKeys": [
     "API_BASE_URL"
+  ],
+  "excludedHistoricalTesters": [
+    {
+      "id": "4220dfd9-6389-4124-ac77-26b5c09c2a17",
+      "emailSha256": "585d07537897adb6073389f204e47c7fb5bc1c743fa8ed3c387334912ca3006d"
+    }
   ]
 }

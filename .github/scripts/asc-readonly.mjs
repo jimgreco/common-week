@@ -99,6 +99,7 @@ export async function audience(client, p = policy) {
   const groups = await client.list(`/v1/apps/${p.appId}/betaGroups?limit=200`);
   check(groups.length === p.groups.length && groups.every(g => p.groups.some(e => e.id === g.id)), 'TestFlight groups changed.');
   let jim;
+  const groupedTesterIds = new Set();
   for (const expected of p.groups) {
     const group = groups.find(g => g.id === expected.id), a = group.attributes;
     // Automatic Xcode distribution applies to internal groups. Apple returns
@@ -109,6 +110,7 @@ export async function audience(client, p = policy) {
       && Object.hasOwn(a, 'publicLinkEnabled') && [false, null].includes(a.publicLinkEnabled)
       && !a.publicLink && !a.publicLinkId && automaticMatches, 'TestFlight group scope or automatic distribution changed: ' + JSON.stringify({ id: group.id, name: a?.name, internal: a?.isInternalGroup, publicLinkEnabledPresent: !!a && Object.hasOwn(a, 'publicLinkEnabled'), publicLinkEnabled: a?.publicLinkEnabled, hasPublicLink: !!a?.publicLink, hasPublicLinkId: !!a?.publicLinkId, automatic: a?.hasAccessToAllBuilds, expected }));
     const testers = await client.list(`/v1/betaGroups/${expected.id}/betaTesters?limit=200`);
+    for (const tester of testers) groupedTesterIds.add(tester.id);
     check(testers.length === expected.testers, 'TestFlight tester count changed.');
     if (expected.testers) {
       check(testers.length === 1 && isApprovedTester(testers[0], p), 'TestFlight tester identity changed.'); jim = testers[0].id;
@@ -116,8 +118,17 @@ export async function audience(client, p = policy) {
     if (!expected.internal) check((await client.list(`/v1/betaGroups/${expected.id}/builds?limit=200`)).length === 0, 'Excluded external group has builds.');
   }
   const all = await client.list(`/v1/betaTesters?filter[apps]=${p.appId}&limit=200`);
-  check(all.length === 1 && all[0].id === jim && isApprovedTester(all[0], p), 'App-level audience is not only the approved tester: ' + JSON.stringify({ count: all.length, testers: all.map(t => ({ id: t.id, approvedIdentity: isApprovedTester(t, p), matchesInternalTesterId: t.id === jim, inviteType: t.attributes?.inviteType })) }));
-  return { appId: p.appId, internalTesters: 1, externalTesters: 0 };
+  // App-wide history includes former testers; it is not a receiving group.
+  // Only explicitly pinned historical records may remain, outside every group.
+  const excluded = p.excludedHistoricalTesters ?? [];
+  const matchesHistory = (t, h) => t?.type === 'betaTesters' && t.id === h.id
+    && typeof t.attributes?.email === 'string' && digest(t.attributes.email.trim().toLowerCase()) === h.emailSha256
+    && t.attributes.inviteType === 'EMAIL' && !groupedTesterIds.has(t.id);
+  check(all.length === 1 + excluded.length && all.some(t => t.id === jim && isApprovedTester(t, p))
+    && excluded.every(h => all.some(t => matchesHistory(t, h)))
+    && all.every(t => (t.id === jim && isApprovedTester(t, p)) || excluded.some(h => matchesHistory(t, h))),
+    'App-level tester history or receiving audience changed: ' + JSON.stringify({ count: all.length, testers: all.map(t => ({ id: t.id, approvedIdentity: isApprovedTester(t, p), grouped: groupedTesterIds.has(t.id) })) }));
+  return { appId: p.appId, internalTesters: 1, externalTesters: 0, excludedHistoricalTesters: excluded.length };
 }
 export async function iosBuilds(client, p = policy) {
   const trains = await client.list(`/v1/preReleaseVersions?filter[app]=${p.appId}&filter[platform]=IOS&limit=200`);
@@ -160,7 +171,7 @@ export async function verifyUploaded(client, build, sha, p = policy) {
   }
   check(groups.every(g => p.groups.some(e => e.internal && e.id === g.id)), 'Uploaded build has an unapproved group.');
   const testers = await client.list(`/v1/builds/${encodeURIComponent(b.id)}/individualTesters?limit=200`);
-  check(testers.length <= 1 && testers.every(t => isApprovedTester(t, p)), 'Uploaded build has an unapproved individual tester.');
+  check(testers.length === 0, 'Uploaded build must have no individual testers; Jim receives through the approved internal group.');
   if (!groups.some(g => g.id === p.groups.find(e => e.testers === 1).id)) return null;
   return { sha, build, appId: p.appId, processing: 'VALID', audience: 'INTERNAL_ONLY', approvedGroupAttached: true };
 }
