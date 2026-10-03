@@ -116,7 +116,7 @@ export async function audience(client, p = policy) {
     if (!expected.internal) check((await client.list(`/v1/betaGroups/${expected.id}/builds?limit=200`)).length === 0, 'Excluded external group has builds.');
   }
   const all = await client.list(`/v1/betaTesters?filter[apps]=${p.appId}&limit=200`);
-  check(all.length === 1 && all[0].id === jim && isApprovedTester(all[0], p), 'App-level audience is not only the approved tester.');
+  check(all.length === 1 && all[0].id === jim && isApprovedTester(all[0], p), 'App-level audience is not only the approved tester: ' + JSON.stringify({ count: all.length, testers: all.map(t => ({ id: t.id, approvedIdentity: isApprovedTester(t, p), matchesInternalTesterId: t.id === jim, inviteType: t.attributes?.inviteType })) }));
   return { appId: p.appId, internalTesters: 1, externalTesters: 0 };
 }
 export async function iosBuilds(client, p = policy) {
