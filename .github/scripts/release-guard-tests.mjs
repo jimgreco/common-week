@@ -149,3 +149,17 @@ test('bundle relationship rejects another app, platform or supplied team', () =>
   const missingPlatform = clone(resource); delete missingPlatform.attributes.platform;
   assert.throws(() => validateBundle(missingPlatform, target));
 });
+
+test('excluded external group accepts null all-builds metadata while internal distribution stays required', async () => {
+  const f = fixture(), groups = f.routes[`/v1/apps/${f.p.appId}/betaGroups?limit=200`].data;
+  const external = groups.find(g => !g.attributes.isInternalGroup);
+  external.attributes.hasAccessToAllBuilds = null;
+  await audience(f.client, f.p);
+  external.attributes.hasAccessToAllBuilds = true;
+  await assert.rejects(() => audience(f.client, f.p));
+  delete external.attributes.hasAccessToAllBuilds;
+  await assert.rejects(() => audience(f.client, f.p));
+  external.attributes.hasAccessToAllBuilds = null;
+  groups.find(g => g.attributes.isInternalGroup).attributes.hasAccessToAllBuilds = null;
+  await assert.rejects(() => audience(f.client, f.p));
+});

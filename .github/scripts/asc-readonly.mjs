@@ -101,9 +101,13 @@ export async function audience(client, p = policy) {
   let jim;
   for (const expected of p.groups) {
     const group = groups.find(g => g.id === expected.id), a = group.attributes;
+    // Automatic Xcode distribution applies to internal groups. Apple returns
+    // null for this excluded external group's optional all-builds attribute.
+    const automaticMatches = expected.internal ? a?.hasAccessToAllBuilds === expected.automatic
+      : expected.automatic === false && !!a && Object.hasOwn(a, 'hasAccessToAllBuilds') && [false, null].includes(a.hasAccessToAllBuilds);
     check(group.type === 'betaGroups' && a?.name === expected.name && a.isInternalGroup === expected.internal
       && Object.hasOwn(a, 'publicLinkEnabled') && [false, null].includes(a.publicLinkEnabled)
-      && !a.publicLink && !a.publicLinkId && a.hasAccessToAllBuilds === expected.automatic, 'TestFlight group scope or automatic distribution changed: ' + JSON.stringify({ id: group.id, name: a?.name, internal: a?.isInternalGroup, publicLinkEnabledPresent: !!a && Object.hasOwn(a, 'publicLinkEnabled'), publicLinkEnabled: a?.publicLinkEnabled, hasPublicLink: !!a?.publicLink, hasPublicLinkId: !!a?.publicLinkId, automatic: a?.hasAccessToAllBuilds, expected }));
+      && !a.publicLink && !a.publicLinkId && automaticMatches, 'TestFlight group scope or automatic distribution changed: ' + JSON.stringify({ id: group.id, name: a?.name, internal: a?.isInternalGroup, publicLinkEnabledPresent: !!a && Object.hasOwn(a, 'publicLinkEnabled'), publicLinkEnabled: a?.publicLinkEnabled, hasPublicLink: !!a?.publicLink, hasPublicLinkId: !!a?.publicLinkId, automatic: a?.hasAccessToAllBuilds, expected }));
     const testers = await client.list(`/v1/betaGroups/${expected.id}/betaTesters?limit=200`);
     check(testers.length === expected.testers, 'TestFlight tester count changed.');
     if (expected.testers) {
