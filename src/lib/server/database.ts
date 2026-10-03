@@ -34,7 +34,7 @@ function createPool() {
   });
   
   pool.on("error", (error) => {
-    console.error("Unexpected database pool error:", error);
+    console.error("Unexpected database pool error:", databaseFailure(error));
   });
   
   return pool;
@@ -50,24 +50,60 @@ export function query<Row extends QueryResultRow = QueryResultRow>(
   values: unknown[] = [],
 ): Promise<QueryResult<Row>> {
   return getPool().query<Row>(text, values).catch((error) => {
-    console.error("Database query failed:", { text, values, error });
-    throw error;
+    // PostgreSQL errors can include complete rows, credentials, and query values.
+    // Strip them before logging or passing the failure to action/route handlers.
+    const failure = databaseFailure(error);
+    console.error("Database query failed:", failure);
+    throw failure;
   });
 }
 
 export async function withTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await getPool().connect();
+  const client = await getPool().connect().catch((error: unknown) => { throw databaseFailure(error); });
+  // Wrap only database operations; application validation errors keep their useful messages.
+  const database = new Proxy(client, {
+    get(target, property) {
+      if (property === "query") {
+        return (...args: Parameters<PoolClient["query"]>) => {
+          try {
+            return Promise.resolve(Reflect.apply(target.query, target, args)).catch((error: unknown) => {
+              throw databaseFailure(error);
+            });
+          } catch (error) {
+            throw databaseFailure(error);
+          }
+        };
+      }
+      return Reflect.get(target, property);
+    },
+  });
+  let discardConnection = false;
   try {
-    await client.query("begin");
-    const result = await work(client);
-    await client.query("commit");
+    await database.query("begin");
+    const result = await work(database);
+    await database.query("commit");
     return result;
   } catch (error) {
-    await client.query("rollback");
+    try {
+      await database.query("rollback");
+    } catch (rollbackError) {
+      discardConnection = true;
+      console.error("Database rollback failed:", databaseFailure(rollbackError));
+    }
     throw error;
   } finally {
-    client.release();
+    client.release(discardConnection);
   }
+}
+
+function databaseFailure(error: unknown): Error & { code?: string } {
+  const code = postgresErrorCode(error);
+  const safeCode = code && (/^[0-9A-Z]{5}$/.test(code)
+    || ["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "EPIPE"].includes(code)) ? code : undefined;
+  return Object.assign(new Error("The database operation could not be completed. Please try again."), {
+    name: "DatabaseOperationError",
+    ...(safeCode ? { code: safeCode } : {}),
+  });
 }
 
 export function postgresErrorCode(error: unknown): string | undefined {
