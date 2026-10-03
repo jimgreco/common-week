@@ -28,7 +28,7 @@ async function authorizeResource(
           [resource.itemId, context.householdId],
         )
       : await db.query(
-          `select id from calendar_preferences where id=$1 and household_id=$2 and (visibility='share' or (visibility='private' and user_id=$3)) for update`,
+          `select id from calendar_preferences cp where id=$1 and household_id=$2 and exists(select 1 from household_members hm where hm.household_id=cp.household_id and hm.user_id=cp.user_id) and (visibility='share' or (visibility='private' and user_id=$3)) for update`,
           [resource.calendarId, context.householdId, context.userId],
         );
   if (!found.rows.length)

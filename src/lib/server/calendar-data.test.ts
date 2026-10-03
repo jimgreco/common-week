@@ -73,6 +73,7 @@ describe("household calendar privacy", () => {
     });
     mocks.getGoogleAccessToken.mockResolvedValue("token-a");
     mocks.query
+      .mockResolvedValueOnce({ rows: [{}], rowCount: 1 })
       .mockResolvedValueOnce({ rows: [], rowCount: 0 })
       .mockResolvedValueOnce({ rows: [privateRow], rowCount: 1 });
     mocks.listCalendars.mockResolvedValue([{
@@ -107,6 +108,7 @@ describe("household calendar privacy", () => {
     ]);
     mocks.getGoogleAccessToken.mockImplementation(async (userId: string) => `token-${userId}`);
     mocks.query.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes("select hm.user_id")) return { rows: [{ user_id: "member-a" }, { user_id: "member-b" }], rowCount: 2 };
       if (sql.includes("from calendar_preferences")) {
         const rows = rowsByUser.get(String(values[1])) ?? [];
         return { rows, rowCount: rows.length };
@@ -211,4 +213,24 @@ describe("household calendar privacy", () => {
       expect.any(String),
     );
   });
+
+  it("does not use a departed member's token or cache from a stale member list", async () => {
+    mocks.query.mockResolvedValue({ rows: [], rowCount: 0 });
+    const result = await getHouseholdCalendarEvents(
+      "household-a", [{ userId: "departed-member" }], "member-a", "2026-08-10", "America/New_York",
+    );
+    expect(result.events).toEqual([]);
+    expect(mocks.getGoogleAccessToken).not.toHaveBeenCalled();
+    expect(mocks.listEvents).not.toHaveBeenCalled();
+  });
+
+  it("does not discover calendars in a household the provider account has left", async () => {
+    mocks.query.mockResolvedValue({ rows: [], rowCount: 0 });
+    expect(await refreshCurrentUserCalendarPreferences("old-household", "departed-member"))
+      .toEqual({ calendars: [], connected: false });
+    expect(mocks.getGoogleAccessToken).not.toHaveBeenCalled();
+    expect(mocks.listCalendars).not.toHaveBeenCalled();
+    expect(mocks.transactionQuery).not.toHaveBeenCalled();
+  });
+
 });

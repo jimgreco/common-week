@@ -366,7 +366,53 @@ try {
   }
   assert.equal(rejectedInvalidCarryoverTarget, true, "carryover rejects a non-Monday target week");
 
-  process.stdout.write("Database migration, household isolation, notification delivery, date constraints, and task carryover passed.\n");
+  // Revoking membership must revoke provider access and pending delivery atomically,
+  // while retaining the user's own account and provider connection.
+  const departingUser = (await client.query(
+    "insert into users (google_subject,email,display_name) values ($1,$2,'Departing member') returning id",
+    [`departing-${suffix}`, `departing-${suffix}@example.com`],
+  )).rows[0].id;
+  await client.query("insert into household_members(household_id,user_id) values($1,$2)", [householdA, departingUser]);
+  await client.query("insert into google_connections(user_id,access_token_encrypted) values($1,'synthetic-encrypted-token')", [departingUser]);
+  const departingCalendar = (await client.query(
+    "insert into calendar_preferences(household_id,user_id,google_calendar_id,calendar_name,visibility,is_selected) values($1,$2,$3,'Former member calendar','share',true) returning id",
+    [householdA, departingUser, `departing-calendar-${suffix}`],
+  )).rows[0].id;
+  await client.query("insert into calendar_event_cache(user_id,cache_key,window_start,window_end,events,expires_at) values($1,'departing',now(),now()+interval '7 days','[]',now()+interval '5 minutes')", [departingUser]);
+  await client.query("insert into hidden_calendar_events(household_id,event_id,title,calendar_name,event_start,hidden_by) values($1,$2,'Private title','Calendar','2026-10-01',$3)", [householdA, `departing-calendar-${suffix}:event`, userA]);
+  const collaboration = (await client.query("insert into item_collaboration(household_id,calendar_preference_id,provider_event_id) values($1,$2,'event') returning id", [householdA, departingCalendar])).rows[0].id;
+  const attachment = (await client.query("insert into item_collaboration_entries(household_id,collaboration_id,kind,text,created_by,file_data) values($1,$2,'file','private.txt',$3,$4) returning id", [householdA, collaboration, departingUser, Buffer.from('synthetic private file')])).rows[0].id;
+  const departingReminder = (await client.query("insert into notification_reminders(user_id,household_id,resource_kind,planning_item_id,resource_title,remind_at) values($1,$2,'planning_item',$3,'Future task',now()+interval '1 day') returning id", [departingUser, householdA, itemA])).rows[0].id;
+  const calendarReminder = (await client.query("insert into notification_reminders(user_id,household_id,resource_kind,calendar_preference_id,provider_event_id,resource_title,remind_at) values($1,$2,'calendar_event',$3,'event','Former calendar event',now()+interval '1 day') returning id", [userA, householdA, departingCalendar])).rows[0].id;
+  const departingNotification = (await client.query("insert into notification_outbox(user_id,household_id,dedupe_key,kind,title,body,scheduled_for) values($1,$2,$3,'reminder','Future reminder','Private body',now()) returning id", [departingUser, householdA, `departing:${suffix}`])).rows[0].id;
+  await client.query("insert into notification_deliveries(outbox_id,channel,status) values($1,'email','pending')", [departingNotification]);
+  await client.query("delete from household_members where household_id=$1 and user_id=$2", [householdA, departingUser]);
+  for (const [table, id] of [
+    ["calendar_preferences", departingCalendar],
+    ["item_collaboration_entries", attachment],
+    ["notification_reminders", departingReminder],
+    ["notification_reminders", calendarReminder],
+    ["notification_outbox", departingNotification],
+  ]) {
+    assert.equal((await client.query(`select 1 from ${table} where id=$1`, [id])).rowCount, 0, `${table} revokes departed membership data`);
+  }
+  assert.equal((await client.query("select 1 from notification_deliveries where outbox_id=$1", [departingNotification])).rowCount, 0, "pending deliveries are revoked");
+  assert.equal((await client.query("select 1 from calendar_event_cache where user_id=$1", [departingUser])).rowCount, 0, "departed provider caches are removed");
+  assert.equal((await client.query("select 1 from hidden_calendar_events where household_id=$1 and event_id=$2", [householdA, `departing-calendar-${suffix}:event`])).rowCount, 0, "departed provider titles are removed");
+  assert.equal((await client.query("select 1 from google_connections where user_id=$1", [departingUser])).rowCount, 1, "membership removal retains personal Google credentials");
+  await client.query("savepoint departed_notification");
+  try {
+    await client.query("insert into notification_outbox(user_id,household_id,dedupe_key,kind,title,body,scheduled_for) values($1,$2,$3,'reminder','Stale job','Stale body',now())", [departingUser, householdA, `departed-stale:${suffix}`]);
+    assert.fail("a stale background job must not enqueue after departure");
+  } catch (error) {
+    assert.equal(error.code, "23503", "membership FK rejects stale notification jobs");
+    await client.query("rollback to savepoint departed_notification");
+  }
+  await client.query("insert into household_members(household_id,user_id) values($1,$2)", [householdB, departingUser]);
+  const movedCalendar = (await client.query("insert into calendar_preferences(household_id,user_id,google_calendar_id,calendar_name) values($1,$2,$3,'Calendar') returning visibility", [householdB, departingUser, `departing-calendar-${suffix}`])).rows[0];
+  assert.equal(movedCalendar.visibility, "hide", "joining another household requires fresh calendar sharing consent");
+
+  process.stdout.write("Database migration, household isolation, membership revocation, notification delivery, date constraints, and task carryover passed.\n");
 } finally {
   await client.query("rollback");
   await client.end();

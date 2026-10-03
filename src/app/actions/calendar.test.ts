@@ -102,6 +102,7 @@ describe("Google Calendar write privacy", () => {
     });
 
     expect(String(mocks.query.mock.calls[0][0])).toContain("join household_members actor");
+    expect(String(mocks.query.mock.calls[0][0])).toContain("join household_members calendar_owner");
     expect(result).toEqual({ ok: false, error: "That calendar is not editable by this household member." });
     expect(mocks.createEvent).not.toHaveBeenCalled();
   });
@@ -554,4 +555,51 @@ describe("Google Calendar write privacy", () => {
       "all",
     );
   });
+
+  it.each([
+    ["private", "private", false],
+    ["share", "private", false],
+    ["private", "share", true],
+    ["share", "share", true],
+  ] as const)("notifies only for a shared destination when moving %s → %s", async (sourceVisibility, destinationVisibility, notify) => {
+    const sourceId = "00000000-0000-4000-8000-000000000011";
+    const destinationId = "00000000-0000-4000-8000-000000000012";
+    mocks.query.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (!sql.includes("from calendar_preferences")) return { rows: [], rowCount: 0 };
+      const destination = params?.[0] === destinationId;
+      return { rows: [{
+        calendar_owner_user_id: "member-a", google_calendar_id: destination ? "destination@example.com" : "source@example.com",
+        actor_access_role: "owner", visibility: destination ? destinationVisibility : sourceVisibility,
+        actor_role: "member", actor_scope: "calendar.events", actor_google_connected: true, timezone: "America/New_York",
+      }], rowCount: 1 };
+    });
+    const result = await updateCalendarEventAction({
+      requestId: "00000000-0000-4000-8000-000000000010",
+      sourceCalendarPreferenceId: sourceId, calendarPreferenceId: destinationId,
+      providerEventId: "event-1", etag: "etag-1", title: "Sensitive appointment",
+      description: "", location: "", allDay: false,
+      startDate: "2026-08-14", endDate: "2026-08-14", startTime: "10:00", endTime: "11:00",
+    });
+    expect(result).toEqual({ ok: true });
+    expect(mocks.moveEvent).toHaveBeenCalled();
+    expect(mocks.queueHouseholdChange).toHaveBeenCalledTimes(notify ? 1 : 0);
+  });
+
+  it.each(["create", "update", "delete"] as const)("does not send household notifications for a private calendar %s", async (operation) => {
+    mocks.query.mockImplementation(async (sql: string) => sql.includes("from calendar_preferences") ? {
+      rows: [{
+        calendar_owner_user_id: "member-a", google_calendar_id: "private@example.com", actor_access_role: "owner",
+        visibility: "private", actor_role: "member", actor_scope: "calendar.events", actor_google_connected: true, timezone: "America/New_York",
+      }], rowCount: 1,
+    } : { rows: [], rowCount: 0 });
+    const draft = {
+      requestId: "00000000-0000-4000-8000-000000000010", calendarPreferenceId: "00000000-0000-4000-8000-000000000011",
+      providerEventId: "event-1", etag: "etag-1", title: "Sensitive appointment", description: "", location: "", allDay: false,
+      startDate: "2026-08-14", endDate: "2026-08-14", startTime: "10:00", endTime: "11:00",
+    };
+    const action = operation === "create" ? createCalendarEventAction : operation === "update" ? updateCalendarEventAction : deleteCalendarEventAction;
+    expect(await action(draft)).toEqual({ ok: true });
+    expect(mocks.queueHouseholdChange).not.toHaveBeenCalled();
+  });
+
 });

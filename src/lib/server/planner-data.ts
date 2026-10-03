@@ -195,6 +195,8 @@ export async function getPlannerData(
                 actor_cp.access_role as actor_access_role, cp.visibility,
                 actor_gc.scope as actor_scope
            from calendar_preferences cp
+           join household_members calendar_owner
+             on calendar_owner.household_id = cp.household_id and calendar_owner.user_id = cp.user_id
            join google_connections owner_gc on owner_gc.user_id = cp.user_id
            left join calendar_preferences actor_cp
              on actor_cp.household_id = cp.household_id

@@ -84,6 +84,8 @@ export async function setCalendarReminderAction(input: {
     }>(
       `select cp.google_calendar_id, cp.user_id as calendar_owner_user_id, cp.visibility
          from calendar_preferences cp
+           join household_members calendar_owner
+             on calendar_owner.household_id = cp.household_id and calendar_owner.user_id = cp.user_id
         where cp.id = $1 and cp.household_id = $2
           and (cp.user_id = $3 or cp.visibility = 'share')`,
       [parsed.calendarPreferenceId, context.householdId, context.userId],

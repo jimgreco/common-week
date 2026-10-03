@@ -71,6 +71,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
              select 1
                from calendar_preferences cp
               where cp.household_id = hce.household_id
+                and exists (select 1 from household_members hm where hm.household_id = cp.household_id and hm.user_id = cp.user_id)
                 and (
                   cp.visibility = 'share'
                   or (cp.visibility = 'private' and cp.user_id = $2)

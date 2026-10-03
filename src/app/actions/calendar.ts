@@ -78,6 +78,8 @@ async function requireWritableCalendar(calendarPreferenceId: string) {
             (actor_gc.user_id is not null) as actor_google_connected, h.timezone
        from calendar_preferences cp
        join households h on h.id = cp.household_id
+       join household_members calendar_owner
+         on calendar_owner.household_id = cp.household_id and calendar_owner.user_id = cp.user_id
        join household_members actor on actor.household_id = cp.household_id and actor.user_id = $3
        left join calendar_preferences actor_cp
          on actor_cp.household_id = cp.household_id
@@ -161,7 +163,8 @@ export async function createCalendarEventAction(input: CalendarEventDraft): Prom
       await googleCalendarService.getEvent(accessToken, calendar.google_calendar_id, providerEventId);
     }
     await finishMutation(context.householdId);
-    await queueHouseholdChange({
+    // Private calendar mutations must not disclose even their titles to the household.
+    if (calendar.visibility === "share") await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,
       title: `${context.displayName} added a calendar event`,
@@ -221,7 +224,7 @@ export async function updateCalendarEventAction(input: CalendarEventDraft): Prom
       }
     }
     await finishMutation(context.householdId);
-    await queueHouseholdChange({
+    if (destination.calendar.visibility === "share") await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,
       title: `${context.displayName} updated ${targetEventId === draft.providerEventId ? "a calendar event" : "a recurring series"}`,
@@ -252,7 +255,7 @@ export async function deleteCalendarEventAction(input: Pick<CalendarEventDraft, 
     }
     await googleCalendarService.deleteEvent(accessToken, calendar.google_calendar_id, targetEventId, current.etag);
     await finishMutation(context.householdId);
-    await queueHouseholdChange({
+    if (calendar.visibility === "share") await queueHouseholdChange({
       actorUserId: context.userId,
       householdId: context.householdId,
       title: `${context.displayName} removed ${targetEventId === parsed.providerEventId ? "a calendar event" : "a recurring series"}`,

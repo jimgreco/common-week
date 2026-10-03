@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const c = await requireHouseholdContext();
     const rows = await query<EventCoverage>(
-      `select ${columns} from event_coverage ec where household_id=$1 and exists(select 1 from calendar_preferences cp where cp.id=ec.calendar_preference_id and (cp.visibility='share' or(cp.visibility='private' and cp.user_id=$2)))`,
+      `select ${columns} from event_coverage ec where household_id=$1 and exists(select 1 from calendar_preferences cp where cp.id=ec.calendar_preference_id and exists(select 1 from household_members hm where hm.household_id=cp.household_id and hm.user_id=cp.user_id) and (cp.visibility='share' or(cp.visibility='private' and cp.user_id=$2)))`,
       [c.householdId, c.userId],
     );
     return Response.json(
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       throw new Error("You cannot change household coverage.");
     await withTransaction(async (db) => {
       const calendar = await db.query(
-        `select id from calendar_preferences where id=$1 and household_id=$2 and(visibility='share' or(visibility='private' and user_id=$3)) for update`,
+        `select id from calendar_preferences cp where id=$1 and household_id=$2 and exists(select 1 from household_members hm where hm.household_id=cp.household_id and hm.user_id=cp.user_id) and(visibility='share' or(visibility='private' and user_id=$3)) for update`,
         [input.calendarId, c.householdId, c.userId],
       );
       if (!calendar.rows.length) throw new Error("Calendar unavailable.");

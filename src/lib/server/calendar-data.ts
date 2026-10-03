@@ -84,6 +84,7 @@ async function readPreferences(householdId: string, userId: string) {
             color, visibility, is_primary, section_group, access_role
        from calendar_preferences
       where household_id = $1 and user_id = $2
+        and exists (select 1 from household_members hm where hm.household_id = $1 and hm.user_id = $2)
       order by is_primary desc, calendar_name`,
     [householdId, userId],
   );
@@ -107,7 +108,8 @@ async function ensurePreferences(
              household_id, user_id, google_calendar_id, calendar_name, display_alias,
              display_abbreviation, color, is_selected, visibility, is_primary,
              section_group, access_role
-           ) values ($1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11)
+           ) select $1, $2, $3, $4, $5, $6, $7, false, $8, $9, $10, $11
+             where exists (select 1 from household_members hm where hm.household_id = $1 and hm.user_id = $2)
            on conflict (user_id, google_calendar_id) do update set
              calendar_name = excluded.calendar_name,
              color = excluded.color,
@@ -206,8 +208,16 @@ export async function getHouseholdCalendarEvents(
   timeZone: string,
 ): Promise<CalendarBundle> {
   try {
+    // Callers may hold a member list from before a removal; recheck before using provider credentials or caches.
+    const activeMembers = await query<{ user_id: string }>(
+      `select hm.user_id from household_members hm
+        where hm.household_id = $1 and hm.user_id = any($2::uuid[])
+          and exists (select 1 from household_members viewer where viewer.household_id = $1 and viewer.user_id = $3)`,
+      [householdId, members.map((member) => member.userId), viewerUserId],
+    );
+    const activeUserIds = new Set(activeMembers.rows.map((member) => member.user_id));
     const settled = await Promise.allSettled(
-      members.map((member) => eventsForMember(householdId, member, viewerUserId, weekStart, timeZone)),
+      members.filter((member) => activeUserIds.has(member.userId)).map((member) => eventsForMember(householdId, member, viewerUserId, weekStart, timeZone)),
     );
     const fulfilled = settled.filter(
       (result): result is PromiseFulfilledResult<{ events: CalendarEvent[]; connected: boolean }> =>
@@ -242,6 +252,8 @@ export async function refreshCurrentUserCalendarPreferences(
   householdId: string,
   userId: string,
 ): Promise<{ calendars: CalendarPreference[]; connected: boolean }> {
+  const membership = await query("select 1 from household_members where household_id = $1 and user_id = $2", [householdId, userId]);
+  if (!membership.rowCount) return { calendars: [], connected: false };
   const token = await getGoogleAccessToken(userId);
   if (!token) return { calendars: [], connected: false };
   const calendars = await ensurePreferences(householdId, userId, token, true);
@@ -269,6 +281,8 @@ export async function searchHouseholdCalendarEvents(
             cp.section_group, cp.access_role,
             actor_cp.access_role as actor_access_role, actor_gc.scope as actor_scope
        from calendar_preferences cp
+       join household_members calendar_owner
+         on calendar_owner.household_id = cp.household_id and calendar_owner.user_id = cp.user_id
        join google_connections owner_gc on owner_gc.user_id = cp.user_id
        left join calendar_preferences actor_cp
          on actor_cp.household_id = cp.household_id
