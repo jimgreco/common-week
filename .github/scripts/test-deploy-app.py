@@ -13,18 +13,27 @@ root = pathlib.Path(os.environ["PLANNER_TEST_STATE"])
 mode = os.environ["PLANNER_TEST_MODE"]
 command = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
+old_id, new_id, replacement_id = "1" * 64, "2" * 64, "3" * 64
 with (root / "trace").open("a") as log:
     log.write(json.dumps([command, *args]) + "\\n")
 if command in ("flock", "sleep"):
     sys.exit(1 if command == "flock" and mode == "lock-conflict" else 0)
 if command == "docker":
-    if args[0] == "ps": print("old-container")
+    if args[0] == "ps": print(old_id[:12])
     elif args[0] == "inspect":
         template, container = args[2], args[3]
-        if template == "{{.Config.Image}}":
-            sha = "b" * 40 if container == "new-container" else "a" * 40
+        if template == "{{.Id}}":
+            print(next(value for value in (old_id, new_id, replacement_id) if value.startswith(container)))
+        elif template == "{{.Config.Image}}":
+            sha = "b" * 40 if container == new_id else "a" * 40
             print("ghcr.io/jimgreco/common-week:" + sha)
         elif template == "{{.Image}}": print("sha256:retained")
+        elif template == "{{json .Config.Labels}}":
+            labels = {"com.docker.compose.depends_on": "", "com.docker.compose.version": "2.26.1"}
+            if mode == "missing-dependency-label": del labels["com.docker.compose.depends_on"]
+            if mode == "dependency-label-drift": labels["com.docker.compose.depends_on"] = "db:service_started:false"
+            if mode == "container-version-drift": labels["com.docker.compose.version"] = "2.27.0"
+            print(json.dumps(labels))
         elif "config-hash" in template: print("a" * 64)
         elif "working_dir" in template: print(root / "deploy")
         elif "config_files" in template:
@@ -34,13 +43,25 @@ if command == "docker":
             print("APP_BUILD=" + ("c" if mode == "changed-live" else "a") * 40)
             print("NEXT_PUBLIC_APP_URL=https://weekofus.com")
     sys.exit(0)
-while args and args[0] in ("-p", "-f"):
+stdin_model = "-" in args
+while args and args[0] in ("-p", "-f", "--project-directory"):
     args = args[2:]
-if args[0] == "config": print("common-week " + ("d" if mode == "config-drift" else "a") * 64)
+alternate_modes = ("no-deps", "roundtrip-drift", "config-drift", "missing-dependency-label", "dependency-label-drift", "container-version-drift", "binary-version-drift")
+if args[0] == "version": print("2.27.0" if mode == "binary-version-drift" else "2.26.1")
+elif args[0] == "config":
+    if "--format" in args:
+        print(json.dumps({"services": {"common-week": {"depends_on": {"db": {"condition": "service_started"}}, "environment": {"VALUE": "synthetic-$$literal"}}, "db": {"image": "postgres:16"}}}))
+    elif stdin_model:
+        model = json.load(sys.stdin)
+        with (root / "models").open("a") as log: log.write(json.dumps(model) + "\\n")
+        full = "depends_on" in model["services"]["common-week"]
+        char = "e" if mode == "roundtrip-drift" else ("d" if full or mode == "config-drift" else "a")
+        print("common-week " + char * 64)
+    else: print("common-week " + ("d" if mode in alternate_modes else "a") * 64)
 elif args[0] == "pull" and mode == "pull-failure": sys.exit(8)
 elif args[0] == "run" and mode == "migration-failure": sys.exit(7)
 elif args[0] == "up": (root / "started").touch()
-elif args[0] == "ps": print("new-container" if (root / "started").exists() else "old-container")
+elif args[0] == "ps": print(new_id if (root / "started").exists() else (replacement_id if mode == "container-replaced" else old_id))
 elif args[0] == "exec" and mode == "health-failure": sys.exit(6)
 '''
 
@@ -76,7 +97,7 @@ class DeploymentSafetyTests(unittest.TestCase):
                 if call[0] != "docker-compose":
                     continue
                 args = call[1:]
-                while args and args[0] in ("-p", "-f"):
+                while args and args[0] in ("-p", "-f", "--project-directory"):
                     args = args[2:]
                 compose_calls.append(args)
             return result, compose_calls, calls
@@ -91,6 +112,32 @@ class DeploymentSafetyTests(unittest.TestCase):
         self.assertLess(calls.index(migrate), calls.index(restart))
         self.assertIn(["docker", "image", "tag", "sha256:retained", "common-week-retained:" + "a" * 40], all_calls)
         self.assertFalse(any("db" in call or "rm" in call for call in calls))
+
+    def test_short_docker_id_and_full_compose_id_identify_same_container(self):
+        result, _, calls = self.run_fixture()
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn(["docker", "inspect", "--format", "{{.Id}}", "1" * 12], calls)
+        self.assertIn(["docker", "inspect", "--format", "{{.Id}}", "1" * 64], calls)
+
+    def test_replacement_container_still_blocks_before_stop(self):
+        result, calls, _ = self.run_fixture("container-replaced")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Live container changed", result.stdout)
+        self.assertFalse(any(call[0] in ("stop", "run", "up") for call in calls))
+
+    def test_no_deps_hash_requires_full_model_roundtrip_then_scoped_match(self):
+        result, calls, all_calls = self.run_fixture("no-deps")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        stdin_hashes = [call for call in all_calls if call[0] == "docker-compose" and "-" in call]
+        self.assertEqual(len(stdin_hashes), 2)
+        self.assertTrue(any(call[0] == "up" for call in calls))
+
+    def test_no_deps_alternate_rejects_uncertain_identity_and_lossy_roundtrip(self):
+        for mode in ("roundtrip-drift", "missing-dependency-label", "dependency-label-drift", "container-version-drift", "binary-version-drift"):
+            with self.subTest(mode=mode):
+                result, calls, _ = self.run_fixture(mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any(call[0] in ("pull", "stop", "run", "up") for call in calls))
 
     def test_all_effective_compose_files_are_preserved(self):
         result, _, calls = self.run_fixture("multiple-files")
