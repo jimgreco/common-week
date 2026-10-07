@@ -12,4 +12,8 @@ create table offline_draft_recoveries (
   unique (user_id, item_id)
 );
 -- Deliberately no item FK: receipts outlive removal of the recovered item.
+-- Migrations and the API use the same dedicated database/table owner login.
+-- That owner is exempt from non-FORCE RLS; other roles are default-denied.
+-- Do not grant BYPASSRLS, add an allow-all policy, or apply this as a different
+-- migration owner. See scripts/check-offline-recovery-role.mjs and release notes.
 alter table offline_draft_recoveries enable row level security;

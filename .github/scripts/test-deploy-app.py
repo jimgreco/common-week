@@ -59,7 +59,9 @@ elif args[0] == "config":
         print("common-week " + char * 64)
     else: print("common-week " + ("d" if mode in alternate_modes else "a") * 64)
 elif args[0] == "pull" and mode == "pull-failure": sys.exit(8)
-elif args[0] == "run" and mode == "migration-failure": sys.exit(7)
+elif args[0] == "run" and "scripts/migrate.mjs" in args and mode == "migration-failure": sys.exit(7)
+elif args[0] == "run" and "--before-migration" in args and mode == "role-preflight-failure": sys.exit(9)
+elif args[0] == "run" and "--require-compatible" in args and mode == "role-postcheck-failure": sys.exit(9)
 elif args[0] == "up": (root / "started").touch()
 elif args[0] == "ps": print(new_id if (root / "started").exists() else (replacement_id if mode == "container-replaced" else old_id))
 elif args[0] == "exec" and mode == "health-failure": sys.exit(6)
@@ -108,8 +110,12 @@ class DeploymentSafetyTests(unittest.TestCase):
         stop = ["stop", "-t", "60", "common-week"]
         migrate = ["run", "--rm", "--no-deps", "-T", "common-week", "node", "scripts/migrate.mjs"]
         restart = ["up", "-d", "--force-recreate", "--no-deps", "--no-build", "common-week"]
+        preflight = ["run", "--rm", "--no-deps", "-T", "common-week", "node", "scripts/check-offline-recovery-role.mjs", "--before-migration"]
+        postcheck = ["run", "--rm", "--no-deps", "-T", "common-week", "node", "scripts/check-offline-recovery-role.mjs", "--require-compatible"]
+        self.assertLess(calls.index(preflight), calls.index(stop))
         self.assertLess(calls.index(stop), calls.index(migrate))
-        self.assertLess(calls.index(migrate), calls.index(restart))
+        self.assertLess(calls.index(migrate), calls.index(postcheck))
+        self.assertLess(calls.index(postcheck), calls.index(restart))
         self.assertIn(["docker", "image", "tag", "sha256:retained", "common-week-retained:" + "a" * 40], all_calls)
         self.assertFalse(any("db" in call or "rm" in call for call in calls))
 
@@ -174,6 +180,17 @@ class DeploymentSafetyTests(unittest.TestCase):
         self.assertFalse(any(call[0] == "up" for call in calls))
         self.assertEqual(calls[-1], ["stop", "-t", "60", "common-week"])
         self.assertIn("88c34e7 or later", result.stdout)
+
+    def test_wrong_database_role_fails_before_stopping_app(self):
+        result, calls, _ = self.run_fixture("role-preflight-failure")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(call[0] in ("stop", "up") or "scripts/migrate.mjs" in call for call in calls))
+
+    def test_wrong_receipt_owner_after_migration_keeps_worker_off(self):
+        result, calls, _ = self.run_fixture("role-postcheck-failure")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(call[0] == "up" for call in calls))
+        self.assertEqual(calls[-1], ["stop", "-t", "60", "common-week"])
 
     def test_failed_health_stops_new_app_without_unsafe_rollback(self):
         result, calls, _ = self.run_fixture("health-failure")

@@ -106,6 +106,9 @@ compose config --hash common-week >/dev/null
 # before migration020; neither old APIs nor old workers may run on that schema.
 current_container="$(compose ps -q common-week)"
 [ "$(docker inspect --format '{{.Id}}' "$current_container")" = "$container" ] || { echo 'Live container changed during preflight.'; exit 1; }
+# Read-only ownership/role preflight before stopping any service. Migration and
+# runtime must use the same dedicated non-superuser table owner, not RLS bypass.
+compose run --rm --no-deps -T common-week node scripts/check-offline-recovery-role.mjs --before-migration </dev/null
 compose stop -t 60 common-week
 cutover_started=true
 cutover_complete=false
@@ -118,6 +121,7 @@ cleanup() {
 }
 trap cleanup EXIT
 compose run --rm --no-deps -T common-week node scripts/migrate.mjs </dev/null
+compose run --rm --no-deps -T common-week node scripts/check-offline-recovery-role.mjs --require-compatible </dev/null
 compose up -d --force-recreate --no-deps --no-build common-week
 container="$(compose ps -q common-week)"
 [ "$(inspect '{{.Config.Image}}')" = "$release_image" ] || { echo 'Unexpected deployed image.'; exit 1; }

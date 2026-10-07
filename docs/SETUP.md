@@ -28,7 +28,7 @@ npm run db:migrate
 
 Migrations are recorded in `app_schema_migrations` and are safe to run again. The schema includes the household model, opaque sessions, planning data, locations, date constraints, provider caches, indexes, and collaboration notification triggers.
 
-The production workflow creates the `common_week_app` role and `common_week` database on the existing shared PostgreSQL container if needed. It generates an independent database password on the server rather than sharing the administrator credential with the app.
+Production uses the existing dedicated `common_week_app` login and owned `common_week` database. The guarded app release does not create roles, rotate passwords, transfer ownership or alter grants. Migrations and runtime use the same configured owner connection; the offline-recovery release checks this contract before cutover and after migration 022. See [deployment requirements](DEPLOYMENT.md).
 
 ## 2. Configure Google Cloud
 

@@ -1,6 +1,6 @@
 # Retained offline draft review and recovery
 
-Prepared locally on 2026-10-07, based on `a66fdb9`. Production and historical user data were not accessed or changed. Existing Mac checkout edits remain untouched. This feature does not infer a legacy draft's household.
+Prepared locally on 2026-10-07, based on `a66fdb9`. Historical user data was not accessed or changed. A later release-gate check read production catalog metadata only. Existing Mac checkout edits remain untouched. This feature does not infer a legacy draft's household.
 
 ## User flow
 
@@ -65,4 +65,28 @@ Local validation for this prepared release:
 - Production webpack build passes with two Next workers. Recovery HTTP suite passes against both dev and built standalone servers.
 - Chromium: all 11 smoke scenarios pass; task attachment preview needed one retry in the first runnable suite. Both attachment scenarios then passed a targeted run with retries disabled. The initial browser launch attempt lacked the newly required Chromium binary; installing it only inside the task directory resolved that prerequisite.
 - Full iPhone simulator suite: 122 passed. Full Mac Catalyst suite: 126 passed. Final incremental Catalyst recovery suite: 12 passed, including the later comparison/cancellation refinements.
-- Synthetic release guards: 26 passed. Deployment script guards: 13 passed. Changed workflows pass `actionlint`; `git diff --check` passes.
+- Synthetic release guards: 26 passed. Deployment script guards: 15 passed, including role preflight/post-migration failures. Changed workflows pass `actionlint`; `git diff --check` passes.
+
+
+## Database role release gate (October 7 follow-up)
+
+Read-only inspection through the existing pinned SSH connection verified the live `common-week` container labels and queried only PostgreSQL catalogs with `transaction_read_only=on`. Sanitized evidence: runtime/login role **common_week_app**, effective role setting **none**, superuser **false**, BYPASSRLS **false**, INHERIT **true**, database owner **common_week_app**, public-schema CREATE **true**. The app directly owns `users`, `households`, `household_members`, `auth_sessions`, `planning_items` and `app_schema_migrations`. Migration 022 was not yet present. No production rows, passwords, connection strings or environment values were returned; no production grants or data were changed.
+
+The current release script applies migrations and starts the API with the **same service DATABASE_URL**. Therefore 022 creates its receipt table owned by that dedicated runtime login. PostgreSQL's table-owner exemption from **non-FORCE** RLS is the intended compatibility mechanism; `rolbypassrls` stays false. No allow-all policy, ownership transfer, broad grant, or BYPASSRLS change is required. The shared SQL login does not identify individual app users: the recovery transaction's locked session/membership predicates enforce user/household boundaries, as tested by the HTTP suite. Non-owner SQL roles remain default-denied.
+
+Exact requirements are now enforced in `.github/scripts/deploy-app.sh`:
+
+- Before stopping the service, the new image runs `scripts/check-offline-recovery-role.mjs --before-migration`. The runtime must equal the login role with no SET ROLE override, be non-superuser/non-BYPASSRLS, own the database and the six prerequisite app tables directly, have public-schema CREATE, and have no active RLS restriction on those prerequisite tables. If 022 already exists, it must satisfy the post-migration requirements too. Failure occurs before service stop/migration.
+- After migration and before restart, `--require-compatible` requires the receipt table to be directly owned by that same non-superuser login, with RLS enabled, FORCE RLS disabled, no policies, SELECT/INSERT rights and `row_security_active=false` for the owner. If this fails, the existing deployment failure handler leaves Week of Us stopped for compatible correction, retaining data/migrations. It does not attempt a grant or policy repair.
+- A future split migration/runtime role setup is **not** implicitly supported. If either check fails, stop release and request a separately reviewed least-privilege design; never grant BYPASSRLS or a blanket policy to make the check pass.
+
+`planner-role-rehearsal.log` records a fresh local database whose login was explicitly NOSUPERUSER, NOBYPASSRLS, NOCREATEDB and NOCREATEROLE, with the database/table ownership matching live. That role successfully applied migrations, passed the pre-022 upgrade and post-022 checks, and ran the full recovery HTTP suite through the production-built server. A separate synthetic role failed without grants; temporary **receipt-table-only SELECT/INSERT** grants still revealed zero receipts and rejected inserts under RLS, and both compatibility gates rejected it. The original owner receipt remained intact. These temporary grants were revoked and all generated databases/roles removed. The existing local test cluster was then stopped.
+
+Reproduce only in a disposable localhost cluster where the administrator can create synthetic roles/databases (the fixture uses local trust authentication for its generated logins):
+
+```sh
+ROLE_TEST_ADMIN_DATABASE_URL=postgresql://LOCAL_ADMIN@127.0.0.1:55467/planner_recovery_20261007_test \
+  node scripts/test-offline-recovery-roles.mjs
+```
+
+This role gate does not authorize the production migration or historical recovery. Parent release coordination and owner acceptance above still apply.
