@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = "http://127.0.0.1:3000";
+const port = Number(process.env.SMOKE_PORT || 3000);
+const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,7 +17,7 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
-    command: `ENABLE_DEMO=true DATABASE_URL='' NEXT_PUBLIC_APP_URL=${baseURL} HOSTNAME=127.0.0.1 node scripts/start-smoke.mjs`,
+    command: `ENABLE_DEMO=true DATABASE_URL='' NEXT_PUBLIC_APP_URL=${baseURL} HOSTNAME=127.0.0.1 PORT=${port} node scripts/start-smoke.mjs`,
     url: `${baseURL}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -139,6 +139,10 @@ final class APIClient {
         try await send(path: "/api/ios/planning-items", method: "POST", body: draft, expectedIdentity: expectedIdentity)
     }
 
+    func recoverOfflineDraft(_ request: OfflineRecoveryRequest, identity: OfflineIdentity) async throws -> OfflineRecoveryResult {
+        try await send(path: "/api/ios/offline-recovery", method: "POST", body: request, expectedIdentity: identity)
+    }
+
     func updateItem(_ draft: PlanningItemDraft, expectedIdentity: OfflineIdentity? = nil) async throws -> EmptyResponse {
         try await send(path: "/api/ios/planning-items", method: "PATCH", body: draft, expectedIdentity: expectedIdentity)
     }
@@ -342,9 +346,10 @@ final class APIClient {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        let requestToken = authenticated ? token : nil
         if authenticated {
-            guard let token else { throw APIError.unauthorized }
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            guard let requestToken else { throw APIError.unauthorized }
+            request.setValue("Bearer \(requestToken)", forHTTPHeaderField: "Authorization")
         }
         if let expectedIdentity {
             request.setValue(expectedIdentity.userId, forHTTPHeaderField: "X-Week-Of-Us-User")
@@ -357,8 +362,11 @@ final class APIClient {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         if http.statusCode == 401 {
-            token = nil
-            NotificationCenter.default.post(name: Self.authorizationExpired, object: nil)
+            // A response from the old account must not sign out a newer session.
+            if authenticated, token == requestToken {
+                token = nil
+                NotificationCenter.default.post(name: Self.authorizationExpired, object: nil)
+            }
             throw APIError.unauthorized
         }
         let envelope = try decoder.decode(APIEnvelope<Response>.self, from: data)

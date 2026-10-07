@@ -147,6 +147,29 @@ actor OfflineStore {
         try write(mutations, to: url)
     }
 
+    // Recovery reads snapshots of source bytes; it never moves, rewrites or deletes them.
+    func recoveryFiles(userId: String) throws -> [OfflineRecoveryFile] {
+        guard fileManager.fileExists(atPath: directory.path) else { return [] }
+        let legacy = "mutations-\(safe(userId)).json"
+        let prefix = "mutations-v2-\(safe(userId))-"
+        return try fileManager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            .filter { $0.lastPathComponent == legacy || ($0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "json") }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { url in
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { throw CocoaError(.fileReadUnsupportedScheme) }
+                let bytes = try Data(contentsOf: url)
+                let decoded = try? decoder.decode([OfflineMutation].self, from: bytes)
+                // Ambiguous duplicate IDs require byte-preserving manual review.
+                let unique = decoded.map { Set($0.map(\.id)).count == $0.count } ?? false
+                return OfflineRecoveryFile(name: url.lastPathComponent, bytes: bytes, mutations: unique ? decoded : nil)
+            }
+    }
+
+    func unchangedRecoveryFile(_ file: OfflineRecoveryFile, userId: String) throws -> Bool {
+        try recoveryFiles(userId: userId).contains { $0.name == file.name && $0.bytes == file.bytes }
+    }
+
     func clearAll() {
         try? fileManager.removeItem(at: directory)
     }

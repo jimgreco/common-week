@@ -212,6 +212,14 @@ struct SettingsView: View {
                         Text("This device").font(.caption.bold()).foregroundStyle(CWTheme.accent).padding(.horizontal, 10).padding(.vertical, 5).background(CWTheme.mint, in: Capsule())
                     }.padding(.vertical, 5)
                 }
+                if case .signedIn(let user) = auth.state, user.householdId == data.household.id {
+                    Section("On this device") {
+                        NavigationLink("Saved offline drafts") {
+                            OfflineRecoveryView(model: viewModel.makeOfflineRecoveryModel(user: user), auth: auth, householdName: data.household.name)
+                        }
+                        Text("Review and export retained drafts before choosing any recovery.").font(.caption)
+                    }
+                }
                 Section("Household") {
                     TextField("Household name", text: $name)
                     ForEach(members) { member in

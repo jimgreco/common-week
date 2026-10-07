@@ -14,7 +14,7 @@ final class PlannerViewModel: ObservableObject {
     @Published private(set) var pendingChangeCount = 0
     @Published private(set) var heldOfflineChangeCount = 0
 
-    private var currentOfflineIdentity: OfflineIdentity? {
+    var currentOfflineIdentity: OfflineIdentity? {
         guard let user = activeUser, let householdId = user.householdId else { return nil }
         return OfflineIdentity(userId: user.userId, householdId: householdId)
     }
@@ -22,6 +22,7 @@ final class PlannerViewModel: ObservableObject {
     private let api: APIClient
     private let offlineStore: OfflineStore
     private var activeUser: SessionIdentity?
+    private var offlineRecoveryModel: OfflineRecoveryModel?
     private var toastTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
     private var liveRefreshTask: Task<Void, Never>?
@@ -32,7 +33,7 @@ final class PlannerViewModel: ObservableObject {
 
     var syncStatusText: String? {
         if heldOfflineChangeCount > 0 {
-            return "Saved offline changes need review and remain on this device. Rejoin the original household to sync; older or unreadable drafts stay preserved."
+            return "Saved offline changes need review and remain on this device. Rejoin the original household to sync; open Settings → Saved offline drafts to review or export older drafts."
         }
         if pendingChangeCount > 0 {
             return isOffline
@@ -56,6 +57,8 @@ final class PlannerViewModel: ObservableObject {
             return
         }
         if activeUser?.userId != user.userId || activeUser?.householdId != householdId {
+            offlineRecoveryModel?.cancel()
+            offlineRecoveryModel = nil
             loadGeneration += 1
             stopLiveUpdates()
             data = nil
@@ -102,7 +105,17 @@ final class PlannerViewModel: ObservableObject {
         startLiveUpdates()
     }
 
+    func makeOfflineRecoveryModel(user: SessionIdentity) -> OfflineRecoveryModel {
+        if let model = offlineRecoveryModel, model.user == user { return model }
+        offlineRecoveryModel?.cancel()
+        let model = OfflineRecoveryModel(user: user, api: api, store: offlineStore) { [weak self] in self?.currentOfflineIdentity }
+        offlineRecoveryModel = model
+        return model
+    }
+
     func deactivate() {
+        offlineRecoveryModel?.cancel()
+        offlineRecoveryModel = nil
         loadGeneration += 1
         stopLiveUpdates()
         activeUser = nil
@@ -592,6 +605,8 @@ final class PlannerViewModel: ObservableObject {
     }
 
     private func preserveChangesAfterIdentityChange(_ identity: SessionIdentity) async {
+        offlineRecoveryModel?.cancel()
+        offlineRecoveryModel = nil
         loadGeneration += 1
         stopLiveUpdates()
         activeUser = identity

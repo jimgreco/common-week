@@ -59,6 +59,7 @@ jobs:
           NOTIFICATION_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
       - run: python3 .github/scripts/test-deploy-app.py
       - run: npm run build
+      - run: npm run test:offline-recovery
       - run: npm run test:family
       - run: npm run test:smoke
 

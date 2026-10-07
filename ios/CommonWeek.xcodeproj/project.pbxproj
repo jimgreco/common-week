@@ -8,7 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		0611124087A98B1F05B7B212 /* AppleReminderRecurrence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8971F5CDE9538481710D1578 /* AppleReminderRecurrence.swift */; };
+		0E031FCE4983CDF82D5128FC /* OfflineRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A1FF4001D510D37F12D8C4 /* OfflineRecovery.swift */; };
 		0E3469C00597B83BB1EB2959 /* CalendarInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CF70EDDDB8940BF71EBBA31 /* CalendarInteraction.swift */; };
+		120591FB29BD9A625AAF0691 /* OfflineRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 322F5C1632591F53F92B0A6D /* OfflineRecoveryView.swift */; };
 		13E2A9B9FC571BFC8FE846F5 /* FamilyPlanningViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 089FDAFB595631006ABDEC55 /* FamilyPlanningViews.swift */; };
 		1DD584089716C8917F2D8AEB /* FamilyPlanningEditors.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D4AB04D74535B15E61C3F2 /* FamilyPlanningEditors.swift */; };
 		1EDD71A17A2152BF1D37220A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FE9DB5960BC4265E4C44FBEA /* PrivacyInfo.xcprivacy */; };
@@ -50,6 +52,7 @@
 		C9AA2CB9167CE6EFAE2D52C5 /* AppleRemindersClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4460E961C4CD945D28F9DA2B /* AppleRemindersClient.swift */; };
 		D5EF93696546C88F02D480AC /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83231BA8632DDC33D6A60E5A /* DesignSystem.swift */; };
 		D64C4B2C7F21A9FA87564205 /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4AD6D78689E7F9DFED0B9E /* SignInView.swift */; };
+		D8CFD31538140CE0994F62C2 /* OfflineRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2202F072884CD55DE670710 /* OfflineRecoveryTests.swift */; };
 		E0D24364DFC3F44CB3D6DC6A /* FamilyPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB945B3DAB17D185AC34288A /* FamilyPlanning.swift */; };
 		E52A6401F00DBBD59B705A23 /* NotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A1CA4C82B995948B44F51A /* NotificationCoordinator.swift */; };
 		E815047D54053F2B80945C7D /* AttachmentPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A4CCD1625BCB285864D0BD /* AttachmentPreviewTests.swift */; };
@@ -108,6 +111,8 @@
 		2CF70EDDDB8940BF71EBBA31 /* CalendarInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarInteraction.swift; sourceTree = "<group>"; };
 		2E8618295C4BEC334961F6E0 /* CommonWeekApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonWeekApp.swift; sourceTree = "<group>"; };
 		3014EBACE5446E3C9F0BB9EE /* DetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViews.swift; sourceTree = "<group>"; };
+		30A1FF4001D510D37F12D8C4 /* OfflineRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineRecovery.swift; sourceTree = "<group>"; };
+		322F5C1632591F53F92B0A6D /* OfflineRecoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineRecoveryView.swift; sourceTree = "<group>"; };
 		391E7169B0DD4BC0F0C71A32 /* FamilyPlanningDemo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyPlanningDemo.swift; sourceTree = "<group>"; };
 		43F4FB653815BBA68CECAE9B /* AppleReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleReminders.swift; sourceTree = "<group>"; };
 		4460E961C4CD945D28F9DA2B /* AppleRemindersClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleRemindersClient.swift; sourceTree = "<group>"; };
@@ -133,6 +138,7 @@
 		A81BDE7C63D0FEDCF44F50D2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		AA2F462050A3330420D60DDD /* BackgroundRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefresh.swift; sourceTree = "<group>"; };
 		ABF657900C4FFE9A5A8E859F /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
+		B2202F072884CD55DE670710 /* OfflineRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineRecoveryTests.swift; sourceTree = "<group>"; };
 		CB485157E90B26B555EE1D77 /* TaskCarryover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskCarryover.swift; sourceTree = "<group>"; };
 		CBC7E5930C3EF8266880B1A6 /* MacPlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPlannerView.swift; sourceTree = "<group>"; };
 		CC523FDAFABD3C14E7572B34 /* WeekToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekToolsTests.swift; sourceTree = "<group>"; };
@@ -202,6 +208,7 @@
 				D7A4CCD1625BCB285864D0BD /* AttachmentPreviewTests.swift */,
 				9BEB89E7AE8C61C9C8EE3596 /* CalendarTimelineTests.swift */,
 				741EB27C0B29673F259D35F9 /* FamilyPlanningTests.swift */,
+				B2202F072884CD55DE670710 /* OfflineRecoveryTests.swift */,
 				15D280453135ABCB20247AFB /* WeekDateTests.swift */,
 				CC523FDAFABD3C14E7572B34 /* WeekToolsTests.swift */,
 			);
@@ -246,6 +253,8 @@
 				CBC7E5930C3EF8266880B1A6 /* MacPlannerView.swift */,
 				966E7B5827AF770CFD268416 /* Models.swift */,
 				14A1CA4C82B995948B44F51A /* NotificationCoordinator.swift */,
+				30A1FF4001D510D37F12D8C4 /* OfflineRecovery.swift */,
+				322F5C1632591F53F92B0A6D /* OfflineRecoveryView.swift */,
 				46C7FB1EF7975CDF39025D1F /* OfflineStore.swift */,
 				540DB50FE63FB747D5B0822A /* PlannerView.swift */,
 				FF76B68EACAAC800419E71B7 /* PlannerViewModel.swift */,
@@ -440,6 +449,8 @@
 				2FCBB27160146FD1A0B6838B /* MacPlannerView.swift in Sources */,
 				C452C1A3ECFC0FCB44393F8F /* Models.swift in Sources */,
 				E52A6401F00DBBD59B705A23 /* NotificationCoordinator.swift in Sources */,
+				0E031FCE4983CDF82D5128FC /* OfflineRecovery.swift in Sources */,
+				120591FB29BD9A625AAF0691 /* OfflineRecoveryView.swift in Sources */,
 				563CD0448C592384B7BEE26B /* OfflineStore.swift in Sources */,
 				33D0F8A5E3F3A191AB66C3A4 /* PlannerView.swift in Sources */,
 				51B1B07F6F38A69A7BA7A61F /* PlannerViewModel.swift in Sources */,
@@ -470,6 +481,7 @@
 				E815047D54053F2B80945C7D /* AttachmentPreviewTests.swift in Sources */,
 				C631DB720F6227CCBBFFB8F4 /* CalendarTimelineTests.swift in Sources */,
 				96517295FE6D3D77B8E97C51 /* FamilyPlanningTests.swift in Sources */,
+				D8CFD31538140CE0994F62C2 /* OfflineRecoveryTests.swift in Sources */,
 				580BDC3D8A7E9AF082365A28 /* WeekDateTests.swift in Sources */,
 				7DC0D0A367D873EF73D5016A /* WeekToolsTests.swift in Sources */,
 			);
