@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AlertTriangle, Bell, CheckCircle2, Clock3, Mail, Smartphone, X } from "lucide-react";
 import { markNotificationReadAction } from "@/app/actions/notifications";
@@ -13,7 +13,9 @@ export function NotificationInboxButton({ initialInbox, timeZone }: { initialInb
   const [open, setOpen] = useState(false);
   const [inbox, setInbox] = useState(initialInbox);
   const [lastInitialInbox, setLastInitialInbox] = useState(initialInbox);
-  const [, startTransition] = useTransition();
+  const [markingAll, setMarkingAll] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const markAllPending = useRef(false);
 
   if (lastInitialInbox !== initialInbox) {
     setLastInitialInbox(initialInbox);
@@ -37,29 +39,58 @@ export function NotificationInboxButton({ initialInbox, timeZone }: { initialInb
   }, [open]);
 
   const markAllRead = () => {
-    const readAt = new Date().toISOString();
-    setInbox((current) => ({
-      unreadCount: 0,
-      items: current.items.map((item) => ({ ...item, readAt: item.readAt ?? readAt })),
-    }));
+    if (markAllPending.current) return;
+    markAllPending.current = true;
+    setMarkingAll(true);
+    setReadError(null);
+    const snapshot = inbox;
     startTransition(async () => {
-      const result = await markNotificationReadAction();
-      if (!result.ok) router.refresh();
+      try {
+        const result = await markNotificationReadAction();
+        if (!result.ok) throw new Error(result.error);
+        const readAt = new Date().toISOString();
+        // A refresh may have delivered newer notifications while this save ran.
+        setInbox((current) => current === snapshot ? {
+          unreadCount: 0,
+          items: current.items.map((item) => ({ ...item, readAt: item.readAt ?? readAt })),
+        } : current);
+        router.refresh();
+      } catch {
+        setReadError("Notification history could not be updated. Please try again.");
+      } finally {
+        markAllPending.current = false;
+        setMarkingAll(false);
+      }
     });
   };
 
   const openItem = (item: NotificationInboxItem) => {
-    const href = safeInboxHref(item.deepLink);
-    setInbox((current) => ({
-      unreadCount: Math.max(0, current.unreadCount - (item.readAt ? 0 : 1)),
-      items: current.items.map((candidate) => candidate.id === item.id
-        ? { ...candidate, readAt: candidate.readAt ?? new Date().toISOString() }
-        : candidate),
-    }));
     setOpen(false);
+    if (item.readAt) {
+      router.push(safeInboxHref(item.deepLink));
+      return;
+    }
+    setReadError(null);
     startTransition(async () => {
-      await markNotificationReadAction(item.id);
-      router.push(href);
+      try {
+        const result = await markNotificationReadAction(item.id);
+        if (!result.ok) throw new Error(result.error);
+        setInbox((current) => {
+          if (!current.items.some((candidate) => candidate.id === item.id && !candidate.readAt)) return current;
+          return {
+            unreadCount: Math.max(0, current.unreadCount - 1),
+            items: current.items.map((candidate) => candidate.id === item.id
+              ? { ...candidate, readAt: new Date().toISOString() }
+              : candidate),
+          };
+        });
+      } catch {
+        setReadError("Notification history could not be updated. Please try again.");
+      } finally {
+        // History failures must not prevent opening the actual reminder.
+        // Let the Server Action settle before changing its current route.
+        router.push(safeInboxHref(item.deepLink));
+      }
     });
   };
 
@@ -81,10 +112,11 @@ export function NotificationInboxButton({ initialInbox, timeZone }: { initialInb
           <header>
             <span><strong>Notifications</strong><small>Recent reminders and household activity</small></span>
             <span>
-              {inbox.unreadCount > 0 && <button type="button" onClick={markAllRead}>Mark all read</button>}
+              {inbox.unreadCount > 0 && <button type="button" disabled={markingAll} onClick={markAllRead}>{markingAll ? "Marking read…" : "Mark all read"}</button>}
               <button className="notification-inbox-close" type="button" aria-label="Close notifications" onClick={() => setOpen(false)}><X size={15} /></button>
             </span>
           </header>
+          {readError && <p className="location-picker-error" role="alert">{readError}</p>}
           {inbox.items.length ? (
             <div className="notification-inbox-list">
               {inbox.items.map((item) => (

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationInboxButton } from "@/components/planner/notification-inbox";
 import type { NotificationInbox } from "@/types/domain";
@@ -46,7 +46,7 @@ describe("notification inbox", () => {
     expect(screen.getByText("Push · Retrying")).toBeInTheDocument();
   });
 
-  it("marks one item read before following its safe deep link", async () => {
+  it("follows its safe deep link and marks the item read", async () => {
     render(<NotificationInboxButton initialInbox={inbox} timeZone="America/New_York" />);
     fireEvent.click(screen.getByRole("button", { name: "Notifications, 1 unread" }));
     fireEvent.click(screen.getByRole("button", { name: /Household reminder/ }));
@@ -59,6 +59,58 @@ describe("notification inbox", () => {
     fireEvent.click(screen.getByRole("button", { name: "Notifications, 1 unread" }));
     fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
     await waitFor(() => expect(mocks.markRead).toHaveBeenCalledWith());
-    expect(screen.queryByRole("button", { name: "Mark all read" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Mark all read" })).not.toBeInTheDocument());
+  });
+});
+
+
+describe("notification update recovery", () => {
+  beforeEach(() => {
+    mocks.markRead.mockReset();
+    mocks.push.mockReset();
+    mocks.refresh.mockReset();
+  });
+
+  it.each(["rejected", "failed"])("opens a reminder even when its read update is %s", async (failure) => {
+    let finish!: () => void;
+    mocks.markRead.mockReturnValue(new Promise((resolve, reject) => {
+      finish = () => failure === "rejected" ? reject(new Error("Offline")) : resolve({ ok: false });
+    }));
+    render(<NotificationInboxButton initialInbox={inbox} timeZone="America/New_York" />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications, 1 unread" }));
+    fireEvent.click(screen.getByRole("button", { name: /Household reminder/ }));
+    await act(async () => finish());
+    expect(mocks.push).toHaveBeenCalledWith(inbox.items[0].deepLink);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications, 1 unread" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Notification history could not be updated");
+    expect(screen.getByLabelText("Unread")).toBeInTheDocument();
+  });
+
+  it("retains unread notifications after a failed mark-all and allows retry", async () => {
+    mocks.markRead.mockRejectedValueOnce(new Error("Offline")).mockResolvedValue({ ok: true });
+    render(<NotificationInboxButton initialInbox={inbox} timeZone="America/New_York" />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications, 1 unread" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Please try again");
+    expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(mocks.markRead).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not mark new notifications read when an older mark-all completes", async () => {
+    let finish!: (value: { ok: true }) => void;
+    mocks.markRead.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const view = render(<NotificationInboxButton initialInbox={inbox} timeZone="America/New_York" />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications, 1 unread" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark all read" }));
+    expect(screen.getByRole("button", { name: "Marking read…" })).toBeDisabled();
+    const updated = { unreadCount: 2, items: [...inbox.items, { ...inbox.items[0], id: "new", title: "New reminder" }] };
+    view.rerender(<NotificationInboxButton initialInbox={updated} timeZone="America/New_York" />);
+    await act(async () => finish({ ok: true }));
+    expect(screen.getByRole("button", { name: "Notifications, 2 unread" })).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Unread")).toHaveLength(2);
+    expect(mocks.refresh).toHaveBeenCalledOnce();
   });
 });
