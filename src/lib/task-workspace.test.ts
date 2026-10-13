@@ -30,6 +30,17 @@ describe("task workspace", () => {
     expect(attempts.prepare({ ...input, id: "intentional-new-file" }).id).toBe("intentional-new-file");
   });
 
+  it("searches task text within the chosen filter without changing completion or responsibility scope", () => {
+    const packing = { ...task, text: "Pack school lunches" };
+    expect(taskMatchesFilter(packing, "Backlog", "adult", "2026-09-12", "  SCHOOL  ")).toBe(true);
+    expect(taskMatchesFilter(packing, "All", "adult", "2026-09-12", "   ")).toBe(true);
+    expect(taskMatchesFilter(packing, "All", "adult", "2026-09-12", "school shoes")).toBe(false);
+    expect(taskMatchesFilter(packing, "Mine", "other", "2026-09-12", "school")).toBe(false);
+    expect(taskMatchesFilter({ ...packing, isCompleted: true }, "All", "adult", "2026-09-12", "school")).toBe(false);
+    expect(taskMatchesFilter({ ...packing, isCompleted: true }, "Completed", "adult", "2026-09-12", "school")).toBe(true);
+    expect(taskMatchesFilter({ ...packing, isCompleted: true }, "Completed", "adult", "2026-09-12", "shoes")).toBe(false);
+  });
+
   it("separates responsibility, backlog, and deadline views", () => {
     expect(taskMatchesFilter(task, "Mine", "adult", "2026-09-12")).toBe(true);
     expect(taskMatchesFilter(task, "Mine", "other", "2026-09-12")).toBe(false);

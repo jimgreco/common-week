@@ -194,7 +194,9 @@ struct WorkspaceTask: Codable, Identifiable, Hashable {
     var weekStartDate: String
     var isCompleted: Bool
 
-    func matches(_ filter: String, userId: String, today: String) -> Bool {
+    func matches(_ filter: String, userId: String, today: String, query: String = "") -> Bool {
+        let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard search.isEmpty || text.lowercased().contains(search) else { return false }
         if filter == "Completed" { return isCompleted }
         if isCompleted { return false }
         switch filter {

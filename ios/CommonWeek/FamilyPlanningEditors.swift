@@ -354,15 +354,17 @@ struct TaskWorkspaceView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var tasks: [WorkspaceTask] = []
     @State private var filter = "All"
+    @State private var query = ""
     @State private var capture = ""
     @State private var createAttempts = WorkspaceCreateAttempts()
     @FocusState private var captureFocused: Bool
+    @FocusState private var searchFocused: Bool
     @State private var error: String?
     @State private var busy = false
     @State private var selected: WorkspaceTask?
     @State private var loadRequest = UUID()
     private var today: String { WeekDate.string(Date(), timeZoneIdentifier: planner.household.timezone) }
-    private var filtered: [WorkspaceTask] { tasks.filter { $0.matches(filter, userId: viewModel.workspaceUserId, today: today) } }
+    private var filtered: [WorkspaceTask] { tasks.filter { $0.matches(filter, userId: viewModel.workspaceUserId, today: today, query: query) } }
 
     var body: some View {
         NavigationStack {
@@ -374,6 +376,21 @@ struct TaskWorkspaceView: View {
                     }
                 }
                 Section {
+                    HStack {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Search tasks", text: $query)
+                            .focused($searchFocused)
+                            .submitLabel(.search)
+                            .onSubmit { searchFocused = false }
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("task-workspace-search")
+                        if !query.isEmpty {
+                            Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Clear search")
+                        }
+                    }
                     Picker("Show", selection: $filter) { ForEach(["All", "Mine", "Unassigned", "Backlog", "Overdue", "Completed"], id: \.self) { Text($0).tag($0) } }
                 }
                 if let error { Section { Text(error).foregroundStyle(.red) } }
@@ -387,7 +404,7 @@ struct TaskWorkspaceView: View {
                             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                     }
-                    if filtered.isEmpty { Text("No tasks in this view.").foregroundStyle(.secondary) }
+                    if filtered.isEmpty { Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No tasks in this view." : "No tasks match your search in this view.").foregroundStyle(.secondary) }
                 }
             }
             .navigationTitle("Household tasks")
@@ -421,6 +438,7 @@ struct TaskWorkspaceView: View {
             createAttempts.complete(body)
             if capture.trimmingCharacters(in: .whitespacesAndNewlines) == submittedText { capture = "" }
             filter = "Backlog"
+            query = ""
             await reload()
         }
         catch { self.error = error.localizedDescription }

@@ -1360,6 +1360,9 @@ textarea:focus-visible {
 .task-workspace { display: grid; gap: 18px; }
 .workspace-capture { display:flex; gap:8px; align-items:center; }
 .workspace-capture input { flex:1; min-width:0; }
+.workspace-search { display:flex; align-items:center; gap:10px; }
+.workspace-search input { min-width:0; flex:1; padding:10px; border:1px solid var(--rule); border-radius:8px; background:var(--paper); color:inherit; }
+.workspace-search button { flex:none; color:var(--accent); font-size:13px; }
 .workspace-filters { display:flex; gap:6px; flex-wrap:wrap; }
 .workspace-filters button { border:1px solid var(--rule); border-radius:20px; padding:7px 12px; }
 .workspace-filters button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }

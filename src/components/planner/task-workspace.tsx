@@ -215,6 +215,7 @@ export function TaskWorkspaceDialog({
   const context = useContext(WorkspaceContext)!;
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [filter, setFilter] = useState("All");
+  const [query, setQuery] = useState("");
   const [text, setText] = useState("");
   const [selected, setSelected] = useState<string | null>(
     initialItemId ?? null,
@@ -255,6 +256,7 @@ export function TaskWorkspaceDialog({
       });
       setText((current) => current.trim() === submittedText ? "" : current);
       setFilter("Backlog");
+      setQuery("");
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -263,6 +265,9 @@ export function TaskWorkspaceDialog({
       setBusy(false);
     }
   }
+  const filteredTasks = tasks.filter((task) =>
+    taskMatchesFilter(task, filter, context.userId, context.today, query),
+  );
   if (selected)
     return (
       <Modal
@@ -315,6 +320,16 @@ export function TaskWorkspaceDialog({
             </button>
           </div>
         )}
+        <div className="workspace-search">
+          <input
+            type="search"
+            aria-label="Search tasks"
+            placeholder="Search tasks…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query && <button type="button" onClick={() => setQuery("")}>Clear search</button>}
+        </div>
         <div
           className="workspace-filters"
           role="group"
@@ -335,11 +350,7 @@ export function TaskWorkspaceDialog({
         </div>
         {error && <p role="alert">{error}</p>}
         <div className="workspace-task-list">
-          {tasks
-            .filter((t) =>
-              taskMatchesFilter(t, filter, context.userId, context.today),
-            )
-            .map((t) => (
+          {filteredTasks.map((t) => (
               <button
                 type="button"
                 className="workspace-task"
@@ -369,12 +380,10 @@ export function TaskWorkspaceDialog({
               </button>
             ))}
         </div>
-        {!tasks.some((t) =>
-          taskMatchesFilter(t, filter, context.userId, context.today),
-        ) && (
-          <p className="muted">
-            No {filter.toLowerCase() === "all" ? "open" : filter.toLowerCase()}{" "}
-            tasks.
+        {filteredTasks.length === 0 && (
+          <p className="muted" role="status">
+            {query.trim() ? "No tasks match your search in this view." :
+              `No ${filter === "All" ? "open" : filter.toLowerCase()} tasks.`}
           </p>
         )}
       </div>

@@ -341,6 +341,35 @@ final class CommonWeekScreenshots: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
+    func testTaskWorkspaceSearch() throws {
+        launchDemo()
+        #if targetEnvironment(macCatalyst)
+        app.buttons["Tasks & backlog"].tap()
+        #else
+        app.buttons["Tasks and backlog"].tap()
+        #endif
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8))
+        capture.tap(); capture.typeText("Searchable camp checklist")
+        app.buttons["Add to backlog"].tap()
+        let task = app.buttons.containing(.staticText, identifier: "Searchable camp checklist").firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 8))
+        let search = app.textFields["task-workspace-search"]
+        XCTAssertTrue(search.exists); search.tap(); search.typeText("CAMP")
+        XCTAssertTrue(task.exists)
+        search.typeText(" missing")
+        XCTAssertTrue(app.staticTexts["No tasks match your search in this view."].waitForExistence(timeout: 5))
+        XCTAssertFalse(task.exists)
+        app.buttons["Clear search"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "Search tasks")
+        search.tap(); search.typeText("CAMP\n")
+        XCTAssertTrue(task.isHittable)
+        attachCurrentScreen(named: "Household tasks search")
+        task.tap()
+        XCTAssertTrue(app.buttons["I’ll take this"].waitForExistence(timeout: 5))
+    }
+
     func testTaskWorkspaceCaptureAndDetails() throws {
         launchDemo()
         app.buttons["Tasks and backlog"].tap()

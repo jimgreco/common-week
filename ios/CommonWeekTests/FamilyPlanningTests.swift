@@ -32,6 +32,18 @@ final class FamilyPlanningTests: XCTestCase {
         XCTAssertNotEqual(first["id"]?.stringValue, try attempts.prepare(changed)["id"]?.stringValue)
     }
 
+    func testWorkspaceSearchRespectsSelectedFilter() {
+        var task = WorkspaceTask(id: "task", text: "Pack school lunches", type: "task", responsibleMemberId: "adult", deadline: nil, isBacklog: true, planningDate: nil, weekStartDate: "2026-09-07", isCompleted: false)
+        XCTAssertTrue(task.matches("Backlog", userId: "adult", today: "2026-09-12", query: "  SCHOOL  "))
+        XCTAssertTrue(task.matches("All", userId: "adult", today: "2026-09-12", query: "   "))
+        XCTAssertFalse(task.matches("All", userId: "adult", today: "2026-09-12", query: "school shoes"))
+        XCTAssertFalse(task.matches("Mine", userId: "other", today: "2026-09-12", query: "school"))
+        task.isCompleted = true
+        XCTAssertFalse(task.matches("All", userId: "adult", today: "2026-09-12", query: "school"))
+        XCTAssertTrue(task.matches("Completed", userId: "adult", today: "2026-09-12", query: "school"))
+        XCTAssertFalse(task.matches("Completed", userId: "adult", today: "2026-09-12", query: "shoes"))
+    }
+
     func testWorkspaceResponsibilityAndDeadlineFilters() {
         var task = WorkspaceTask(id: "task", text: "Pack", type: "task", responsibleMemberId: "adult", deadline: "2026-09-11", isBacklog: true, planningDate: nil, weekStartDate: "2026-09-07", isCompleted: false)
         XCTAssertTrue(task.matches("Mine", userId: "adult", today: "2026-09-12"))

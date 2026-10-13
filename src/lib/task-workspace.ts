@@ -115,7 +115,9 @@ export function taskMatchesFilter(
   filter: string,
   userId: string,
   today: string,
+  query = "",
 ): boolean {
+  if (!task.text.toLowerCase().includes(query.trim().toLowerCase())) return false;
   if (filter === "Completed") return task.isCompleted;
   if (task.isCompleted) return false;
   if (filter === "Mine") return task.responsibleMemberId === userId;

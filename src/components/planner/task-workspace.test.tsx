@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ItemCollaboration, TaskWorkspaceDialog, TaskWorkspaceProvider } from "./task-workspace";
-import type { TaskWorkspaceData } from "@/lib/task-workspace";
+import type { TaskRecord, TaskWorkspaceData } from "@/lib/task-workspace";
 
 vi.mock("./dialogs", () => ({ Modal: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 
@@ -99,5 +99,28 @@ describe("task workspace create retries", () => {
     await waitFor(() => expect(input).toHaveValue(""));
     expect(posts()[0].kind).toBe(kind);
     expect(posts()[1].id).toBe(posts()[0].id);
+  });
+});
+
+
+describe("task workspace search", () => {
+  it("combines text with completion filters and restores the selected view when cleared", async () => {
+    const task: TaskRecord = { id: "open", text: "Pack school lunch", type: "task", responsibleMemberId: "user", deadline: null, isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
+    fetchMock.mockResolvedValue(reply({ ...empty, tasks: [task, { ...task, id: "other", text: "Order books" }, { ...task, id: "done", text: "Pack school supplies", isCompleted: true }] }));
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    await screen.findByRole("button", { name: /Pack school lunch/ });
+    const search = screen.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(search, { target: { value: "  SCHOOL  " } });
+    expect(screen.queryByRole("button", { name: /Order books/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Pack school supplies/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Completed" }));
+    expect(screen.getByRole("button", { name: /Pack school supplies/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Pack school lunch/ })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "missing" } });
+    expect(screen.getByRole("status")).toHaveTextContent("No tasks match your search in this view.");
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(search).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Completed" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Pack school supplies/ })).toBeInTheDocument();
   });
 });
