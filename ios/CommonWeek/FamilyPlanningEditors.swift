@@ -459,7 +459,7 @@ struct ItemCollaborationFields: View {
 
     var body: some View {
         ItemCollaborationContent(resource: resource, planner: planner, viewModel: viewModel, includePlacement: includePlacement, showsSaveNotice: showsSaveNotice, compact: compact, files: files)
-            .id(resource.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: "|"))
+            .id("\(planner.household.id):\(viewModel.workspaceUserId):" + resource.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: "|"))
     }
 }
 

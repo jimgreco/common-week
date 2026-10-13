@@ -10,8 +10,8 @@ const empty: TaskWorkspaceData = { tasks: [], entries: [], task: null };
 const reply = (data = empty) => ({ json: async () => ({ ok: true, data }) });
 const fetchMock = vi.fn();
 const changes = vi.fn();
-function workspace(children: ReactNode) {
-  return <TaskWorkspaceProvider people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={changes}>{children}</TaskWorkspaceProvider>;
+function workspace(children: ReactNode, householdId = "household", userId = "user") {
+  return <TaskWorkspaceProvider householdId={householdId} people={[]} userId={userId} canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={changes}>{children}</TaskWorkspaceProvider>;
 }
 function posts() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(init.body)); }
 
@@ -19,6 +19,28 @@ beforeEach(() => { fetchMock.mockReset().mockResolvedValue(reply()); changes.moc
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("task workspace create retries", () => {
+  it.each([
+    { scope: "household", householdId: "other-household", userId: "user" },
+    { scope: "account", householdId: "household", userId: "other-user" },
+  ])("does not reuse drafts or create IDs after changing $scope", async ({ householdId, userId }) => {
+    fetchMock.mockImplementation(async (_url, init) => {
+      if (init?.method === "POST") throw new TypeError("Connection interrupted");
+      return reply();
+    });
+    const { rerender } = render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    fireEvent.change(screen.getByRole("textbox", { name: "Capture a task" }), { target: { value: "Pack lunch" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to backlog" }));
+    await screen.findByRole("alert");
+    rerender(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />, householdId, userId));
+    const input = screen.getByRole("textbox", { name: "Capture a task" });
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "Pack lunch" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to backlog" }));
+    await screen.findByRole("alert");
+    expect(posts()[1].id).not.toBe(posts()[0].id);
+  });
+
   it("reuses a backlog task ID after a lost response, then allows an intentional duplicate", async () => {
     let fail = true;
     fetchMock.mockImplementation(async (_url, init) => {

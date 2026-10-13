@@ -35,7 +35,24 @@ type WorkspaceContextValue = {
   openFile: (entry: CollaborationEntry) => Promise<File>;
 };
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
-export function TaskWorkspaceProvider({
+type TaskWorkspaceProviderProps = {
+  children: ReactNode;
+  householdId: string;
+  people: Person[];
+  userId: string;
+  canEdit: boolean;
+  week: string;
+  today: string;
+  isDemo: boolean;
+  tasks: TaskRecord[];
+  onChange: (task?: TaskRecord) => void;
+};
+
+export function TaskWorkspaceProvider(props: TaskWorkspaceProviderProps) {
+  return <ScopedTaskWorkspaceProvider key={`${props.householdId}:${props.userId}:${props.isDemo}`} {...props} />;
+}
+
+function ScopedTaskWorkspaceProvider({
   children,
   people,
   userId,
@@ -45,17 +62,7 @@ export function TaskWorkspaceProvider({
   isDemo,
   tasks,
   onChange,
-}: {
-  children: ReactNode;
-  people: Person[];
-  userId: string;
-  canEdit: boolean;
-  week: string;
-  today: string;
-  isDemo: boolean;
-  tasks: TaskRecord[];
-  onChange: (task?: TaskRecord) => void;
-}) {
+}: TaskWorkspaceProviderProps) {
   const createAttempts = useRef(new WorkspaceCreateAttempts());
   const taskRef = useRef(tasks);
   useEffect(() => {

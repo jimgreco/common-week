@@ -9,7 +9,7 @@ const fetchMock = vi.fn();
 const empty: TaskWorkspaceData = { tasks: [], entries: [], task: null };
 const reply = (data = empty) => ({ json: async () => ({ ok: true, data }) });
 function details(itemId: string) {
-  return <TaskWorkspaceProvider people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><ItemCollaboration resource={{ itemId }} /></TaskWorkspaceProvider>;
+  return <TaskWorkspaceProvider householdId="household" people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><ItemCollaboration resource={{ itemId }} /></TaskWorkspaceProvider>;
 }
 function checklist(text: string): TaskWorkspaceData {
   return { ...empty, entries: [{ id: text, text, kind: "checklist", completed: false, createdBy: "user", author: "You", createdAt: "2026-10-12T12:00:00Z" }] };
@@ -59,7 +59,7 @@ describe("shared detail loading", () => {
       if (++loads === 1) return new Promise((yes) => { finishInitial = yes; });
       return Promise.resolve(reply({ ...empty, tasks: [task] }));
     });
-    render(<TaskWorkspaceProvider people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><TaskWorkspaceDialog onClose={vi.fn()} /></TaskWorkspaceProvider>);
+    render(<TaskWorkspaceProvider householdId="household" people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><TaskWorkspaceDialog onClose={vi.fn()} /></TaskWorkspaceProvider>);
     await waitFor(() => expect(loads).toBe(1));
     fireEvent.change(screen.getByRole("textbox", { name: "Capture a task" }), { target: { value: task.text } });
     fireEvent.click(screen.getByRole("button", { name: "Add to backlog" }));

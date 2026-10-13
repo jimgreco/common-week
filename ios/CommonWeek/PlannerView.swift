@@ -607,6 +607,7 @@ struct PlannerView: View {
             case .coverage: CoverageView(planner: data, viewModel: viewModel)
             case .shareWeek: WeekShareView(planner: data, viewModel: viewModel)
             case .taskWorkspace(let id): TaskWorkspaceView(planner: data, viewModel: viewModel, initialItemId: id)
+                .id("\(data.household.id):\(viewModel.workspaceUserId)")
             case .familyPlanning: FamilyPlanningView(planner: data, viewModel: viewModel)
             case .settings: SettingsView(data: data, viewModel: viewModel, auth: auth, appleReminders: appleReminders)
             }
