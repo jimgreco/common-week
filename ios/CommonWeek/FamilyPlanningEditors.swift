@@ -355,6 +355,7 @@ struct TaskWorkspaceView: View {
     @State private var tasks: [WorkspaceTask] = []
     @State private var filter = "All"
     @State private var capture = ""
+    @State private var createAttempts = WorkspaceCreateAttempts()
     @FocusState private var captureFocused: Bool
     @State private var error: String?
     @State private var busy = false
@@ -402,8 +403,17 @@ struct TaskWorkspaceView: View {
         do { tasks = try await WorkspaceAccess.load(planner: planner).tasks; error = nil } catch { self.error = error.localizedDescription }
     }
     private func add() async {
+        let submittedText = capture.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !submittedText.isEmpty else { return }
         busy = true; defer { busy = false }
-        do { try await WorkspaceAccess.mutate(["action": .string("capture"), "id": .string(UUID().uuidString), "text": .string(capture.trimmingCharacters(in: .whitespacesAndNewlines))], planner: planner, userId: viewModel.workspaceUserId); capture = ""; filter = "Backlog"; await reload() }
+        do {
+            let body = try createAttempts.prepare(["action": .string("capture"), "text": .string(submittedText)])
+            try await WorkspaceAccess.mutate(body, planner: planner, userId: viewModel.workspaceUserId)
+            createAttempts.complete(body)
+            if capture.trimmingCharacters(in: .whitespacesAndNewlines) == submittedText { capture = "" }
+            filter = "Backlog"
+            await reload()
+        }
         catch { self.error = error.localizedDescription }
     }
 }
@@ -440,6 +450,7 @@ struct ItemCollaborationFields: View {
     @State private var payload: TaskWorkspacePayload?
     @State private var error: String?
     @State private var busy = false
+    @State private var createAttempts = WorkspaceCreateAttempts()
     @State private var step = ""
     @State private var comment = ""
     @State private var nameDraft: String?
@@ -464,7 +475,10 @@ struct ItemCollaborationFields: View {
             }
             if viewModel.canEditHousehold {
                 TextField("Add a step", text: $step).focused($editingField, equals: "step")
-                Button("Add step") { Task { if await addEntry("checklist", text: step) { step = ""; editingField = nil } } }.disabled(busy || step.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Add step") { Task {
+                    let submitted = step
+                    if await addEntry("checklist", text: submitted), step == submitted { step = ""; editingField = nil }
+                } }.disabled(busy || step.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         ItemCollaborationSection("Discussion", compact: compact) {
@@ -478,7 +492,10 @@ struct ItemCollaborationFields: View {
             }
             if viewModel.canEditHousehold {
                 TextField("Leave a note for the household", text: $comment, axis: .vertical).lineLimit(3...6).focused($editingField, equals: "comment")
-                Button("Post comment") { Task { if await addEntry("comment", text: comment) { comment = ""; editingField = nil } } }.disabled(busy || comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Post comment") { Task {
+                    let submitted = comment
+                    if await addEntry("comment", text: submitted), comment == submitted { comment = ""; editingField = nil }
+                } }.disabled(busy || comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         ItemCollaborationSection("Files", compact: compact, footer: "Tap a file to preview it or open it in another app. Shared with people who can view this item. Up to 5 MB per file.") {
@@ -537,9 +554,17 @@ struct ItemCollaborationFields: View {
     }
     private func reload() async { do { payload = try await WorkspaceAccess.load(planner: planner, resource: resource) } catch { self.error = error.localizedDescription } }
     @discardableResult private func save(_ action: String, fields: [String: WorkspaceValue]) async -> Bool {
+        guard !busy else { return false }
         busy = true; error = nil; defer { busy = false }
         var body = fields; body["action"] = .string(action); body["resource"] = .object(resource.mapValues { .string($0) })
-        do { try await WorkspaceAccess.mutate(body, planner: planner, userId: viewModel.workspaceUserId); await reload(); if planner.isDemo, let current = viewModel.data { viewModel.data = WorkspaceAccess.applying(to: current) }; return true }
+        do {
+            body = try createAttempts.prepare(body)
+            try await WorkspaceAccess.mutate(body, planner: planner, userId: viewModel.workspaceUserId)
+            createAttempts.complete(body)
+            await reload()
+            if planner.isDemo, let current = viewModel.data { viewModel.data = WorkspaceAccess.applying(to: current) }
+            return true
+        }
         catch { self.error = error.localizedDescription; return false }
     }
     private func addEntry(_ kind: String, text: String) async -> Bool { await save("add", fields: ["id": .string(UUID().uuidString), "kind": .string(kind), "text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines))]) }

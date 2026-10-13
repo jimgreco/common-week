@@ -2,6 +2,36 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testWorkspaceCreatesReuseIdentityUntilConfirmed() throws {
+        var attempts = WorkspaceCreateAttempts()
+        let input: [String: WorkspaceValue] = ["action": .string("capture"), "text": .string("Pack lunch")]
+        let first = try attempts.prepare(input)
+        let retry = try attempts.prepare(input)
+        XCTAssertNotNil(first["id"]?.stringValue)
+        XCTAssertEqual(first["id"]?.stringValue, retry["id"]?.stringValue)
+        let different = try attempts.prepare(["action": .string("capture"), "text": .string("Next task")])
+        XCTAssertNotEqual(first["id"]?.stringValue, different["id"]?.stringValue)
+        attempts.complete(retry)
+        let intentionalRepeat = try attempts.prepare(input)
+        XCTAssertNotEqual(first["id"]?.stringValue, intentionalRepeat["id"]?.stringValue)
+    }
+
+    func testWorkspaceEntryRetriesIncludeResourceAndFileContents() throws {
+        var attempts = WorkspaceCreateAttempts()
+        let input: [String: WorkspaceValue] = ["action": .string("add"), "resource": .object(["itemId": .string("first")]), "kind": .string("file"), "text": .string("notes.txt"), "fileData": .string("YQ==")]
+        let first = try attempts.prepare(input)
+        var retryInput = input
+        retryInput["id"] = .string(UUID().uuidString)
+        let retry = try attempts.prepare(retryInput)
+        XCTAssertEqual(first["id"]?.stringValue, retry["id"]?.stringValue)
+        var changed = input
+        changed["fileData"] = .string("Yg==")
+        XCTAssertNotEqual(first["id"]?.stringValue, try attempts.prepare(changed)["id"]?.stringValue)
+        changed = input
+        changed["resource"] = .object(["itemId": .string("second")])
+        XCTAssertNotEqual(first["id"]?.stringValue, try attempts.prepare(changed)["id"]?.stringValue)
+    }
+
     func testWorkspaceResponsibilityAndDeadlineFilters() {
         var task = WorkspaceTask(id: "task", text: "Pack", type: "task", responsibleMemberId: "adult", deadline: "2026-09-11", isBacklog: true, planningDate: nil, weekStartDate: "2026-09-07", isCompleted: false)
         XCTAssertTrue(task.matches("Mine", userId: "adult", today: "2026-09-12"))

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   taskMatchesFilter,
   workspaceMutationSchema,
+  WorkspaceCreateAttempts,
+  type WorkspaceMutation,
   type TaskRecord,
 } from "./task-workspace";
 const task: TaskRecord = {
@@ -16,6 +18,18 @@ const task: TaskRecord = {
   isCompleted: false,
 };
 describe("task workspace", () => {
+  it("keeps file retries stable while distinguishing item and file contents", () => {
+    const attempts = new WorkspaceCreateAttempts();
+    const input: WorkspaceMutation = { action: "add", resource: { itemId: "task-a" }, id: "first", kind: "file", text: "notes.txt", fileData: "YQ==" };
+    expect(attempts.prepare({ ...input, id: "retry" }).id).toBe("retry");
+    const retry = attempts.prepare(input);
+    expect(retry.id).toBe("retry");
+    expect(attempts.prepare({ ...input, id: "other-file", fileData: "Yg==" }).id).toBe("other-file");
+    expect(attempts.prepare({ ...input, id: "other-task", resource: { itemId: "task-b" } }).id).toBe("other-task");
+    attempts.complete(retry);
+    expect(attempts.prepare({ ...input, id: "intentional-new-file" }).id).toBe("intentional-new-file");
+  });
+
   it("separates responsibility, backlog, and deadline views", () => {
     expect(taskMatchesFilter(task, "Mine", "adult", "2026-09-12")).toBe(true);
     expect(taskMatchesFilter(task, "Mine", "other", "2026-09-12")).toBe(false);

@@ -234,3 +234,31 @@ enum WorkspaceValue: Encodable {
     var stringValue: String? { if case .string(let value) = self { return value }; return nil }
     var boolValue: Bool? { if case .bool(let value) = self { return value }; return nil }
 }
+
+/// An interrupted response must not turn a retry into another task, comment, or file.
+struct WorkspaceCreateAttempts {
+    private var attempts: [Data: String] = [:]
+
+    mutating func prepare(_ input: [String: WorkspaceValue]) throws -> [String: WorkspaceValue] {
+        guard ["capture", "add"].contains(input["action"]?.stringValue ?? "") else { return input }
+        let signature = try signature(input)
+        let id = attempts[signature] ?? input["id"]?.stringValue ?? UUID().uuidString
+        attempts[signature] = id
+        var body = input
+        body["id"] = .string(id)
+        return body
+    }
+
+    mutating func complete(_ input: [String: WorkspaceValue]) {
+        guard let signature = try? signature(input), attempts[signature] == input["id"]?.stringValue else { return }
+        attempts[signature] = nil
+    }
+
+    private func signature(_ input: [String: WorkspaceValue]) throws -> Data {
+        var body = input
+        body["id"] = nil
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try encoder.encode(body)
+    }
+}

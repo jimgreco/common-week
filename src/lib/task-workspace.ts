@@ -84,6 +84,32 @@ export const workspaceMutationSchema = z.discriminatedUnion("action", [
   }),
 ]);
 export type WorkspaceMutation = z.infer<typeof workspaceMutationSchema>;
+
+/** Keep a create's identity until its response is confirmed, including lost responses. */
+export class WorkspaceCreateAttempts {
+  private attempts = new Map<string, string>();
+
+  prepare<T extends WorkspaceMutation>(input: T): T {
+    if (input.action !== "capture" && input.action !== "add") return input;
+    const signature = this.signature(input);
+    const id = this.attempts.get(signature) ?? input.id;
+    this.attempts.set(signature, id);
+    return { ...input, id };
+  }
+
+  complete(input: WorkspaceMutation) {
+    if (input.action !== "capture" && input.action !== "add") return;
+    const signature = this.signature(input);
+    if (this.attempts.get(signature) === input.id) this.attempts.delete(signature);
+  }
+
+  private signature(input: Extract<WorkspaceMutation, { action: "capture" | "add" }>) {
+    return JSON.stringify(input.action === "capture"
+      ? [input.action, input.text]
+      : [input.action, "itemId" in input.resource ? input.resource.itemId : [input.resource.calendarId, input.resource.eventId], input.kind, input.text, input.fileData]);
+  }
+}
+
 export function taskMatchesFilter(
   task: TaskRecord,
   filter: string,

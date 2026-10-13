@@ -12,6 +12,7 @@ import {
 import { Modal } from "@/components/planner/dialogs";
 import {
   taskMatchesFilter,
+  WorkspaceCreateAttempts,
   type TaskRecord,
   type ItemResource,
   type TaskWorkspaceData,
@@ -55,6 +56,7 @@ export function TaskWorkspaceProvider({
   tasks: TaskRecord[];
   onChange: (task?: TaskRecord) => void;
 }) {
+  const createAttempts = useRef(new WorkspaceCreateAttempts());
   const taskRef = useRef(tasks);
   useEffect(() => {
     taskRef.current = tasks;
@@ -106,6 +108,7 @@ export function TaskWorkspaceProvider({
   );
   const mutate = useCallback(
     async (input: WorkspaceMutation) => {
+      input = createAttempts.current.prepare(input);
       if (!isDemo) {
         const result = await fetch("/api/task-workspace", {
           method: "POST",
@@ -113,6 +116,7 @@ export function TaskWorkspaceProvider({
           body: JSON.stringify(input),
         }).then((r) => r.json());
         if (!result.ok) throw new Error(result.error);
+        createAttempts.current.complete(input);
         changed.current();
         return;
       }
@@ -163,6 +167,7 @@ export function TaskWorkspaceProvider({
         }
       }
       localStorage.setItem("weekofus-task-workspace", JSON.stringify(d));
+      createAttempts.current.complete(input);
       changed.current(updated);
     },
     [isDemo, demoRead, week, userId, people],
@@ -206,6 +211,7 @@ export function TaskWorkspaceDialog({
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const capturing = useRef(false);
   const loadTasks = context.load;
   const refresh = useCallback(async () => {
     try {
@@ -219,21 +225,24 @@ export function TaskWorkspaceDialog({
     return () => clearTimeout(timer);
   }, [refresh]);
   async function capture() {
-    if (!text.trim()) return;
+    const submittedText = text.trim();
+    if (!submittedText || capturing.current) return;
+    capturing.current = true;
     setBusy(true);
     setError("");
     try {
       await context.mutate({
         action: "capture",
         id: crypto.randomUUID(),
-        text: text.trim(),
+        text: submittedText,
       });
-      setText("");
+      setText((current) => current.trim() === submittedText ? "" : current);
       setFilter("Backlog");
       await refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      capturing.current = false;
       setBusy(false);
     }
   }
@@ -371,6 +380,7 @@ export function ItemCollaboration({
   const [opening, setOpening] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ entryId: string; resourceKey: string; file: File; url: string } | null>(null);
   const openRequest = useRef(0);
+  const saving = useRef(false);
   const key = JSON.stringify(resource);
   useEffect(() => () => { openRequest.current += 1; }, [key]);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
@@ -389,6 +399,8 @@ export function ItemCollaboration({
   }, [refresh]);
   if (!context) return null;
   async function save(input: WorkspaceMutation) {
+    if (saving.current) return false;
+    saving.current = true;
     setBusy(true);
     setError("");
     try {
@@ -399,6 +411,7 @@ export function ItemCollaboration({
       setError((e as Error).message);
       return false;
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
