@@ -1,5 +1,6 @@
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { addDateDays } from "@/lib/date";
+import { calendarLocalInstant } from "@/lib/calendar-event-input";
 import type { CalendarEvent, CalendarEventDraft, DayPlan, EditableCalendar } from "@/types/domain";
 
 export interface CalendarSlot { date: string; minute: number | null }
@@ -12,12 +13,7 @@ export function calendarDayDifference(from: string, to: string): number {
 }
 export function slotInstant(slot: CalendarSlot, timeZone: string): Date {
   const minute = slot.minute ?? 540;
-  const clock = `${slot.date}T${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
-  const instant = fromZonedTime(clock, timeZone);
-  if (!Number.isFinite(instant.getTime()) || formatInTimeZone(instant, timeZone, "yyyy-MM-dd'T'HH:mm") !== clock) {
-    throw new Error("That time does not exist because the clocks change. Choose another time.");
-  }
-  return instant;
+  return calendarLocalInstant(slot.date, `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`, timeZone);
 }
 function fields(start: Date, end: Date, timeZone: string) {
   return { startDate: formatInTimeZone(start, timeZone, "yyyy-MM-dd"), endDate: formatInTimeZone(end, timeZone, "yyyy-MM-dd"), startTime: formatInTimeZone(start, timeZone, "HH:mm"), endTime: formatInTimeZone(end, timeZone, "HH:mm") };
@@ -53,8 +49,8 @@ export function applyDemoCalendarDraft(days: DayPlan[], draft: CalendarEventDraf
   const prior = days.flatMap(day => day.events).find(event => event.providerEventId === draft.providerEventId && event.calendarPreferenceId === (draft.sourceCalendarPreferenceId ?? draft.calendarPreferenceId));
   const calendar = calendars.find(calendar => calendar.id === draft.calendarPreferenceId);
   if (!calendar) throw new Error("Choose an editable calendar.");
-  const start = draft.allDay ? draft.startDate : fromZonedTime(`${draft.startDate}T${draft.startTime}:00`, timeZone).toISOString();
-  const end = draft.allDay ? addDateDays(draft.endDate, 1) : fromZonedTime(`${draft.endDate}T${draft.endTime}:00`, timeZone).toISOString();
+  const start = draft.allDay ? draft.startDate : calendarLocalInstant(draft.startDate, draft.startTime, timeZone).toISOString();
+  const end = draft.allDay ? addDateDays(draft.endDate, 1) : calendarLocalInstant(draft.endDate, draft.endTime, timeZone).toISOString();
   if (end <= start) throw new Error("End time must be after the start time.");
   const event: CalendarEvent = { ...prior, id: prior?.id ?? crypto.randomUUID(), providerEventId: prior?.providerEventId ?? crypto.randomUUID(), etag: crypto.randomUUID(),
     calendarPreferenceId: calendar.id, canEdit: true, title: draft.title, description: draft.description, location: draft.location, start, end, allDay: draft.allDay,

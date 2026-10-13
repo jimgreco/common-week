@@ -35,6 +35,12 @@ describe("calendar interactions", () => {
   it("does not silently shorten an event ending in the repeated fall hour", () => {
     expect(() => calendarMoveDraft({ ...source, end: "2026-09-14T11:00:00-04:00" }, { date: "2026-11-01", minute: 30 }, zone)).toThrow(/duration/);
   });
+  it("rejects skipped start and end times in demo saves just like provider saves", () => {
+    const draft = newCalendarDraft({ date: "2026-03-08", minute: 90 }, data.editableCalendars[0].id, zone);
+    for (const times of [{ startTime: "02:30", endTime: "03:30" }, { startTime: "01:30", endTime: "02:30" }]) {
+      expect(() => applyDemoCalendarDraft(data.days, { ...draft, ...times }, data.editableCalendars, zone)).toThrow(/does not exist/);
+    }
+  });
   it("actually creates and moves demo events, removes the old placement and clips overnight spans", () => {
     const date = data.days[0].date;
     const draft = { ...newCalendarDraft({ date, minute: 1410 }, data.editableCalendars[0].id, zone), title: "Calendar click test" };

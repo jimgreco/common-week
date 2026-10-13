@@ -1,7 +1,19 @@
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { addDateDays } from "@/lib/date";
+import { addDateDays, isDateOnly } from "@/lib/date";
 import type { GoogleCalendarEventInput, GoogleCalendarEventResource } from "@/lib/integrations/google-calendar";
 import type { CalendarEventDraft, CalendarRecurrenceRule } from "@/types/domain";
+
+export function calendarLocalInstant(date: string, time: string, timeZone: string): Date {
+  if (!isDateOnly(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new Error("Choose a valid date and time.");
+  }
+  const clock = `${date}T${time}`;
+  const instant = fromZonedTime(clock, timeZone);
+  if (!Number.isFinite(instant.getTime()) || formatInTimeZone(instant, timeZone, "yyyy-MM-dd'T'HH:mm") !== clock) {
+    throw new Error("That time does not exist because the clocks change. Choose another time.");
+  }
+  return instant;
+}
 
 export function buildGoogleRecurrenceRule(rule: CalendarRecurrenceRule, timeZone: string, allDay = false): string {
   const parts = [`FREQ=${rule.frequency.toUpperCase()}`, `INTERVAL=${rule.interval}`];
@@ -45,9 +57,9 @@ export function buildGoogleCalendarEventInput(
     };
   }
 
-  const start = fromZonedTime(`${draft.startDate}T${draft.startTime}:00`, timeZone);
-  const end = fromZonedTime(`${draft.endDate}T${draft.endTime}:00`, timeZone);
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+  const start = calendarLocalInstant(draft.startDate, draft.startTime, timeZone);
+  const end = calendarLocalInstant(draft.endDate, draft.endTime, timeZone);
+  if (end <= start) {
     throw new Error("End time must be after the start time.");
   }
   return {

@@ -33,6 +33,20 @@ describe("Google event input", () => {
     }));
   });
 
+  it("rejects skipped clock times for either end of an event instead of silently changing them", () => {
+    for (const times of [{ startTime: "02:30", endTime: "03:30" }, { startTime: "01:30", endTime: "02:30" }]) {
+      expect(() => buildGoogleCalendarEventInput(draft({ startDate: "2026-03-08", endDate: "2026-03-08", ...times }), "America/New_York"))
+        .toThrow("That time does not exist because the clocks change. Choose another time.");
+    }
+    expect(() => buildGoogleCalendarEventInput(draft({ startDate: "2026-10-04", endDate: "2026-10-04", startTime: "02:15", endTime: "03:00" }), "Australia/Lord_Howe"))
+      .toThrow("That time does not exist");
+  });
+
+  it("keeps valid wall-clock times on either side of a daylight-saving change", () => {
+    expect(buildGoogleCalendarEventInput(draft({ startDate: "2026-03-08", endDate: "2026-03-08", startTime: "01:30", endTime: "03:30" }), "America/New_York"))
+      .toMatchObject({ start: { dateTime: "2026-03-08T06:30:00.000Z" }, end: { dateTime: "2026-03-08T07:30:00.000Z" } });
+  });
+
   it("rejects an end before the start and creates a retry-stable provider ID", () => {
     expect(() => buildGoogleCalendarEventInput(draft({ endTime: "08:59" }), "America/New_York")).toThrow("End time must be after");
     expect(deterministicGoogleEventId(draft().requestId)).toBe("ce019feeb6e0b27140b3101849e6abb7b4");
