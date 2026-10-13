@@ -34,6 +34,29 @@ final class CalendarTimelineTests: XCTestCase {
         XCTAssertEqual(draft.startDate, "2026-11-01"); XCTAssertEqual(draft.endDate, "2026-11-03"); XCTAssertTrue(draft.allDay)
     }
 
+    func testAllDayEditorUsesInclusiveEndWithoutChangingTheProviderSpan() throws {
+        for (start, exclusiveEnd, inclusiveEnd) in [
+            ("2026-09-14", "2026-09-15", "2026-09-14"),
+            ("2026-03-07", "2026-03-10", "2026-03-09"),
+            ("2026-12-31", "2027-01-02", "2027-01-01")
+        ] {
+            let original = try event("all-day", start, exclusiveEnd, allDay: true)
+            for zone in [timezone, "Pacific/Kiritimati"] {
+                let end = CalendarInteraction.editorEndDate(original, timezone: zone)
+                let date = WeekDate.string(end, timeZoneIdentifier: zone)
+                XCTAssertEqual(date, inclusiveEnd)
+                XCTAssertEqual(WeekDate.addDays(1, to: date), exclusiveEnd)
+            }
+        }
+    }
+
+    func testTimedEditorKeepsTheActualEndInstant() throws {
+        let original = try event("timed", "2026-03-08T06:30:00Z", "2026-03-08T07:30:00Z")
+        for zone in [timezone, "Pacific/Kiritimati"] {
+            XCTAssertEqual(CalendarInteraction.editorEndDate(original, timezone: zone), PlannerMoment.date(from: original.end))
+        }
+    }
+
     func testCalendarMoveRejectsMissingTimesAndPreservesSpringDuration() throws {
         XCTAssertThrowsError(try CalendarInteraction.instant(CalendarTimeSlot(date: "2026-03-08", minute: 150), timezone: timezone))
         let original = try event("spring-move", "2026-09-14T09:00:00-04:00", "2026-09-14T10:30:00-04:00")

@@ -12,6 +12,13 @@ struct CalendarTimeSlot: Equatable {
 
 enum CalendarInteraction {
     struct InvalidTime: LocalizedError { let message: String; var errorDescription: String? { message } }
+    static func editorEndDate(_ event: CalendarEvent, timezone: String) -> Date {
+        // Provider all-day ends are exclusive; the editor's Ends date is inclusive.
+        if event.allDay {
+            return WeekDate.calendarDate(WeekDate.addDays(-1, to: String(event.end.prefix(10))), hour: 12, timeZoneIdentifier: timezone)
+        }
+        return WeekDate.calendarEventDate(event.end, timeZoneIdentifier: timezone)
+    }
     static func dayDifference(_ start: String, _ end: String) -> Int {
         Int((WeekDate.calendarDate(end, timeZoneIdentifier: "UTC").timeIntervalSince(WeekDate.calendarDate(start, timeZoneIdentifier: "UTC")) / 86400).rounded())
     }

@@ -1252,7 +1252,7 @@ struct CalendarEventEditorView: View {
             WeekDate.calendarEventDate($0.start, timeZoneIdentifier: data.household.timezone)
         } ?? defaultStart)
         _end = State(initialValue: event.map {
-            WeekDate.calendarEventDate($0.end, timeZoneIdentifier: data.household.timezone)
+            CalendarInteraction.editorEndDate($0, timezone: data.household.timezone)
         } ?? defaultStart.addingTimeInterval(3600))
     }
 
@@ -1274,7 +1274,9 @@ struct CalendarEventEditorView: View {
                 }
                 Section {
                     DatePicker("Starts", selection: $start, displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                        .accessibilityIdentifier("calendar-event-start")
                     DatePicker("Ends", selection: $end, in: start..., displayedComponents: allDay ? [.date] : [.date, .hourAndMinute])
+                        .accessibilityIdentifier("calendar-event-end")
                 } header: {
                     Label("When", systemImage: "clock")
                 }

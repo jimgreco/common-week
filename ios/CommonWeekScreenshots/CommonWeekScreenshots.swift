@@ -211,6 +211,37 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.staticTexts["Calendar slot test"].firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testAllDayEventEditPreservesEndDate() throws {
+        launchDemo()
+        let addEvent = app.buttons["Add event"].firstMatch
+        XCTAssertTrue(scrollToExistence(addEvent)); addEvent.tap()
+        let title = app.textFields["Title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5)); title.tap(); title.typeText("All-day date check")
+        let allDay = app.switches["All-day event"]
+        allDay.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertEqual(allDay.value as? String, "1")
+        let endPicker = app.datePickers["calendar-event-end"]
+        let originalEnd = try XCTUnwrap(endPicker.buttons["Date Picker"].value as? String)
+        XCTAssertFalse(originalEnd.isEmpty)
+        XCTAssertEqual(app.datePickers["calendar-event-start"].buttons["Date Picker"].value as? String, originalEnd)
+        app.buttons["Save"].firstMatch.tap()
+
+        let added = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "All-day date check")).firstMatch
+        XCTAssertTrue(scrollToExistence(added)); added.tap()
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 5)); app.buttons["Edit"].tap()
+        XCTAssertTrue(app.navigationBars["Edit event"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.switches["All-day event"].value as? String, "1")
+        XCTAssertEqual(app.datePickers["calendar-event-end"].buttons["Date Picker"].value as? String, originalEnd)
+        attachCurrentScreen(named: "All-day edit keeps the inclusive end date")
+        app.buttons["Save"].firstMatch.tap()
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(scrollToExistence(added)); added.tap()
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(app.navigationBars["Edit event"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.switches["All-day event"].value as? String, "1")
+        XCTAssertEqual(app.datePickers["calendar-event-end"].buttons["Date Picker"].value as? String, originalEnd)
+    }
+
     func testCalendarPlanningPane() throws {
         launchDemo()
         let viewPicker = app.segmentedControls["calendar-view-picker"]
