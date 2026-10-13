@@ -452,6 +452,7 @@ export function LocationDialog({
   const [activeResult, setActiveResult] = useState(-1);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const resultsId = useId();
@@ -471,22 +472,32 @@ export function LocationDialog({
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setSearching(true);
-      const response = isDemo
-        ? { ok: true, data: demoLocationResults.filter((result) => locationResultName(result).toLowerCase().includes(trimmed.toLowerCase())) }
-        : await searchLocationsAction(trimmed);
-      if (cancelled) return;
-      const nextResults = response.data ?? [];
-      setResults(nextResults);
-      setActiveResult(nextResults.length ? 0 : -1);
-      setSearchError(response.ok ? null : response.error ?? "Location search is temporarily unavailable.");
-      setSearching(false);
+      setSearchError(null);
+      try {
+        const response = isDemo
+          ? { ok: true, data: demoLocationResults.filter((result) => locationResultName(result).toLowerCase().includes(trimmed.toLowerCase())) }
+          : await searchLocationsAction(trimmed);
+        if (cancelled) return;
+        const nextResults = response.data ?? [];
+        setResults(nextResults);
+        setActiveResult(nextResults.length ? 0 : -1);
+        setSearchError(response.ok ? null : response.error ?? "Location search is temporarily unavailable.");
+      } catch {
+        if (!cancelled) {
+          setResults([]);
+          setActiveResult(-1);
+          setSearchError("Location search is temporarily unavailable. Please try again.");
+        }
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
     }, 250);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [isDemo, query, selectedResult]);
+  }, [isDemo, query, selectedResult, searchAttempt]);
 
   const chooseResult = (result: GeocodingResult) => {
     setSelectedResult(result);
@@ -577,7 +588,7 @@ export function LocationDialog({
               </div>
             )}
           </div>
-          {searchError && <p className="location-picker-error" role="status">{searchError}</p>}
+          {searchError && <div><p className="location-picker-error" role="status">{searchError}</p><button type="button" className="text-button" disabled={searching} onClick={() => setSearchAttempt((attempt) => attempt + 1)}>Retry location search</button></div>}
           {selectedResult && (
             <div className="selected-search-location" aria-live="polite">
               <Check size={14} />
@@ -613,9 +624,14 @@ export function LocationDialog({
             setSaving(true);
             setSaveError(null);
             const memberIds = person === "everyone" ? members.map((member) => member.id) : [person];
-            const error = await onSave(selection, memberIds, scope);
-            if (error) setSaveError(error);
-            setSaving(false);
+            try {
+              const error = await onSave(selection, memberIds, scope);
+              if (error) setSaveError(error);
+            } catch {
+              setSaveError("Location changes could not be saved. Please try again.");
+            } finally {
+              setSaving(false);
+            }
           }}
         >
           {saving && <LoaderCircle className="spin" size={14} />}{saving ? "Saving…" : "Set location"}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CalendarEventEditorDialog, EventDetailDialog, LocationDialog } from "@/components/planner/dialogs";
 import type { CalendarEvent } from "@/types/domain";
@@ -90,6 +90,52 @@ describe("LocationDialog", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Location changes could not be saved.");
     expect(screen.getByRole("dialog", { name: "Set location · Monday" })).toBeInTheDocument();
+  });
+
+  it("recovers from a rejected search and retries the same query", async () => {
+    searchLocationsAction.mockRejectedValueOnce(new TypeError("Network interrupted")).mockResolvedValue({ ok: true, data: [{ id: "paris", name: "Paris", country: "France", latitude: 48.85, longitude: 2.35, timezone: "Europe/Paris" }] });
+    render(<LocationDialog date="2026-08-10" locations={[]} members={members} currentLocationId={null} isDemo={false} onClose={vi.fn()} onSave={vi.fn()} />);
+    const search = screen.getByRole("combobox");
+    fireEvent.change(search, { target: { value: "Paris" } });
+    expect(await screen.findByRole("status")).toHaveTextContent("Location search is temporarily unavailable");
+    expect(screen.queryByLabelText("Searching locations")).not.toBeInTheDocument();
+    expect(search).toHaveValue("Paris");
+    fireEvent.click(screen.getByRole("button", { name: "Retry location search" }));
+    expect(await screen.findByRole("option", { name: /Paris/ })).toBeInTheDocument();
+    expect(searchLocationsAction).toHaveBeenCalledTimes(2);
+    expect(searchLocationsAction).toHaveBeenLastCalledWith("Paris");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("ignores an obsolete search failure after a newer query succeeds", async () => {
+    let reject!: (error: Error) => void;
+    searchLocationsAction.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; })).mockResolvedValue({ ok: true, data: [{ id: "london", name: "London", country: "United Kingdom", latitude: 51.5, longitude: -0.12, timezone: "Europe/London" }] });
+    render(<LocationDialog date="2026-08-10" locations={[]} members={members} currentLocationId={null} isDemo={false} onClose={vi.fn()} onSave={vi.fn()} />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Paris" } });
+    await waitFor(() => expect(searchLocationsAction).toHaveBeenCalledWith("Paris"));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "London" } });
+    await screen.findByRole("option", { name: /London/ });
+    await act(async () => { reject(new TypeError("Old request failed")); });
+    expect(screen.getByRole("option", { name: /London/ })).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Searching locations")).not.toBeInTheDocument();
+  });
+
+  it("retains the location, person and range when a save rejects and permits retry", async () => {
+    const onSave = vi.fn().mockRejectedValueOnce(new TypeError("Network interrupted")).mockResolvedValue(null);
+    render(<LocationDialog date="2026-08-10" locations={[{ id: "home", name: "Home", latitude: 40.78, longitude: -73.97, timezone: "America/New_York", isSaved: true }]} members={members} currentLocationId="home" isDemo={false} onClose={vi.fn()} onSave={onSave} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Alex" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Entire week" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set location" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Location changes could not be saved. Please try again.");
+    expect(screen.getByRole("radio", { name: "Home" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Alex" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Entire week" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Set location" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(onSave.mock.calls[1]).toEqual(onSave.mock.calls[0]);
+    expect(screen.getByRole("button", { name: "Set location" })).toBeEnabled();
   });
 });
 
