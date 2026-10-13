@@ -188,6 +188,10 @@ describe("EventDetailDialog", () => {
 });
 
 describe("CalendarEventEditorDialog", () => {
+  beforeEach(() => {
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  });
+
   const calendars = [{
     id: "00000000-0000-4000-8000-000000000001",
     name: "Family",

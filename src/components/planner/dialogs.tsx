@@ -305,9 +305,14 @@ export function CalendarEventEditorDialog({
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const editing = Boolean(event);
   const calendarChoices = calendars;
   const canMoveCalendar = !event?.recurringEventId || draft.recurringScope === "series";
+
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ block: "center" });
+  }, [error]);
 
   return (
     <Modal title={editing ? event?.recurringEventId ? "Edit event occurrence" : "Edit Google event" : "Add Google event"} onClose={onClose}>
@@ -401,7 +406,7 @@ export function CalendarEventEditorDialog({
           <label>Notes<textarea value={draft.description} maxLength={8192} placeholder="Optional" onChange={(change) => setDraft({ ...draft, description: change.target.value })} /></label>
           <p className="event-timezone-note">Times use the household timezone: {timeZone}</p>
           {event?.recurringEventId && <p className="event-edit-note">Series edits keep the original recurrence dates and apply title, notes, location, all-day state, and time changes to every occurrence.</p>}
-          {error && <p className="location-picker-error" role="alert">{error}</p>}
+          {error && <p ref={errorRef} className="location-picker-error" role="alert">{error}</p>}
           {confirmDelete && <div className="delete-confirmation" role="alert"><strong>{event?.recurringEventId ? "Delete this occurrence from Google Calendar?" : "Delete this event from Google Calendar?"}</strong><span>This cannot be undone from Week of Us.</span><button className="button button-danger" type="button" disabled={deleting} onClick={async () => {
             if (!event) return;
             setDeleting(true);
