@@ -756,6 +756,7 @@ export function SearchDialog({
   results,
   query,
   loading,
+  error,
   onQuery,
   onClose,
   onEvent,
@@ -764,6 +765,7 @@ export function SearchDialog({
   results: PlannerSearchResult[];
   query: string;
   loading: boolean;
+  error: string | null;
   onQuery: (query: string) => void;
   onClose: () => void;
   onEvent: (event: CalendarEvent) => void;
@@ -775,7 +777,8 @@ export function SearchDialog({
         <label className="search-field"><Search size={16} /><input autoFocus value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search household planning…" /></label>
         <div className="search-results" aria-live="polite">
           {loading && <p className="empty-section">Searching…</p>}
-          {!loading && query.length >= 2 && !results.length && <p className="empty-section">No matching plans, tasks, or Calendar events.</p>}
+          {error && <div><p className="location-picker-error" role="alert">{error}</p><button type="button" className="button button-secondary" onClick={() => onQuery(query)}>Retry search</button></div>}
+          {!loading && !error && query.trim().length >= 2 && !results.length && <p className="empty-section">No matching plans, tasks, or Calendar events.</p>}
           {results.map((result) => result.kind === "planning_item" ? (
             <a href={`/planner?week=${result.item.weekStartDate}`} className="search-result" key={`item:${result.item.id}`}>
               <span>{result.item.type === "task" ? (result.item.isCompleted ? "☑" : "□") : "•"}</span>

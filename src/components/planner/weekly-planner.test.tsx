@@ -5,10 +5,10 @@ import { getDemoPlannerData } from "@/lib/demo-data";
 import { emptyFamilyPlanning } from "./family-planning-demo";
 import type { ActionResult, PlanningItem, WeeklyPlannerData } from "@/types/domain";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), toggle: vi.fn(), router: { refresh: vi.fn(), push: vi.fn(), replace: vi.fn() } }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), toggle: vi.fn(), search: vi.fn(), router: { refresh: vi.fn(), push: vi.fn(), replace: vi.fn() } }));
 vi.mock("next/navigation", () => ({ useRouter: () => mocks.router, useSearchParams: () => new URLSearchParams() }));
 vi.mock("@/app/actions/auth", () => ({ signOut: vi.fn() }));
-vi.mock("@/app/actions/planner", () => ({ createPlanningItemAction: mocks.create, deletePlanningItemAction: vi.fn(), hideCalendarEventAction: vi.fn(), searchPlannerAction: vi.fn(), setDailyLocationAction: vi.fn(), setGeocodedLocationAction: vi.fn(), togglePlanningItemAction: mocks.toggle, updatePlanningItemAction: vi.fn() }));
+vi.mock("@/app/actions/planner", () => ({ createPlanningItemAction: mocks.create, deletePlanningItemAction: vi.fn(), hideCalendarEventAction: vi.fn(), searchPlannerAction: mocks.search, setDailyLocationAction: vi.fn(), setGeocodedLocationAction: vi.fn(), togglePlanningItemAction: mocks.toggle, updatePlanningItemAction: vi.fn() }));
 vi.mock("@/app/actions/calendar", () => ({ createCalendarEventAction: vi.fn(), deleteCalendarEventAction: vi.fn(), respondToCalendarEventAction: vi.fn(), updateCalendarEventAction: vi.fn() }));
 vi.mock("@/app/actions/notifications", () => ({ setCalendarReminderAction: vi.fn() }));
 vi.mock("@/app/actions/family-planning", () => ({ loadFamilyPlanningAction: vi.fn(), mutateFamilyPlanningAction: vi.fn() }));
@@ -20,7 +20,7 @@ vi.mock("./week-share", () => ({ WeekShare: () => null }));
 vi.mock("./family-planning", () => ({ FamilyPlanningPanel: () => null }));
 vi.mock("./notification-inbox", () => ({ NotificationInboxButton: () => null }));
 vi.mock("./task-workspace", () => ({ TaskWorkspaceProvider: ({ children }: { children: ReactNode }) => children, TaskWorkspaceDialog: () => null }));
-vi.mock("./dialogs", () => ({ CalendarEventEditorDialog: () => null, EventDetailDialog: () => null, ItemEditorDialog: () => null, LocationDialog: () => null, SearchDialog: () => null, WeatherDialog: () => null }));
+vi.mock("./dialogs", async (importOriginal) => ({ CalendarEventEditorDialog: () => null, EventDetailDialog: () => null, ItemEditorDialog: () => null, LocationDialog: () => null, SearchDialog: (await importOriginal<typeof import("./dialogs")>()).SearchDialog, WeatherDialog: () => null }));
 
 import { WeeklyPlanner } from "./weekly-planner";
 
@@ -44,6 +44,7 @@ function savedItem(text: string, weekStartDate = week): PlanningItem {
 beforeEach(() => {
   mocks.create.mockReset();
   mocks.toggle.mockReset();
+  mocks.search.mockReset();
   vi.stubGlobal("EventSource", class { addEventListener() {} close() {} });
 });
 
@@ -107,5 +108,66 @@ describe("planner saves across retries and navigation", () => {
     const item = { ...savedItem("Already committed groceries"), id: mocks.create.mock.calls[0][0].id };
     rerender(planner({ ...dataFor(), weeklyItems: [item] }));
     expect(screen.getAllByRole("button", { name: "Already committed groceries" })).toHaveLength(1);
+  });
+});
+
+describe("planner search request ordering", () => {
+  const results = (text: string) => ({ ok: true, data: [{ kind: "planning_item", item: savedItem(text) }] });
+  function openSearch() {
+    render(planner(dataFor()));
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    return screen.getByPlaceholderText("Search household planning…");
+  }
+
+  it("keeps the latest query results and finishes loading while an older search is pending", async () => {
+    let resolve!: (value: ReturnType<typeof results>) => void;
+    mocks.search.mockReturnValueOnce(new Promise(yes => { resolve = yes; })).mockResolvedValue(results("Latest groceries"));
+    const input = openSearch();
+    fireEvent.change(input, { target: { value: "camp" } });
+    fireEvent.change(input, { target: { value: "groceries" } });
+    await screen.findByRole("link", { name: /Latest groceries/ });
+    expect(screen.queryByText("Searching…")).not.toBeInTheDocument();
+    await act(async () => { resolve(results("Obsolete camp")); });
+    expect(screen.getByRole("link", { name: /Latest groceries/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Obsolete camp/ })).not.toBeInTheDocument();
+  });
+
+  it.each(["clear", "close"])("discards pending results after %s", async (action) => {
+    let resolve!: (value: ReturnType<typeof results>) => void;
+    mocks.search.mockReturnValue(new Promise(yes => { resolve = yes; }));
+    const input = openSearch();
+    fireEvent.change(input, { target: { value: "camp" } });
+    if (action === "clear") fireEvent.change(input, { target: { value: "" } });
+    else {
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    }
+    await act(async () => { resolve(results("Obsolete camp")); });
+    expect(screen.queryByRole("link", { name: /Obsolete camp/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Searching…")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search household planning…")).toHaveValue("");
+  });
+
+  it("shows a recoverable request failure and retries the unchanged query", async () => {
+    mocks.search.mockRejectedValueOnce(new TypeError("Offline")).mockResolvedValue(results("Camp packing"));
+    fireEvent.change(openSearch(), { target: { value: "camp" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Search is temporarily unavailable");
+    expect(screen.queryByText("No matching plans, tasks, or Calendar events.")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry search" }));
+    await screen.findByRole("link", { name: /Camp packing/ });
+    expect(mocks.search.mock.calls.map(args => args[0])).toEqual(["camp", "camp"]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("ignores an obsolete failure after the new query succeeds", async () => {
+    let reject!: (error: Error) => void;
+    mocks.search.mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail; })).mockResolvedValue(results("Latest groceries"));
+    const input = openSearch();
+    fireEvent.change(input, { target: { value: "camp" } });
+    fireEvent.change(input, { target: { value: "groceries" } });
+    await screen.findByRole("link", { name: /Latest groceries/ });
+    await act(async () => { reject(new Error("Old request failed")); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Latest groceries/ })).toBeInTheDocument();
   });
 });

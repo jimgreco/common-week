@@ -5,7 +5,7 @@ import { CoveragePanel } from "./coverage-panel";
 import { WeekShare } from "./week-share";
 import { TaskWorkspaceProvider, TaskWorkspaceDialog } from "@/components/planner/task-workspace";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { ArrowLeft, ArrowRight, CalendarRange, CloudOff, Menu, Search, Settings, Users, WifiOff, X, Sparkles, Repeat2 } from "lucide-react";
 import { signOut } from "@/app/actions/auth";
 import { createCalendarEventAction, deleteCalendarEventAction, respondToCalendarEventAction, updateCalendarEventAction } from "@/app/actions/calendar";
@@ -106,7 +106,10 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<PlannerSearchResult[]>([]);
-  const [searching, startSearch] = useTransition();
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchRequest = useRef(0);
+  useEffect(() => () => { searchRequest.current += 1; }, [initialData.household.id, currentUserId]);
   const [online, setOnline] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [calendarState, setCalendarState] = useState(initialData.calendarState);
@@ -563,8 +566,12 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   };
 
   const runSearch = useCallback((query: string) => {
+    const request = ++searchRequest.current;
     setSearchQuery(query);
-    if (query.trim().length < 2) { setSearchResults([]); return; }
+    setSearchResults([]);
+    setSearchError(null);
+    setSearching(false);
+    if (query.trim().length < 2) return;
     if (initialData.isDemo) {
       const lowered = query.toLowerCase();
       setSearchResults([
@@ -573,11 +580,29 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       ]);
       return;
     }
-    startSearch(async () => {
-      const result = await searchPlannerAction(query);
-      setSearchResults(result.data ?? []);
-    });
+    setSearching(true);
+    void (async () => {
+      try {
+        const result = await searchPlannerAction(query);
+        if (searchRequest.current !== request) return;
+        if (!result.ok) setSearchError(result.error ?? "Search is temporarily unavailable. Please try again.");
+        else setSearchResults(result.data ?? []);
+      } catch {
+        if (searchRequest.current === request) setSearchError("Search is temporarily unavailable. Please try again.");
+      } finally {
+        if (searchRequest.current === request) setSearching(false);
+      }
+    })();
   }, [allItems, days, initialData.isDemo]);
+
+  const closeSearch = () => {
+    searchRequest.current += 1;
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError(null);
+    setSearching(false);
+  };
 
   return (
     <TaskWorkspaceProvider householdId={initialData.household.id} timeZone={initialData.household.timezone} people={[...initialData.members.map(m=>({id:m.userId,name:m.displayName})),...family.children.map(c=>({id:c.id,name:c.name}))]} userId={familyUserId} canEdit={initialData.isDemo || family.canEdit} week={initialData.weekStart} today={new Intl.DateTimeFormat("en-CA",{timeZone:initialData.household.timezone,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())} isDemo={initialData.isDemo} tasks={allItems.map(t=>({...t,responsibleMemberId:t.responsibleMemberId??null,deadline:t.deadline??null,isBacklog:t.isBacklog??false}))} onChange={(task)=>{ if(!initialData.isDemo){router.refresh();return;} if(!task)return; const prior=allItems.find(t=>t.id===task.id);const item:PlanningItem={sortOrder:prior?.sortOrder??0,createdBy:prior?.createdBy??familyUserId,updatedAt:new Date().toISOString(),...prior,...task};setDays(current=>current.map(day=>({...day,items:[...day.items.filter(t=>t.id!==item.id),...(!item.isBacklog&&item.planningDate===day.date ? [item]:[])]})));setWeeklyItems(current=>[...current.filter(t=>t.id!==item.id),...(!item.isBacklog&&!item.planningDate&&item.weekStartDate===initialData.weekStart?[item]:[])]); }}>
@@ -693,7 +718,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       {selectedEvent && <EventDetailDialog members={initialData.members} childProfiles={family.children} onMembers={family.canEdit ? async (memberIds) => { if (!initialData.isDemo) { if (!selectedEvent.calendarPreferenceId || !selectedEvent.providerEventId) return "Refresh this event and try again."; const result = await saveEventMembersAction({ calendarPreferenceId: selectedEvent.calendarPreferenceId, providerEventId: selectedEvent.providerEventId, memberIds }); if (!result.ok) return result.error ?? "Assignments could not be saved."; } else { saveDemoEventMembers(selectedEvent, memberIds); } const updated = familyEvent({ ...selectedEvent, memberOverrideIds: memberIds }, family); setDays((days) => days.map((day) => ({ ...day, events: day.events.map((event) => event.id === updated.id ? updated : event) }))); setSelectedEvent(updated); return null; } : undefined} event={familyEvent(selectedEvent, family)} timeZone={initialData.household.timezone} onClose={() => setSelectedEvent(null)} onHide={hideEvent} onDelete={deleteCalendarEvent} onRespond={respondToCalendarEvent} onReminder={setCalendarReminder} onEdit={(event) => { setSelectedEvent(null); setCalendarEditor({ date: event.start.slice(0, 10), event }); }} />}
       {calendarEditor && <CalendarEventEditorDialog initialDraft={calendarEditor.draft} date={calendarEditor.date} event={calendarEditor.event} calendars={initialData.editableCalendars} timeZone={initialData.household.timezone} locationBias={initialData.locations.find((location) => location.isDefault) ?? initialData.locations[0]} isDemo={initialData.isDemo} onClose={() => setCalendarEditor(null)} onSave={saveCalendarEvent} onDelete={deleteCalendarEvent} />}
       {editingItem && <ItemEditorDialog members={initialData.members} childProfiles={family.children} onRepeat={family.canEdit ? repeatTask : undefined} item={editingItem} weekDates={weekDates(initialData.weekStart)} timeZone={initialData.household.timezone} onClose={() => setEditingItem(null)} onSave={saveEditedItem} onDelete={deleteItem} />}
-      {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} onQuery={runSearch} timeZone={initialData.household.timezone} onEvent={(event) => { setSearchOpen(false); setSelectedEvent(event); }} onClose={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults([]); }} />}
+      {searchOpen && <SearchDialog results={searchResults} query={searchQuery} loading={searching} error={searchError} onQuery={runSearch} timeZone={initialData.household.timezone} onEvent={(event) => { closeSearch(); setSelectedEvent(event); }} onClose={closeSearch} />}
     </main></TaskWorkspaceProvider>
   );
 }
