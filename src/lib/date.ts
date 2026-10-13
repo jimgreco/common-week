@@ -119,3 +119,13 @@ export function formatEventTime(iso: string, timeZone: string): string {
     timeZone,
   }).format(new Date(iso));
 }
+
+export function formatTimestamp(iso: string, timeZone: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone,
+  }).format(date);
+}

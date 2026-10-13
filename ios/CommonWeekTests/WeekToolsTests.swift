@@ -2,6 +2,31 @@ import XCTest
 import PDFKit
 @testable import CommonWeek
 final class WeekToolsTests: XCTestCase {
+    func testDiscussionTimestampUsesHouseholdDateAcrossUTCAndYearBoundaries() {
+        let locale = Locale(identifier: "en_US")
+        for instant in ["2026-10-13T01:23:00.123Z", "2026-10-12T21:23:00-04:00"] {
+            let label = PlannerMoment.timestampLabel(instant, timezone: "America/New_York", locale: locale)
+            XCTAssertTrue(label.contains("Oct 12, 2026"), label)
+            XCTAssertTrue(label.contains("9:23"), label)
+            XCTAssertTrue(label.hasSuffix("PM"), label)
+        }
+        let newYear = PlannerMoment.timestampLabel("2026-01-01T00:30:00Z", timezone: "America/New_York", locale: locale)
+        XCTAssertTrue(newYear.contains("Dec 31, 2025"), newYear)
+        XCTAssertTrue(newYear.contains("7:30"), newYear)
+    }
+
+    func testDiscussionTimestampUsesRequestedTimezoneAndDaylightSavingOffset() {
+        let locale = Locale(identifier: "en_US")
+        let tokyo = PlannerMoment.timestampLabel("2026-10-13T01:23:00Z", timezone: "Asia/Tokyo", locale: locale)
+        XCTAssertTrue(tokyo.contains("Oct 13, 2026"), tokyo)
+        XCTAssertTrue(tokyo.contains("10:23"), tokyo)
+        XCTAssertTrue(tokyo.hasSuffix("AM"), tokyo)
+        let beforeDST = PlannerMoment.timestampLabel("2026-03-08T06:30:00Z", timezone: "America/New_York", locale: locale)
+        let afterDST = PlannerMoment.timestampLabel("2026-03-08T07:30:00Z", timezone: "America/New_York", locale: locale)
+        XCTAssertTrue(beforeDST.contains("1:30"), beforeDST)
+        XCTAssertTrue(afterDST.contains("3:30"), afterDST)
+    }
+
     @MainActor func testInlineCreateUsesPostWithAStableIdAndInsertsAfterItsAnchor() async throws {
         let previousDemo = ProcessInfo.processInfo.environment["COMMON_WEEK_DEMO"]
         unsetenv("COMMON_WEEK_DEMO")

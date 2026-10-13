@@ -19,7 +19,7 @@ import {
   type WorkspaceMutation,
   type CollaborationEntry,
 } from "@/lib/task-workspace";
-import { weekStartForDate } from "@/lib/date";
+import { formatTimestamp, weekStartForDate } from "@/lib/date";
 import { attachmentFormat } from "@/lib/attachment-preview";
 import { AttachmentPreview } from "@/components/planner/attachment-preview";
 
@@ -30,6 +30,7 @@ type WorkspaceContextValue = {
   canEdit: boolean;
   week: string;
   today: string;
+  timeZone: string;
   load: (resource?: ItemResource) => Promise<TaskWorkspaceData>;
   mutate: (mutation: WorkspaceMutation) => Promise<void>;
   openFile: (entry: CollaborationEntry) => Promise<File>;
@@ -43,6 +44,7 @@ type TaskWorkspaceProviderProps = {
   canEdit: boolean;
   week: string;
   today: string;
+  timeZone: string;
   isDemo: boolean;
   tasks: TaskRecord[];
   onChange: (task?: TaskRecord) => void;
@@ -59,6 +61,7 @@ function ScopedTaskWorkspaceProvider({
   canEdit,
   week,
   today,
+  timeZone,
   isDemo,
   tasks,
   onChange,
@@ -195,7 +198,7 @@ function ScopedTaskWorkspaceProvider({
   };
   return (
     <WorkspaceContext.Provider
-      value={{ people, userId, canEdit, week, today, load, mutate, openFile }}
+      value={{ people, userId, canEdit, week, today, timeZone, load, mutate, openFile }}
     >
       {children}
     </WorkspaceContext.Provider>
@@ -677,7 +680,7 @@ function ItemCollaborationDetails({ resource, includePlacement }: { resource: It
           .map((e) => (
             <article className="workspace-comment" key={e.id}>
               <small>
-                {e.author} · {new Date(e.createdAt).toLocaleString()}
+                {e.author} · <time dateTime={e.createdAt}>{formatTimestamp(e.createdAt, context.timeZone)}</time>
               </small>
               <p>{e.text}</p>
               {e.createdBy === context.userId && (

@@ -8,8 +8,8 @@ vi.mock("./dialogs", () => ({ Modal: ({ children }: { children: ReactNode }) => 
 const fetchMock = vi.fn();
 const empty: TaskWorkspaceData = { tasks: [], entries: [], task: null };
 const reply = (data = empty) => ({ json: async () => ({ ok: true, data }) });
-function details(itemId: string) {
-  return <TaskWorkspaceProvider householdId="household" people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><ItemCollaboration resource={{ itemId }} /></TaskWorkspaceProvider>;
+function details(itemId: string, timeZone = "America/New_York") {
+  return <TaskWorkspaceProvider timeZone={timeZone} householdId="household" people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><ItemCollaboration resource={{ itemId }} /></TaskWorkspaceProvider>;
 }
 function checklist(text: string): TaskWorkspaceData {
   return { ...empty, entries: [{ id: text, text, kind: "checklist", completed: false, createdBy: "user", author: "You", createdAt: "2026-10-12T12:00:00Z" }] };
@@ -18,6 +18,13 @@ beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal("fetch", fetchMock); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("shared detail loading", () => {
+  it("renders discussion timestamps in the household timezone", async () => {
+    fetchMock.mockResolvedValue(reply({ ...empty, entries: [{ id: "comment", kind: "comment", text: "Bring towels", completed: false, createdBy: "user", author: "You", createdAt: "2026-10-13T01:23:00.123Z" }] }));
+    render(details("task", "Asia/Tokyo"));
+    const timestamp = await screen.findByText("Oct 13, 2026, 10:23 AM");
+    expect(timestamp).toHaveAttribute("datetime", "2026-10-13T01:23:00.123Z");
+  });
+
   it("keeps a late response for the old item out of the newly selected item", async () => {
     let finishOld!: (value: ReturnType<typeof reply>) => void;
     fetchMock.mockImplementation((url: string) => url.includes("itemId=old") ? new Promise((yes) => { finishOld = yes; }) : Promise.resolve(reply(checklist("New task step"))));
@@ -59,7 +66,7 @@ describe("shared detail loading", () => {
       if (++loads === 1) return new Promise((yes) => { finishInitial = yes; });
       return Promise.resolve(reply({ ...empty, tasks: [task] }));
     });
-    render(<TaskWorkspaceProvider householdId="household" people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><TaskWorkspaceDialog onClose={vi.fn()} /></TaskWorkspaceProvider>);
+    render(<TaskWorkspaceProvider timeZone="America/New_York" householdId="household" people={[]} userId="user" canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={vi.fn()}><TaskWorkspaceDialog onClose={vi.fn()} /></TaskWorkspaceProvider>);
     await waitFor(() => expect(loads).toBe(1));
     fireEvent.change(screen.getByRole("textbox", { name: "Capture a task" }), { target: { value: task.text } });
     fireEvent.click(screen.getByRole("button", { name: "Add to backlog" }));

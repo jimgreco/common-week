@@ -7,6 +7,15 @@ enum PlannerMoment {
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value)
     }
+    static func timestampLabel(_ value: String, timezone: String, locale: Locale = .current) -> String {
+        guard let date = date(from: value) else { return value }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = TimeZone(identifier: timezone) ?? .current
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
     static func label(_ event: CalendarEvent, timezone: String) -> String {
         let formatter = DateFormatter(); formatter.timeZone = TimeZone(identifier: timezone)
         formatter.dateStyle = .medium; formatter.timeStyle = event.allDay ? .none : .short

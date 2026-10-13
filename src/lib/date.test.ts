@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { addDateDays, datesForLocationScope, formatWeekRange, isDateOnly, weekDates, weekStartForDate } from "@/lib/date";
+import { addDateDays, datesForLocationScope, formatTimestamp, formatWeekRange, isDateOnly, weekDates, weekStartForDate } from "@/lib/date";
+
+describe("household discussion timestamps", () => {
+  it("shows the household's date when UTC has already reached tomorrow", () => {
+    expect(formatTimestamp("2026-10-13T01:23:00.123Z", "America/New_York")).toBe("Oct 12, 2026, 9:23 PM");
+    expect(formatTimestamp("2026-10-12T21:23:00-04:00", "America/New_York")).toBe("Oct 12, 2026, 9:23 PM");
+    expect(formatTimestamp("2026-01-01T00:30:00Z", "America/New_York")).toBe("Dec 31, 2025, 7:30 PM");
+  });
+
+  it("uses the requested household timezone and daylight-saving offset", () => {
+    expect(formatTimestamp("2026-10-13T01:23:00Z", "Asia/Tokyo")).toBe("Oct 13, 2026, 10:23 AM");
+    expect(formatTimestamp("2026-03-08T06:30:00Z", "America/New_York")).toBe("Mar 8, 2026, 1:30 AM");
+    expect(formatTimestamp("2026-03-08T07:30:00Z", "America/New_York")).toBe("Mar 8, 2026, 3:30 AM");
+  });
+});
 
 describe("date-only week handling", () => {
   it("always finds Monday across a month and year boundary", () => {

@@ -11,7 +11,7 @@ const reply = (data = empty) => ({ json: async () => ({ ok: true, data }) });
 const fetchMock = vi.fn();
 const changes = vi.fn();
 function workspace(children: ReactNode, householdId = "household", userId = "user") {
-  return <TaskWorkspaceProvider householdId={householdId} people={[]} userId={userId} canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={changes}>{children}</TaskWorkspaceProvider>;
+  return <TaskWorkspaceProvider timeZone="America/New_York" householdId={householdId} people={[]} userId={userId} canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={changes}>{children}</TaskWorkspaceProvider>;
 }
 function posts() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(init.body)); }
 

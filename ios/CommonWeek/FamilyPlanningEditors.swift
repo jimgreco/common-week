@@ -514,7 +514,7 @@ private struct ItemCollaborationContent: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(entry.author).font(.caption.bold())
                     Text(entry.text)
-                    Text(entry.createdAt.prefix(16).replacingOccurrences(of: "T", with: " ")).font(.caption2).foregroundStyle(.secondary)
+                    Text(PlannerMoment.timestampLabel(entry.createdAt, timezone: planner.household.timezone)).font(.caption2).foregroundStyle(.secondary)
                     if entry.createdBy == viewModel.workspaceUserId && viewModel.canEditHousehold { Button("Remove comment", role: .destructive) { Task { await save("remove", fields: ["id": .string(entry.id)]) } }.disabled(busy) }
                 }
             }
