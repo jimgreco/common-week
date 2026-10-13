@@ -171,3 +171,22 @@ describe("planner search request ordering", () => {
     expect(screen.getByRole("link", { name: /Latest groceries/ })).toBeInTheDocument();
   });
 });
+
+
+it("keeps a week opened by a reminder or search when live refresh resumes", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-14T12:00:00Z"));
+  const visible = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  try {
+    const view = render(planner(dataFor("2026-10-12")));
+    view.rerender(planner(dataFor("2026-10-19")));
+    mocks.router.replace.mockClear();
+    mocks.router.refresh.mockClear();
+    fireEvent(document, new Event("visibilitychange"));
+    expect(mocks.router.replace).not.toHaveBeenCalled();
+    expect(mocks.router.refresh).toHaveBeenCalled();
+  } finally {
+    visible.mockRestore();
+    vi.useRealTimers();
+  }
+});

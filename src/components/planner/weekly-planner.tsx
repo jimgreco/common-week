@@ -257,9 +257,7 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   }, [initialData.household.id, initialData.household.timezone, initialData.isDemo, initialData.weekStart, router, refreshPlannerSources, refreshWeather]);
 
   useEffect(() => {
-    if (initialData.weekStart === currentWeekStart(initialData.household.timezone)) {
-      followsCurrentWeek.current = true;
-    }
+    followsCurrentWeek.current = initialData.weekStart === currentWeekStart(initialData.household.timezone);
   }, [initialData.household.timezone, initialData.weekStart]);
 
   const allItems = useMemo(() => [...days.flatMap((day) => day.items), ...weeklyItems], [days, weeklyItems]);
