@@ -22,10 +22,10 @@ import {
 } from "@/app/actions/planner";
 import { loadFamilyPlanningAction, mutateFamilyPlanningAction } from "@/app/actions/family-planning";
 import { FamilyPlanningPanel } from "@/components/planner/family-planning";
-import { ChildBadge, type RoutineDraft } from "@/components/planner/family-planning-fields";
+import { type RoutineDraft } from "@/components/planner/family-planning-fields";
 import { emptyFamilyPlanning, loadDemoFamilyPlanning, mutateDemoFamilyPlanning, persistDemoPlanningItems, updateDemoPriorItem } from "@/components/planner/family-planning-demo";
 import { BrandMark } from "@/components/brand-mark";
-import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
+import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, PersonFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
 import { NotificationInboxButton } from "@/components/planner/notification-inbox";
 import { DayColumn, PlanningItemRow } from "@/components/planner/day-column";
 import { usePlannerSource } from "./use-planner-source";
@@ -41,7 +41,7 @@ import type { ActionResult, PlannerSourcePayload, CalendarEvent, CalendarEventDr
 type PlannerFocusTarget = PlannerNotificationTarget | ResolvedPlannerNotificationTarget;
 
 import { saveDemoEventMembers, demoEventMembers } from "@/components/planner/family-planning-demo";
-import { familyEvent, itemMemberIds } from "@/lib/household-assignments";
+import { familyEvent } from "@/lib/household-assignments";
 import { saveEventMembersAction } from "@/app/actions/household-assignments";
 
 export function WeeklyPlanner({ initialData, currentUserName, initialFocus = null, initialInbox, initialFamily, initialReview = false, currentUserId }: { initialData: WeeklyPlannerData; currentUserName: string; initialFocus?: PlannerFocusTarget | null; initialInbox: NotificationInbox; initialFamily?: FamilyPlanningData; initialReview?: boolean; currentUserId?: string }) {
@@ -89,7 +89,6 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
   useEffect(() => { if(!linkedTasksOpen)return; const timer=setTimeout(()=>{setTasksOpen(true);setLinkedTask(linkedTaskId??undefined);},0);return ()=>clearTimeout(timer); }, [linkedTasksOpen,linkedTaskId]);
   const [familyOpen, setFamilyOpen] = useState(initialReview);
   const [familyStep, setFamilyStep] = useState(0);
-  const [childFilter, setChildFilter] = useState("");
   const [familyLoading, setFamilyLoading] = useState(!initialFamily && !initialData.isDemo);
   const [demoLoaded, setDemoLoaded] = useState(false);
   const [lastInitialFamily, setLastInitialFamily] = useState(initialFamily);
@@ -269,13 +268,14 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
     || initialData.members.some((member) => member.userId === personFilter) || family.children.some((child) => child.id === personFilter)
     ? personFilter
     : ALL_PEOPLE;
+  const selectedChildId = family.children.some((child) => child.id === activePersonFilter) ? activePersonFilter : null;
   const filteredDays = useMemo(() => days.map((day) => ({
     ...day,
-    events: day.events.map((event) => familyEvent(initialData.isDemo ? demoEventMembers(event) : event, family)).filter((event) => calendarEventMatchesFilters(event, activeCalendarFilter, activePersonFilter) && (!childFilter || event.assignedMemberIds?.includes(childFilter))),
-    items: day.items.filter((item) => planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))),
-  })), [activeCalendarFilter, activePersonFilter, childFilter, family, days, initialData.isDemo]);
+    events: day.events.map((event) => familyEvent(initialData.isDemo ? demoEventMembers(event) : event, family)).filter((event) => calendarEventMatchesFilters(event, activeCalendarFilter, activePersonFilter)),
+    items: day.items.filter((item) => planningItemMatchesPerson(item, activePersonFilter)),
+  })), [activeCalendarFilter, activePersonFilter, family, days, initialData.isDemo]);
   const visibleDays = calendarRange === "day" ? filteredDays.filter((day) => day.date === activeTimelineDate) : filteredDays;
-  const filteredWeeklyItems = weeklyItems.filter((item) => planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter)));
+  const filteredWeeklyItems = weeklyItems.filter((item) => planningItemMatchesPerson(item, activePersonFilter));
   const thisWeek = currentWeekStart(initialData.household.timezone);
   const previousWeek = addDateDays(initialData.weekStart, -7);
   const nextWeek = addDateDays(initialData.weekStart, 7);
@@ -303,21 +303,22 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
       isCompleted: false,
       sortOrder: 0,
       createdBy: "current-user",
-      childId: childFilter || null,
+      childId: selectedChildId,
+      assignedMemberIds: activePersonFilter === ALL_PEOPLE || activePersonFilter === UNASSIGNED ? undefined : [activePersonFilter],
       createdByName: currentUserName,
       updatedAt: new Date().toISOString(),
       saveState: initialData.isDemo ? "saved" : "saving",
     };
     placeItem(optimistic);
     if (initialData.isDemo) return;
-    const result = await createPlanningItemAction({ id, text, type, planningDate: date, weekStartDate: initialData.weekStart, childId: childFilter || null }).catch(planningConnectionError);
+    const result = await createPlanningItemAction({ id, text, type, planningDate: date, weekStartDate: initialData.weekStart, childId: selectedChildId, assignedMemberIds: optimistic.assignedMemberIds ?? undefined }).catch(planningConnectionError);
     if (result.ok && result.data) {
       placeItem({ ...result.data, createdByName: currentUserName }, temporaryId);
     } else {
       placeItem({ ...optimistic, saveState: "failed" });
       setNotice(result.error ?? "Save failed. Your text is still here.");
     }
-  }, [childFilter, currentUserName, initialData.isDemo, initialData.weekStart, placeItem]);
+  }, [activePersonFilter, currentUserName, initialData.isDemo, initialData.weekStart, placeItem, selectedChildId]);
 
   const retryItem = useCallback(async (item: PlanningItem) => {
     if (!item.id.startsWith("draft-")) {
@@ -620,16 +621,15 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
           <div className="family-strip-title"><span className="family-strip-icon"><Sparkles size={20} /></span><div><strong>A little planning, together.</strong><span>{family.review.reviewedBy.length ? `${family.review.reviewedBy.length} of ${initialData.members.filter((member) => member.role !== "viewer").length} adults reviewed this week` : "Make room for the week ahead."}</span></div></div>
           <div className="family-strip-actions"><button className="text-button" disabled={familyLoading} onClick={() => { setFamilyStep(3); setFamilyOpen(true); }}><Users size={14} />Family</button><button className="text-button" disabled={familyLoading} onClick={() => { setFamilyStep(2); setFamilyOpen(true); }}><Repeat2 size={14} />Routines</button><button className="button button-primary" disabled={familyLoading} onClick={() => { setFamilyStep(0); setFamilyOpen(true); }}>{familyLoading ? "Loading…" : "Plan this week"}<ArrowRight size={14} /></button></div>
         </section>
-        {family.children.length > 0 && <div className="family-child-filters" aria-label="Child filter"><button className={!childFilter ? "is-active" : ""} aria-pressed={!childFilter} onClick={() => setChildFilter("")}>Everyone</button>{family.children.map((child) => <button key={child.id} className={childFilter === child.id ? "is-active" : ""} aria-pressed={childFilter === child.id} onClick={() => { setChildFilter(child.id); setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); }}><ChildBadge child={child} /></button>)}</div>}
+        <PersonFilters members={initialData.members} childProfiles={family.children} personId={activePersonFilter} onPerson={setPersonFilter} />
 
         <CalendarFilters
           calendars={initialData.visibleCalendars}
-          members={initialData.members} childProfiles={family.children}
+          members={initialData.members}
           calendarId={activeCalendarFilter}
           personId={activePersonFilter}
           onCalendar={setCalendarFilter}
-          onPerson={(id) => { setPersonFilter(id); setChildFilter(""); }}
-          onClear={() => { setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); setChildFilter(""); }}
+          onClear={() => { setCalendarFilter(ALL_CALENDARS); setPersonFilter(ALL_PEOPLE); }}
         />
 
         {calendarState.status === "error" && <div className="source-alert" role="status"><CalendarRange size={14} />{calendarState.message}<button className="text-button" type="button" onClick={() => void refreshPlannerSources()}>Retry Calendar</button><Link href="/settings#calendars">Reconnect</Link></div>}
@@ -678,8 +678,8 @@ export function WeeklyPlanner({ initialData, currentUserName, initialFocus = nul
         {calendarView === "list" && <section className="weekly-section" aria-label="Weekly notes and tasks">
           <header><span>This week</span><small>Notes and tasks that don’t belong to one day</small></header>
           <div className="weekly-columns">
-            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note" && planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
-            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task" && planningItemMatchesPerson(item, activePersonFilter) && (!childFilter || itemMemberIds(item).includes(childFilter))).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" onAdd={addItem} /></div>
+            <div><h2>Plans & notes</h2>{weeklyItems.filter((item) => item.type === "note" && planningItemMatchesPerson(item, activePersonFilter)).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="note" onAdd={addItem} /></div>
+            <div><h2>Tasks</h2>{weeklyItems.filter((item) => item.type === "task" && planningItemMatchesPerson(item, activePersonFilter)).map((item) => <PlanningItemRow item={item} childProfiles={family.children} onToggle={toggleItem} onEdit={setEditingItem} onRetry={retryItem} key={item.id} />)}<WeeklyQuickAdd type="task" onAdd={addItem} /></div>
           </div>
         </section>}
       </section>

@@ -1,22 +1,24 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
-import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
+import { ALL_CALENDARS, ALL_PEOPLE, UNASSIGNED, planningItemMatchesPerson, CalendarFilters, PersonFilters, calendarEventMatchesFilters } from "@/components/planner/calendar-filters";
 import { getDemoPlannerData } from "@/lib/demo-data";
 
 function FilterHarness() {
   const data = getDemoPlannerData();
   const [calendarId, setCalendarId] = useState(ALL_CALENDARS);
   const [personId, setPersonId] = useState(ALL_PEOPLE);
-  return <CalendarFilters
-    calendars={data.visibleCalendars}
-    members={data.members}
-    calendarId={calendarId}
-    personId={personId}
-    onCalendar={setCalendarId}
-    onPerson={setPersonId}
-    onClear={() => { setCalendarId(ALL_CALENDARS); setPersonId(ALL_PEOPLE); }}
-  />;
+  return <>
+    <PersonFilters members={data.members} childProfiles={[{ id: "child", name: "Miriam", color: "#587f9b", calendarPreferenceIds: [] }]} personId={personId} onPerson={setPersonId} />
+    <CalendarFilters
+      calendars={data.visibleCalendars}
+      members={data.members}
+      calendarId={calendarId}
+      personId={personId}
+      onCalendar={setCalendarId}
+      onClear={() => { setCalendarId(ALL_CALENDARS); setPersonId(ALL_PEOPLE); }}
+    />
+  </>;
 }
 
 describe("CalendarFilters", () => {
@@ -47,10 +49,10 @@ describe("CalendarFilters", () => {
 
   it("lets the user select Unassigned and clear the filter", () => {
     render(<FilterHarness />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Person filter" }), { target: { value: UNASSIGNED } });
-    expect(screen.getByRole("combobox", { name: "Person filter" })).toHaveValue(UNASSIGNED);
+    fireEvent.click(screen.getByRole("button", { name: "Unassigned" }));
+    expect(screen.getByRole("button", { name: "Unassigned" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-    expect(screen.getByRole("combobox", { name: "Person filter" })).toHaveValue(ALL_PEOPLE);
+    expect(screen.getByRole("button", { name: "Everyone" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("uses explicit adult assignments instead of calendar connection ownership", () => {
@@ -72,16 +74,23 @@ describe("CalendarFilters", () => {
     expect(calendarEventMatchesFilters(rachelEvent, ALL_CALENDARS, "demo-jim")).toBe(false);
   });
 
-  it("offers calendar and person controls and resets both", () => {
+  it("offers every assignable household member beside Everyone and resets both filters", () => {
     render(<FilterHarness />);
 
+    expect(screen.queryByRole("combobox", { name: "Person filter" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Jim" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rachel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Miriam" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "Calendar filter" }), { target: { value: "demo-R" } });
-    fireEvent.change(screen.getByRole("combobox", { name: "Person filter" }), { target: { value: "demo-rachel" } });
+    fireEvent.click(screen.getByRole("button", { name: "Rachel" }));
     expect(screen.getByRole("combobox", { name: "Calendar filter" })).toHaveValue("demo-R");
-    expect(screen.getByRole("combobox", { name: "Person filter" })).toHaveValue("demo-rachel");
+    expect(screen.getByRole("button", { name: "Rachel" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Miriam" }));
+    expect(screen.getByRole("button", { name: "Miriam" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Rachel" })).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByRole("combobox", { name: "Calendar filter" })).toHaveValue(ALL_CALENDARS);
-    expect(screen.getByRole("combobox", { name: "Person filter" })).toHaveValue(ALL_PEOPLE);
+    expect(screen.getByRole("button", { name: "Everyone" })).toHaveAttribute("aria-pressed", "true");
   });
 });

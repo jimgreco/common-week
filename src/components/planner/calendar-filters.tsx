@@ -1,5 +1,6 @@
-import { CalendarDays, RotateCcw, UserRound } from "lucide-react";
-import type { CalendarEvent, EditableCalendar, HouseholdMember, PlanningItem } from "@/types/domain";
+import { CalendarDays, RotateCcw } from "lucide-react";
+import { ChildBadge } from "@/components/planner/family-planning-fields";
+import type { CalendarEvent, ChildProfile, EditableCalendar, HouseholdMember, PlanningItem } from "@/types/domain";
 
 export const ALL_CALENDARS = "all-calendars";
 export const ALL_PEOPLE = "all-people";
@@ -23,23 +24,33 @@ export function calendarEventMatchesFilters(
     && memberIdsMatchPerson(event.assignedMemberIds ?? event.assignedAdultUserIds ?? (event.sourceUserId ? [event.sourceUserId] : []), personId);
 }
 
+export function PersonFilters({ members, childProfiles, personId, onPerson }: {
+  members: HouseholdMember[];
+  childProfiles: ChildProfile[];
+  personId: string;
+  onPerson: (personId: string) => void;
+}) {
+  return <div className="person-filter-buttons" role="group" aria-label="Person filter">
+    <button type="button" className={personId === ALL_PEOPLE ? "is-active" : ""} aria-pressed={personId === ALL_PEOPLE} onClick={() => onPerson(ALL_PEOPLE)}>Everyone</button>
+    {members.map((member) => <button type="button" key={member.userId} className={personId === member.userId ? "is-active" : ""} aria-pressed={personId === member.userId} onClick={() => onPerson(member.userId)}>{member.displayName}</button>)}
+    {childProfiles.map((child) => <button type="button" key={child.id} className={personId === child.id ? "is-active" : ""} aria-pressed={personId === child.id} onClick={() => onPerson(child.id)}><ChildBadge child={child} /></button>)}
+    <button type="button" className={personId === UNASSIGNED ? "is-active" : ""} aria-pressed={personId === UNASSIGNED} onClick={() => onPerson(UNASSIGNED)}>Unassigned</button>
+  </div>;
+}
+
 export function CalendarFilters({
   calendars,
   members,
-  childProfiles = [],
   calendarId,
   personId,
   onCalendar,
-  onPerson,
   onClear,
 }: {
   calendars: EditableCalendar[];
   members: HouseholdMember[];
-  childProfiles?: { id: string; name: string }[];
   calendarId: string;
   personId: string;
   onCalendar: (calendarId: string) => void;
-  onPerson: (personId: string) => void;
   onClear: () => void;
 }) {
   const memberName = new Map(members.map((member) => [member.userId, member.displayName]));
@@ -57,16 +68,6 @@ export function CalendarFilters({
               {calendar.name}{calendar.sourceUserId && memberName.get(calendar.sourceUserId) ? ` · ${memberName.get(calendar.sourceUserId)}` : ""}
             </option>
           ))}
-        </select>
-      </label>
-      <label>
-        <UserRound size={14} aria-hidden="true" />
-        <span>Person</span>
-        <select aria-label="Person filter" value={personId} onChange={(event) => onPerson(event.target.value)}>
-          <option value={ALL_PEOPLE}>Everyone</option>
-          <option value={UNASSIGNED}>Unassigned</option>
-          {members.map((member) => <option value={member.userId} key={member.userId}>{member.displayName}</option>)}
-          {childProfiles.map((child) => <option value={child.id} key={child.id}>{child.name}</option>)}
         </select>
       </label>
       {active && <button type="button" onClick={onClear}><RotateCcw size={12} aria-hidden="true" />Clear filters</button>}
