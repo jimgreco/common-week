@@ -130,7 +130,7 @@ async function removeFutureRoutineItems(database: PoolClient, context: Context, 
   const future = await database.query<{ id: string; occurrence_date: string; planning_date: string | null }>(
     `select pi.id,pi.routine_occurrence_date::text as occurrence_date,pi.planning_date::text
      from planning_items pi join task_routines r on r.id=pi.routine_id
-     where pi.household_id=$1 and pi.routine_id=$2 and not pi.is_completed and pi.type='task'
+     where pi.household_id=$1 and pi.routine_id=$2 and not pi.is_completed and not pi.is_backlog and pi.type='task'
       and pi.assigned_member_ids is not distinct from r.assigned_member_ids
       and pi.text=r.text and pi.child_id is not distinct from r.child_id
       and ((pi.planning_date=pi.routine_occurrence_date and pi.planning_date > $3::date)
@@ -149,8 +149,20 @@ async function removeFutureRoutineItems(database: PoolClient, context: Context, 
     } else removed.push(item.id);
   }
   if (!removed.length) return;
-  await database.query("delete from task_routine_occurrences where routine_id=$1 and item_id=any($2::uuid[])", [id, removed]);
-  await database.query("delete from planning_items where household_id=$1 and id=any($2::uuid[])", [context.householdId, removed]);
+  // Shared details and reminders are explicit work, even when the generated
+  // title and placement are unchanged. Read them after locking the tasks above:
+  // collaboration writes lock the same task, so a concurrent addition is seen.
+  const disposable = await database.query<{ id: string }>(
+    `select pi.id from planning_items pi where pi.household_id=$1 and pi.id=any($2::uuid[])
+      and not pi.is_backlog and pi.responsible_member_id is null and pi.deadline is null
+      and not exists(select 1 from item_collaboration c join item_collaboration_entries e on e.collaboration_id=c.id where c.planning_item_id=pi.id)
+      and not exists(select 1 from notification_reminders nr where nr.planning_item_id=pi.id)`,
+    [context.householdId, removed],
+  );
+  const disposableIds = disposable.rows.map((item) => item.id);
+  if (!disposableIds.length) return;
+  await database.query("delete from task_routine_occurrences where routine_id=$1 and item_id=any($2::uuid[])", [id, disposableIds]);
+  await database.query("delete from planning_items where household_id=$1 and id=any($2::uuid[])", [context.householdId, disposableIds]);
 }
 
 export async function mutateFamilyPlanning(context: Context, input: FamilyPlanningMutation): Promise<FamilyPlanningData> {

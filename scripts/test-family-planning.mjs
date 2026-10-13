@@ -332,6 +332,49 @@ try {
   await workspace(owner.token,{action:"task",resource,responsibleMemberId:child.id});
   console.log("Task workspace integration passed: assignment notifications, concurrent claims, backlog carryover, scheduling, deadlines, shared checklist/comments/files, and event privacy.");
 
+  // A generated task becomes an explicit plan once someone adds work to it.
+  // Series cleanup must preserve that task and its cascading child records.
+  for (const action of ["pause", "reschedule", "delete"]) {
+    const startsOn = addDays(week, 56);
+    const protectedRoutine = { id: randomUUID(), text: `Protected ${action} routine`, childId: null, frequency: "weekly", interval: 1, weekdays: [], startsOn, endsOn: null, active: true };
+    await change(owner.token, { action: "saveRoutine", routine: protectedRoutine }, startsOn);
+    const occurrences = {};
+    const kinds = ["untouched", "backlog", "deadline", "responsibility", "checklist", "comment", "file", "reminder"];
+    for (const [index, kind] of kinds.entries()) {
+      occurrences[kind] = items(await planner(owner.token, addDays(startsOn, index * 7))).find(item => item.routineId === protectedRoutine.id);
+      assert.ok(occurrences[kind], `materialized ${kind} occurrence`);
+    }
+    await workspace(owner.token, { action: "task", resource: { itemId: occurrences.backlog.id }, isBacklog: true });
+    await workspace(owner.token, { action: "task", resource: { itemId: occurrences.deadline.id }, deadline: startsOn });
+    await workspace(owner.token, { action: "task", resource: { itemId: occurrences.responsibility.id }, responsibleMemberId: partner.userId });
+    const entryIds = {};
+    for (const kind of ["checklist", "comment", "file"]) {
+      entryIds[kind] = randomUUID();
+      await workspace(partner.token, { action: "add", resource: { itemId: occurrences[kind].id }, id: entryIds[kind], kind, text: `Keep ${kind}`, ...(kind === "file" ? { fileData: Buffer.from("preserved attachment").toString("base64") } : {}) });
+    }
+    const reminder = occurrences.reminder;
+    const reminderTime = `${reminder.weekStartDate}T08:00:00.000Z`;
+    assert.equal((await api(owner.token, "/api/ios/planning-items", { id: reminder.id, text: reminder.text, type: "task", weekStartDate: reminder.weekStartDate, planningDate: null, remindAt: reminderTime }, "PATCH")).ok, true);
+    await change(owner.token, action === "delete"
+      ? { action: "deleteRoutine", id: protectedRoutine.id }
+      : { action: "saveRoutine", routine: { ...protectedRoutine, ...(action === "pause" ? { active: false } : { weekdays: [1] }) } }, startsOn);
+    const remaining = (await workspace(owner.token)).tasks;
+    assert.ok(!remaining.some(item => item.id === occurrences.untouched.id), `${action} still removes an untouched generated occurrence`);
+    for (const kind of kinds.slice(1)) assert.ok(remaining.some(item => item.id === occurrences[kind].id), `${action} preserves the ${kind} task`);
+    assert.equal(remaining.find(item => item.id === occurrences.backlog.id).isBacklog, true);
+    assert.equal(remaining.find(item => item.id === occurrences.deadline.id).deadline, startsOn);
+    assert.equal(remaining.find(item => item.id === occurrences.responsibility.id).responsibleMemberId, partner.userId);
+    for (const kind of ["checklist", "comment", "file"]) {
+      const details = await api(owner.token, `/api/task-workspace?itemId=${occurrences[kind].id}`);
+      assert.ok(details.data.entries.some(entry => entry.id === entryIds[kind]), `${action} keeps the ${kind} entry`);
+    }
+    const retainedFile = await fetch(`${baseURL}/api/task-workspace?file=${entryIds.file}`, { headers: { Authorization: `Bearer ${owner.token}` } });
+    assert.equal(retainedFile.status, 200);
+    assert.equal(await retainedFile.text(), "preserved attachment");
+    assert.equal(items(await planner(owner.token, reminder.weekStartDate)).find(item => item.id === reminder.id)?.reminder?.remindAt, reminderTime);
+  }
+  console.log("Routine lifecycle integration passed: 24 pause/reschedule/delete scenarios preserve backlog, deadlines, responsibility, checklist, discussion, files, and reminders while pruning untouched tasks.");
+
   const coverageInput={calendarId:sharedCalendar,eventId:"coverage-occurrence",childId:child.id,dropOffUserId:owner.userId,pickupUserId:partner.userId,dropOffNeeded:true,pickupNeeded:true,travelMinutes:20,notes:"School gate",revision:0};
   const coverage=await api(owner.token,"/api/coverage",coverageInput);
   assert.equal(coverage.ok,true,coverage.error);
