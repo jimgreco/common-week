@@ -1,13 +1,13 @@
-import { addDays, differenceInCalendarDays, format, getDay } from "date-fns";
-
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isDateOnly(value: string): boolean {
-  return DATE_ONLY.test(value) && !Number.isNaN(parseDateOnly(value).getTime());
+  if (!DATE_ONLY.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 export function parseDateOnly(value: string): Date {
-  if (!DATE_ONLY.test(value)) {
+  if (!isDateOnly(value)) {
     throw new Error(`Invalid date-only value: ${value}`);
   }
 
@@ -19,12 +19,14 @@ export function toDateOnly(value: Date): string {
 }
 
 export function addDateDays(value: string, amount: number): string {
-  return toDateOnly(addDays(parseDateOnly(value), amount));
+  const parsed = parseDateOnly(value);
+  parsed.setUTCDate(parsed.getUTCDate() + amount);
+  return toDateOnly(parsed);
 }
 
 export function weekStartForDate(value: string): string {
   const parsed = parseDateOnly(value);
-  const day = getDay(parsed);
+  const day = parsed.getUTCDay();
   const daysSinceMonday = (day + 6) % 7;
   return addDateDays(value, -daysSinceMonday);
 }
@@ -67,12 +69,13 @@ export function formatWeekRange(weekStart: string): string {
   const end = parseDateOnly(addDateDays(weekStart, 6));
   const sameMonth = start.getUTCMonth() === end.getUTCMonth();
   const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const label = (date: Date, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-US", { ...options, timeZone: "UTC" }).format(date);
 
   if (sameMonth) {
-    return `${format(start, "MMMM d")}–${format(end, sameYear ? "d" : "d, yyyy")}`;
+    return `${label(start, { month: "long", day: "numeric" })}–${label(end, { day: "numeric", ...(sameYear ? {} : { year: "numeric" }) })}`;
   }
 
-  return `${format(start, "MMM d")}–${format(end, sameYear ? "MMM d" : "MMM d, yyyy")}`;
+  return `${label(start, { month: "short", day: "numeric" })}–${label(end, { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) })}`;
 }
 
 export function formatDayName(value: string, width: "short" | "long" = "short"): string {
@@ -103,7 +106,7 @@ export function isToday(value: string, timeZone = "America/New_York"): boolean {
 }
 
 export function weekOffset(from: string, to: string): number {
-  return Math.round(differenceInCalendarDays(parseDateOnly(to), parseDateOnly(from)) / 7);
+  return Math.round((parseDateOnly(to).getTime() - parseDateOnly(from).getTime()) / (7 * 86_400_000));
 }
 
 // Open-Meteo's offset-free timestamps already represent the location's wall clock.
