@@ -212,22 +212,29 @@ export function TaskWorkspaceDialog({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const capturing = useRef(false);
+  const loadRequest = useRef(0);
   const loadTasks = context.load;
   const refresh = useCallback(async () => {
+    const request = ++loadRequest.current;
     try {
-      setTasks((await loadTasks()).tasks);
+      const loaded = await loadTasks();
+      if (loadRequest.current === request) {
+        setTasks(loaded.tasks);
+        setError("");
+      }
     } catch (e) {
-      setError((e as Error).message);
+      if (loadRequest.current === request) setError((e as Error).message);
     }
   }, [loadTasks]);
   useEffect(() => {
     const timer = setTimeout(() => void refresh(), 0);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); loadRequest.current += 1; };
   }, [refresh]);
   async function capture() {
     const submittedText = text.trim();
     if (!submittedText || capturing.current) return;
     capturing.current = true;
+    loadRequest.current += 1;
     setBusy(true);
     setError("");
     try {
@@ -371,6 +378,11 @@ export function ItemCollaboration({
   resource: ItemResource;
   includePlacement?: boolean;
 }) {
+  const key = "itemId" in resource ? resource.itemId : `${resource.calendarId}:${resource.eventId}`;
+  return <ItemCollaborationDetails key={key} resource={resource} includePlacement={includePlacement} />;
+}
+
+function ItemCollaborationDetails({ resource, includePlacement }: { resource: ItemResource; includePlacement: boolean }) {
   const context = useContext(WorkspaceContext);
   const [data, setData] = useState<TaskWorkspaceData | null>(null);
   const [error, setError] = useState("");
@@ -380,27 +392,34 @@ export function ItemCollaboration({
   const [opening, setOpening] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ entryId: string; resourceKey: string; file: File; url: string } | null>(null);
   const openRequest = useRef(0);
+  const loadRequest = useRef(0);
   const saving = useRef(false);
   const key = JSON.stringify(resource);
   useEffect(() => () => { openRequest.current += 1; }, [key]);
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
   const loader = context?.load;
   const refresh = useCallback(async () => {
+    const request = ++loadRequest.current;
     if (loader)
       try {
-        setData(await loader(JSON.parse(key)));
+        const loaded = await loader(JSON.parse(key));
+        if (loadRequest.current === request) {
+          setData(loaded);
+          setError("");
+        }
       } catch (e) {
-        setError((e as Error).message);
+        if (loadRequest.current === request) setError((e as Error).message);
       }
   }, [key, loader]);
   useEffect(() => {
     const timer = setTimeout(() => void refresh(), 0);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); loadRequest.current += 1; };
   }, [refresh]);
   if (!context) return null;
   async function save(input: WorkspaceMutation) {
     if (saving.current) return false;
     saving.current = true;
+    loadRequest.current += 1;
     setBusy(true);
     setError("");
     try {
@@ -441,6 +460,7 @@ export function ItemCollaboration({
   return (
     <section className="item-collaboration" aria-label="Shared item details">
       {error && <p role="alert">{error}</p>}
+      {!data && error && <button type="button" onClick={() => void refresh()}>Retry loading shared details</button>}
       {!data && !error && <p>Loading shared details…</p>}
       <fieldset disabled={busy || !context.canEdit}>
         {task?.type === "task" && (

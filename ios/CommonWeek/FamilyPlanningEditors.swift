@@ -360,6 +360,7 @@ struct TaskWorkspaceView: View {
     @State private var error: String?
     @State private var busy = false
     @State private var selected: WorkspaceTask?
+    @State private var loadRequest = UUID()
     private var today: String { WeekDate.string(Date(), timeZoneIdentifier: planner.household.timezone) }
     private var filtered: [WorkspaceTask] { tasks.filter { $0.matches(filter, userId: viewModel.workspaceUserId, today: today) } }
 
@@ -400,11 +401,19 @@ struct TaskWorkspaceView: View {
     }
     private func person(_ id: String?) -> String { planner.members.first { $0.userId == id }?.displayName ?? planner.childProfiles?.first { $0.id == id }?.name ?? "Unassigned" }
     private func reload() async {
-        do { tasks = try await WorkspaceAccess.load(planner: planner).tasks; error = nil } catch { self.error = error.localizedDescription }
+        let request = UUID()
+        loadRequest = request
+        do {
+            let loaded = try await WorkspaceAccess.load(planner: planner)
+            guard loadRequest == request, !Task.isCancelled else { return }
+            tasks = loaded.tasks
+            error = nil
+        } catch { if loadRequest == request, !Task.isCancelled { self.error = error.localizedDescription } }
     }
     private func add() async {
         let submittedText = capture.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !busy, !submittedText.isEmpty else { return }
+        loadRequest = UUID()
         busy = true; defer { busy = false }
         do {
             let body = try createAttempts.prepare(["action": .string("capture"), "text": .string(submittedText)])
@@ -447,10 +456,26 @@ struct ItemCollaborationFields: View {
     var showsSaveNotice = true
     var compact = false
     @ObservedObject var files: ItemFilePresentation
+
+    var body: some View {
+        ItemCollaborationContent(resource: resource, planner: planner, viewModel: viewModel, includePlacement: includePlacement, showsSaveNotice: showsSaveNotice, compact: compact, files: files)
+            .id(resource.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: "|"))
+    }
+}
+
+private struct ItemCollaborationContent: View {
+    let resource: [String: String]
+    let planner: WeeklyPlannerData
+    @ObservedObject var viewModel: PlannerViewModel
+    var includePlacement = true
+    var showsSaveNotice = true
+    var compact = false
+    @ObservedObject var files: ItemFilePresentation
     @State private var payload: TaskWorkspacePayload?
     @State private var error: String?
     @State private var busy = false
     @State private var createAttempts = WorkspaceCreateAttempts()
+    @State private var loadRequest = UUID()
     @State private var step = ""
     @State private var comment = ""
     @State private var nameDraft: String?
@@ -463,7 +488,10 @@ struct ItemCollaborationFields: View {
     }
 
     @ViewBuilder private var sections: some View {
-        if let message = error ?? files.error { Section { Text(message).foregroundStyle(.red) } }
+        if let message = error ?? files.error { Section {
+            Text(message).foregroundStyle(.red)
+            if payload == nil { Button("Retry loading shared details") { Task { await reload() } } }
+        } }
         if payload == nil && error == nil { ProgressView("Loading shared details…") }
         if showsSaveNotice { Section { Text("Changes to shared details save immediately.").font(.footnote).foregroundStyle(.secondary) } }
         if let task, task.type == "task" { taskFields(task) }
@@ -552,9 +580,19 @@ struct ItemCollaborationFields: View {
             }
         }.disabled(busy || !viewModel.canEditHousehold)
     }
-    private func reload() async { do { payload = try await WorkspaceAccess.load(planner: planner, resource: resource) } catch { self.error = error.localizedDescription } }
+    private func reload() async {
+        let request = UUID()
+        loadRequest = request
+        do {
+            let loaded = try await WorkspaceAccess.load(planner: planner, resource: resource)
+            guard loadRequest == request, !Task.isCancelled else { return }
+            payload = loaded
+            error = nil
+        } catch { if loadRequest == request, !Task.isCancelled { self.error = error.localizedDescription } }
+    }
     @discardableResult private func save(_ action: String, fields: [String: WorkspaceValue]) async -> Bool {
         guard !busy else { return false }
+        loadRequest = UUID()
         busy = true; error = nil; defer { busy = false }
         var body = fields; body["action"] = .string(action); body["resource"] = .object(resource.mapValues { .string($0) })
         do {
