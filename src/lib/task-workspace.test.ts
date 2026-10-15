@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   taskMatchesFilter,
+  taskDeadlineDate,
   workspaceMutationSchema,
   WorkspaceCreateAttempts,
   type WorkspaceMutation,
@@ -18,6 +19,15 @@ const task: TaskRecord = {
   isCompleted: false,
 };
 describe("task workspace", () => {
+  it("uses the household date for shortcuts across UTC and DST boundaries", () => {
+    const midnightUTC = new Date("2026-03-09T00:30:00Z");
+    expect(taskDeadlineDate(0, "America/New_York", midnightUTC)).toBe("2026-03-08");
+    expect(taskDeadlineDate(1, "America/New_York", midnightUTC)).toBe("2026-03-09");
+    const fallBack = new Date("2026-11-01T04:30:00Z");
+    expect(taskDeadlineDate(1, "America/New_York", fallBack)).toBe("2026-11-02");
+    expect(taskDeadlineDate(1, "Pacific/Auckland", new Date("2026-12-31T01:00:00Z"))).toBe("2027-01-01");
+  });
+
   it("keeps file retries stable while distinguishing item and file contents", () => {
     const attempts = new WorkspaceCreateAttempts();
     const input: WorkspaceMutation = { action: "add", resource: { itemId: "task-a" }, id: "first", kind: "file", text: "notes.txt", fileData: "YQ==" };

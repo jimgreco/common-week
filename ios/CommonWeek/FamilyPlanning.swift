@@ -194,6 +194,10 @@ struct WorkspaceTask: Codable, Identifiable, Hashable {
     var weekStartDate: String
     var isCompleted: Bool
 
+    static func deadlineDate(daysFromToday: Int, timeZoneIdentifier: String, now: Date = Date()) -> String {
+        WeekDate.addDays(daysFromToday, to: WeekDate.string(now, timeZoneIdentifier: timeZoneIdentifier))
+    }
+
     func matches(_ filter: String, userId: String, today: String, query: String = "") -> Bool {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard search.isEmpty || text.lowercased().contains(search) else { return false }

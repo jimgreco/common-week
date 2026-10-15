@@ -12,6 +12,7 @@ import {
 import { Modal } from "@/components/planner/dialogs";
 import {
   taskMatchesFilter,
+  taskDeadlineDate,
   WorkspaceCreateAttempts,
   type TaskRecord,
   type ItemResource,
@@ -554,6 +555,18 @@ function ItemCollaborationDetails({ resource, includePlacement }: { resource: It
                 }
               />
             </label>
+            <div className="deadline-shortcuts" role="group" aria-label="Quick deadline">
+              {([0, 1] as const).map((days) => (
+                <button
+                  type="button"
+                  key={days}
+                  aria-label={`Set deadline to ${days === 0 ? "today" : "tomorrow"}`}
+                  onClick={() => void save({ action: "task", resource: { itemId: task.id }, deadline: taskDeadlineDate(days, context.timeZone) })}
+                >
+                  {days === 0 ? "Today" : "Tomorrow"}
+                </button>
+              ))}
+            </div>
             {includePlacement && (
               <>
                 <label>

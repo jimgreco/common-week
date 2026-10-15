@@ -46,7 +46,7 @@
       "push": null
     }
   },
-  "marketingVersion": "1.1.1",
+  "marketingVersion": "1.3",
   "apiOrigin": "https://weekofus.com",
   "infoPlists": [
     "ios/CommonWeek/Info.plist",

@@ -2,6 +2,17 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testQuickDeadlinesUseHouseholdDateAcrossUTCAndDSTBoundaries() throws {
+        let formatter = ISO8601DateFormatter()
+        let spring = try XCTUnwrap(formatter.date(from: "2026-03-09T00:30:00Z"))
+        XCTAssertEqual(WorkspaceTask.deadlineDate(daysFromToday: 0, timeZoneIdentifier: "America/New_York", now: spring), "2026-03-08")
+        XCTAssertEqual(WorkspaceTask.deadlineDate(daysFromToday: 1, timeZoneIdentifier: "America/New_York", now: spring), "2026-03-09")
+        let fall = try XCTUnwrap(formatter.date(from: "2026-11-01T04:30:00Z"))
+        XCTAssertEqual(WorkspaceTask.deadlineDate(daysFromToday: 1, timeZoneIdentifier: "America/New_York", now: fall), "2026-11-02")
+        let yearEnd = try XCTUnwrap(formatter.date(from: "2026-12-31T01:00:00Z"))
+        XCTAssertEqual(WorkspaceTask.deadlineDate(daysFromToday: 1, timeZoneIdentifier: "Pacific/Auckland", now: yearEnd), "2027-01-01")
+    }
+
     func testWorkspaceCreatesReuseIdentityUntilConfirmed() throws {
         var attempts = WorkspaceCreateAttempts()
         let input: [String: WorkspaceValue] = ["action": .string("capture"), "text": .string("Pack lunch")]

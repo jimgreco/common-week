@@ -341,6 +341,42 @@ final class CommonWeekScreenshots: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
+    func testQuickTaskDeadlines() throws {
+        launchDemo()
+        #if targetEnvironment(macCatalyst)
+        app.buttons["Tasks & backlog"].tap()
+        #else
+        app.buttons["Tasks and backlog"].tap()
+        #endif
+        let name = "Quick deadline \(UUID().uuidString.prefix(5))"
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8))
+        capture.tap(); capture.typeText(name)
+        app.buttons["Add to backlog"].tap()
+        let task = app.buttons.containing(.staticText, identifier: name).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 8)); task.tap()
+        let today = app.buttons["Set deadline to today"]
+        XCTAssertTrue(today.waitForExistence(timeout: 8)); today.tap()
+        XCTAssertTrue(app.staticTexts["Must be done by"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.switches["Has a deadline"].firstMatch.value as? String, "1")
+        app.buttons["Done"].firstMatch.tap()
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "yyyy-MM-dd"
+        XCTAssertTrue(NSPredicate(format: "label CONTAINS %@", "Due \(formatter.string(from: Date()))").evaluate(with: task))
+        task.tap()
+        let tomorrow = app.buttons["Set deadline to tomorrow"]
+        XCTAssertTrue(tomorrow.waitForExistence(timeout: 8)); tomorrow.tap()
+        attachCurrentScreen(named: "Quick task deadline shortcuts")
+        app.buttons["Done"].firstMatch.tap()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let nextDate = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: Date()))
+        XCTAssertTrue(NSPredicate(format: "label CONTAINS %@", "Due \(formatter.string(from: nextDate))").evaluate(with: task))
+        attachCurrentScreen(named: "Tomorrow deadline saved in backlog")
+    }
+
     func testTaskWorkspaceSearch() throws {
         launchDemo()
         #if targetEnvironment(macCatalyst)

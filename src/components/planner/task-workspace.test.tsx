@@ -10,13 +10,13 @@ const empty: TaskWorkspaceData = { tasks: [], entries: [], task: null };
 const reply = (data = empty) => ({ json: async () => ({ ok: true, data }) });
 const fetchMock = vi.fn();
 const changes = vi.fn();
-function workspace(children: ReactNode, householdId = "household", userId = "user") {
-  return <TaskWorkspaceProvider timeZone="America/New_York" householdId={householdId} people={[]} userId={userId} canEdit week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={changes}>{children}</TaskWorkspaceProvider>;
+function workspace(children: ReactNode, householdId = "household", userId = "user", canEdit = true) {
+  return <TaskWorkspaceProvider timeZone="America/New_York" householdId={householdId} people={[]} userId={userId} canEdit={canEdit} week="2026-10-12" today="2026-10-12" isDemo={false} tasks={[]} onChange={changes}>{children}</TaskWorkspaceProvider>;
 }
 function posts() { return fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => JSON.parse(init.body)); }
 
 beforeEach(() => { fetchMock.mockReset().mockResolvedValue(reply()); changes.mockReset(); vi.stubGlobal("fetch", fetchMock); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("task workspace create retries", () => {
   it.each([
@@ -122,5 +122,44 @@ describe("task workspace search", () => {
     expect(search).toHaveValue("");
     expect(screen.getByRole("button", { name: "Completed" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /Pack school supplies/ })).toBeInTheDocument();
+  });
+});
+
+
+describe("quick task deadlines", () => {
+  const task: TaskRecord = { id: "deadline-task", text: "Pack", type: "task", responsibleMemberId: null, deadline: null, isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
+
+  it("saves household Today and Tomorrow without changing placement and retains the date after a failed save", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-01T04:30:00Z"));
+    let saved = { ...task };
+    let fail = false;
+    fetchMock.mockImplementation(async (_url, init) => {
+      if (init?.method === "POST") {
+        if (fail) throw new Error("Please retry");
+        saved = { ...saved, deadline: JSON.parse(init.body).deadline };
+      }
+      return reply({ ...empty, task: saved });
+    });
+    render(workspace(<ItemCollaboration resource={{ itemId: task.id }} />));
+    const today = await screen.findByRole("button", { name: "Set deadline to today" });
+    fireEvent.click(today);
+    await waitFor(() => expect(screen.getByLabelText("Must be done by")).toHaveValue("2026-11-01"));
+    expect(posts()[0]).toEqual({ action: "task", resource: { itemId: task.id }, deadline: "2026-11-01" });
+    fail = true;
+    fireEvent.click(screen.getByRole("button", { name: "Set deadline to tomorrow" }));
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText("Must be done by")).toHaveValue("2026-11-01");
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Set deadline to tomorrow" }));
+    await waitFor(() => expect(screen.getByLabelText("Must be done by")).toHaveValue("2026-11-02"));
+    expect(posts()[2]).toEqual({ action: "task", resource: { itemId: task.id }, deadline: "2026-11-02" });
+  });
+
+  it("keeps quick deadlines unavailable to read-only members", async () => {
+    fetchMock.mockResolvedValue(reply({ ...empty, task }));
+    render(workspace(<ItemCollaboration resource={{ itemId: task.id }} />, "household", "reader", false));
+    expect(await screen.findByRole("button", { name: "Set deadline to today" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Set deadline to tomorrow" })).toBeDisabled();
   });
 });

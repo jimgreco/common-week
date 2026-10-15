@@ -580,6 +580,15 @@ private struct ItemCollaborationContent: View {
             ItemCollaborationRow("Has a deadline", systemImage: "calendar", compact: compact) {
                 Toggle("Has a deadline", isOn: Binding(get: { task.deadline != nil }, set: { value in Task { await save("task", fields: ["deadline": value ? .string(planner.weekStart) : .null]) } }))
             }
+            HStack {
+                ForEach(0..<2) { days in
+                    Button(days == 0 ? "Today" : "Tomorrow") {
+                        Task { await save("task", fields: ["deadline": .string(WorkspaceTask.deadlineDate(daysFromToday: days, timeZoneIdentifier: planner.household.timezone))]) }
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(days == 0 ? "Set deadline to today" : "Set deadline to tomorrow")
+                }
+            }
             if let deadline = task.deadline {
                 ItemCollaborationRow("Due", systemImage: "clock", compact: compact) {
                     DatePicker("Must be done by", selection: Binding(get: { WeekDate.calendarDate(deadline) }, set: { value in Task { await save("task", fields: ["deadline": .string(WeekDate.string(value, timeZoneIdentifier: TimeZone.current.identifier))]) } }), displayedComponents: .date)

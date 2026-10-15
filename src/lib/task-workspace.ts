@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isDateOnly } from "@/lib/date";
+import { addDateDays, isDateOnly, todayInTimeZone } from "@/lib/date";
 
 export interface TaskRecord {
   id: string;
@@ -125,4 +125,8 @@ export function taskMatchesFilter(
   if (filter === "Backlog") return task.isBacklog;
   if (filter === "Overdue") return !!task.deadline && task.deadline < today;
   return true;
+}
+
+export function taskDeadlineDate(daysFromToday: 0 | 1, timeZone: string, now = new Date()): string {
+  return addDateDays(todayInTimeZone(timeZone, now), daysFromToday);
 }
