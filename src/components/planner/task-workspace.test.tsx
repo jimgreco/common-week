@@ -104,6 +104,45 @@ describe("task workspace create retries", () => {
 
 
 describe("task workspace search", () => {
+  it("shows upcoming deadlines in both scheduled and backlog tasks without mutating them", async () => {
+    const task: TaskRecord = { id: "today", text: "Pack school lunch", type: "task", responsibleMemberId: "other", deadline: "2026-10-12", isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
+    fetchMock.mockResolvedValue(reply({ ...empty, tasks: [task,
+      { ...task, id: "last", text: "Order school books", deadline: "2026-10-18", isBacklog: false, planningDate: "2026-10-20" },
+      { ...task, id: "later", text: "Buy school shoes", deadline: "2026-10-19" },
+      { ...task, id: "overdue", text: "Return library books", deadline: "2026-10-11" },
+      { ...task, id: "undated", text: "Plan school trip", deadline: null },
+      { ...task, id: "done", text: "Pack school supplies", isCompleted: true },
+    ] }));
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />, "household", "reader", false));
+    await screen.findByRole("button", { name: /Pack school lunch/ });
+    fireEvent.click(screen.getByRole("button", { name: "Due soon" }));
+    expect(screen.getByText("Open tasks due 2026-10-12 through 2026-10-18 (7 days).")).toBeVisible();
+    expect(screen.getByRole("button", { name: /Pack school lunch/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Order school books/ })).toBeVisible();
+    for (const name of [/Buy school shoes/, /Return library books/, /Plan school trip/, /Pack school supplies/]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    const search = screen.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(search, { target: { value: "  LUNCH  " } });
+    expect(screen.getByRole("button", { name: /Pack school lunch/ })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Order school books/ })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "missing" } });
+    expect(screen.getByRole("status")).toHaveTextContent("No tasks match your search in this view.");
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByRole("button", { name: "Due soon" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Order school books/ })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Overdue" }));
+    expect(screen.getByRole("button", { name: /Return library books/ })).toBeVisible();
+    expect(posts()).toEqual([]);
+  });
+
+  it("explains an empty Due soon view", async () => {
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    fireEvent.click(screen.getByRole("button", { name: "Due soon" }));
+    expect(screen.getByRole("status")).toHaveTextContent("No tasks due in the next 7 days.");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  });
+
   it("combines text with completion filters and restores the selected view when cleared", async () => {
     const task: TaskRecord = { id: "open", text: "Pack school lunch", type: "task", responsibleMemberId: "user", deadline: null, isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
     fetchMock.mockResolvedValue(reply({ ...empty, tasks: [task, { ...task, id: "other", text: "Order books" }, { ...task, id: "done", text: "Pack school supplies", isCompleted: true }] }));

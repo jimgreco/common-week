@@ -19,6 +19,25 @@ const task: TaskRecord = {
   isCompleted: false,
 };
 describe("task workspace", () => {
+  it.each([
+    { now: "2026-03-09T00:30:00Z", zone: "America/New_York", today: "2026-03-08", last: "2026-03-14", before: "2026-03-07", after: "2026-03-15" },
+    { now: "2026-11-01T04:30:00Z", zone: "America/New_York", today: "2026-11-01", last: "2026-11-07", before: "2026-10-31", after: "2026-11-08" },
+    { now: "2026-12-31T12:00:00Z", zone: "Pacific/Auckland", today: "2027-01-01", last: "2027-01-07", before: "2026-12-31", after: "2027-01-08" },
+  ])("limits Due soon to seven household calendar days from $today", ({ now, zone, today, last, before, after }) => {
+    const householdToday = taskDeadlineDate(0, zone, new Date(now));
+    expect(householdToday).toBe(today);
+    for (const deadline of [today, last]) {
+      expect(taskMatchesFilter({ ...task, deadline }, "Due soon", "adult", householdToday)).toBe(true);
+      expect(taskMatchesFilter({ ...task, deadline, isBacklog: false, planningDate: before }, "Due soon", "adult", householdToday)).toBe(true);
+    }
+    for (const deadline of [before, after, null]) {
+      expect(taskMatchesFilter({ ...task, deadline }, "Due soon", "adult", householdToday)).toBe(false);
+    }
+    expect(taskMatchesFilter({ ...task, deadline: today, isCompleted: true }, "Due soon", "adult", householdToday)).toBe(false);
+    expect(taskMatchesFilter({ ...task, deadline: today }, "Due soon", "adult", householdToday, "missing")).toBe(false);
+    expect(taskMatchesFilter({ ...task, deadline: before }, "Overdue", "adult", householdToday)).toBe(true);
+  });
+
   it("uses the household date for shortcuts across UTC and DST boundaries", () => {
     const midnightUTC = new Date("2026-03-09T00:30:00Z");
     expect(taskDeadlineDate(0, "America/New_York", midnightUTC)).toBe("2026-03-08");

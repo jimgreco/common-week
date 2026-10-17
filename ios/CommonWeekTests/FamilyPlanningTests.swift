@@ -2,6 +2,41 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testDueSoonUsesSevenHouseholdCalendarDaysAndKeepsOverdueSeparate() throws {
+        let formatter = ISO8601DateFormatter()
+        let cases = [
+            ("2026-03-09T00:30:00Z", "America/New_York", "2026-03-08", "2026-03-14", "2026-03-07", "2026-03-15"),
+            ("2026-11-01T04:30:00Z", "America/New_York", "2026-11-01", "2026-11-07", "2026-10-31", "2026-11-08"),
+            ("2026-12-31T12:00:00Z", "Pacific/Auckland", "2027-01-01", "2027-01-07", "2026-12-31", "2027-01-08")
+        ]
+        for (instant, zone, expectedToday, last, before, after) in cases {
+            let now = try XCTUnwrap(formatter.date(from: instant))
+            let today = WorkspaceTask.deadlineDate(daysFromToday: 0, timeZoneIdentifier: zone, now: now)
+            XCTAssertEqual(today, expectedToday)
+            var task = WorkspaceTask(id: "task", text: "Pack school lunch", type: "task", responsibleMemberId: "other", deadline: nil, isBacklog: true, planningDate: nil, weekStartDate: "2026-09-07", isCompleted: false)
+            for deadline in [today, last] {
+                task.deadline = deadline
+                task.isBacklog = true
+                task.planningDate = nil
+                XCTAssertTrue(task.matches("Due soon", userId: "adult", today: today))
+                task.isBacklog = false
+                task.planningDate = after
+                XCTAssertTrue(task.matches("Due soon", userId: "adult", today: today))
+            }
+            for deadline in [before, after, nil] {
+                task.deadline = deadline
+                XCTAssertFalse(task.matches("Due soon", userId: "adult", today: today))
+            }
+            task.deadline = before
+            XCTAssertTrue(task.matches("Overdue", userId: "adult", today: today))
+            task.deadline = today
+            XCTAssertTrue(task.matches("Due soon", userId: "adult", today: today, query: "  LUNCH  "))
+            XCTAssertFalse(task.matches("Due soon", userId: "adult", today: today, query: "missing"))
+            task.isCompleted = true
+            XCTAssertFalse(task.matches("Due soon", userId: "adult", today: today))
+        }
+    }
+
     func testQuickDeadlinesUseHouseholdDateAcrossUTCAndDSTBoundaries() throws {
         let formatter = ISO8601DateFormatter()
         let spring = try XCTUnwrap(formatter.date(from: "2026-03-09T00:30:00Z"))

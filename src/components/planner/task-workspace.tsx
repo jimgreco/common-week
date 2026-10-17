@@ -20,7 +20,7 @@ import {
   type WorkspaceMutation,
   type CollaborationEntry,
 } from "@/lib/task-workspace";
-import { formatTimestamp, weekStartForDate } from "@/lib/date";
+import { addDateDays, formatTimestamp, weekStartForDate } from "@/lib/date";
 import { attachmentFormat } from "@/lib/attachment-preview";
 import { AttachmentPreview } from "@/components/planner/attachment-preview";
 
@@ -336,7 +336,7 @@ export function TaskWorkspaceDialog({
           role="group"
           aria-label="Task filters"
         >
-          {["All", "Mine", "Unassigned", "Backlog", "Overdue", "Completed"].map(
+          {["All", "Mine", "Unassigned", "Backlog", "Due soon", "Overdue", "Completed"].map(
             (f) => (
               <button
                 type="button"
@@ -349,6 +349,11 @@ export function TaskWorkspaceDialog({
             ),
           )}
         </div>
+        {filter === "Due soon" && (
+          <p className="muted">
+            Open tasks due {context.today} through {addDateDays(context.today, 6)} (7 days).
+          </p>
+        )}
         {error && <p role="alert">{error}</p>}
         <div className="workspace-task-list">
           {filteredTasks.map((t) => (
@@ -383,7 +388,7 @@ export function TaskWorkspaceDialog({
         </div>
         {filteredTasks.length === 0 && (
           <p className="muted" role="status">
-            {query.trim() ? "No tasks match your search in this view." :
+            {query.trim() ? "No tasks match your search in this view." : filter === "Due soon" ? "No tasks due in the next 7 days." :
               `No ${filter === "All" ? "open" : filter.toLowerCase()} tasks.`}
           </p>
         )}

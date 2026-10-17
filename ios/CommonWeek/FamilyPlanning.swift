@@ -208,6 +208,7 @@ struct WorkspaceTask: Codable, Identifiable, Hashable {
         case "Unassigned": return responsibleMemberId == nil
         case "Backlog": return isBacklog
         case "Overdue": return deadline.map { $0 < today } ?? false
+        case "Due soon": return deadline.map { $0 >= today && $0 <= WeekDate.addDays(6, to: today) } ?? false
         default: return true
         }
     }

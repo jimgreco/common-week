@@ -124,6 +124,9 @@ export function taskMatchesFilter(
   if (filter === "Unassigned") return !task.responsibleMemberId;
   if (filter === "Backlog") return task.isBacklog;
   if (filter === "Overdue") return !!task.deadline && task.deadline < today;
+  if (filter === "Due soon") {
+    return !!task.deadline && task.deadline >= today && task.deadline <= addDateDays(today, 6);
+  }
   return true;
 }
 
