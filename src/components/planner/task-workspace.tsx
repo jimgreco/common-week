@@ -336,7 +336,7 @@ export function TaskWorkspaceDialog({
           role="group"
           aria-label="Task filters"
         >
-          {["All", "Mine", "Unassigned", "Backlog", "Due soon", "Overdue", "Completed"].map(
+          {["All", "Mine", "Unassigned", "Backlog", "No deadline", "Due soon", "Overdue", "Completed"].map(
             (f) => (
               <button
                 type="button"
@@ -353,6 +353,9 @@ export function TaskWorkspaceDialog({
           <p className="muted">
             Open tasks due {context.today} through {addDateDays(context.today, 6)} (7 days).
           </p>
+        )}
+        {filter === "No deadline" && (
+          <p className="muted">Open tasks without a deadline, whether planned or in the backlog.</p>
         )}
         {error && <p role="alert">{error}</p>}
         <div className="workspace-task-list">
@@ -388,7 +391,7 @@ export function TaskWorkspaceDialog({
         </div>
         {filteredTasks.length === 0 && (
           <p className="muted" role="status">
-            {query.trim() ? "No tasks match your search in this view." : filter === "Due soon" ? "No tasks due in the next 7 days." :
+            {query.trim() ? "No tasks match your search in this view." : filter === "No deadline" ? "No open tasks without a deadline." : filter === "Due soon" ? "No tasks due in the next 7 days." :
               `No ${filter === "All" ? "open" : filter.toLowerCase()} tasks.`}
           </p>
         )}

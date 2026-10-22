@@ -2,6 +2,26 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testNoDeadlineIncludesEveryPlacementAndTracksCompletionAndDeadlineChanges() {
+        for (backlog, planningDate) in [(true, nil), (false, "2026-10-22"), (false, nil)] as [(Bool, String?)] {
+            var task = WorkspaceTask(id: "task", text: "Pack school lunches", type: "task", responsibleMemberId: "other", deadline: nil, isBacklog: backlog, planningDate: planningDate, weekStartDate: "2026-10-19", isCompleted: false)
+            XCTAssertTrue(task.matches("No deadline", userId: "adult", today: "2026-10-22", query: " LUNCHES "))
+            XCTAssertFalse(task.matches("No deadline", userId: "adult", today: "2026-10-22", query: "missing"))
+            for deadline in ["2026-10-21", "2026-10-22", "2026-10-23"] {
+                task.deadline = deadline
+                XCTAssertFalse(task.matches("No deadline", userId: "adult", today: "2026-10-22"))
+            }
+            task.deadline = nil
+            XCTAssertTrue(task.matches("No deadline", userId: "adult", today: "2026-10-22"))
+            task.isCompleted = true
+            XCTAssertFalse(task.matches("No deadline", userId: "adult", today: "2026-10-22"))
+            task.isCompleted = false
+            XCTAssertTrue(task.matches("No deadline", userId: "adult", today: "2026-10-22"))
+            XCTAssertEqual(task.planningDate, planningDate)
+            XCTAssertEqual(task.isBacklog, backlog)
+        }
+    }
+
     func testDueSoonUsesSevenHouseholdCalendarDaysAndKeepsOverdueSeparate() throws {
         let formatter = ISO8601DateFormatter()
         let cases = [

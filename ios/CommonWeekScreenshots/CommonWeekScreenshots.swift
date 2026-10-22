@@ -377,6 +377,78 @@ final class CommonWeekScreenshots: XCTestCase {
         attachCurrentScreen(named: "Tomorrow deadline saved in backlog")
     }
 
+    func testTaskWorkspaceNoDeadline() throws {
+        launchDemo()
+        #if targetEnvironment(macCatalyst)
+        app.buttons["Tasks & backlog"].tap()
+        #else
+        app.buttons["Tasks and backlog"].tap()
+        #endif
+        let name = "Review school supplies \(UUID().uuidString.prefix(5))"
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8))
+        capture.tap(); capture.typeText(name)
+        app.buttons["Add to backlog"].tap()
+        let filter = app.buttons["task-workspace-filter"]
+        XCTAssertTrue(filter.waitForExistence(timeout: 8)); filter.tap()
+        app.buttons["No deadline"].tap()
+        let search = app.textFields["task-workspace-search"]
+        search.tap(); search.typeText(name + "\n")
+        let task = app.buttons.containing(.staticText, identifier: name).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Open tasks without a deadline, whether planned or in the backlog."].exists)
+        app.buttons["Clear search"].tap()
+        search.tap(); search.typeText("missing\n")
+        XCTAssertTrue(app.staticTexts["No tasks match your search in this view."].waitForExistence(timeout: 5))
+        XCTAssertFalse(task.exists)
+        app.buttons["Clear search"].tap()
+        search.tap(); search.typeText(name + "\n")
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Open tasks without a deadline")
+
+        task.tap()
+        let tomorrow = app.buttons["Set deadline to tomorrow"]
+        XCTAssertTrue(tomorrow.waitForExistence(timeout: 8)); tomorrow.tap()
+        XCTAssertTrue(app.staticTexts["Must be done by"].waitForExistence(timeout: 8))
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No tasks match your search in this view."].waitForExistence(timeout: 5))
+        XCTAssertFalse(task.exists)
+        filter.tap(); app.buttons["All"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5)); task.tap()
+        let hasDeadline = app.switches["Has a deadline"].firstMatch
+        XCTAssertTrue(hasDeadline.waitForExistence(timeout: 8))
+        attachCurrentScreen(named: "Deadline before clearing")
+        tapTrailingSwitch(hasDeadline)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: hasDeadline)], timeout: 5), .completed)
+        app.buttons["Done"].firstMatch.tap()
+        filter.tap(); app.buttons["No deadline"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        task.tap()
+        let complete = app.switches["Task complete"].firstMatch
+        XCTAssertTrue(complete.waitForExistence(timeout: 8))
+        tapTrailingSwitch(complete)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '1'"), object: complete)], timeout: 5), .completed)
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No tasks match your search in this view."].waitForExistence(timeout: 5))
+        filter.tap(); app.buttons["Completed"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5)); task.tap()
+        XCTAssertTrue(complete.waitForExistence(timeout: 8))
+        tapTrailingSwitch(complete)
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: complete)], timeout: 5), .completed)
+        app.buttons["Done"].firstMatch.tap()
+        filter.tap(); app.buttons["No deadline"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Reopened task returns without a deadline")
+    }
+
+    private func tapTrailingSwitch(_ element: XCUIElement) {
+        // SwiftUI exposes the entire Form row as the switch. Use its visible
+        // trailing control instead of the row midpoint, which hits the label.
+        let frame = element.frame
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: frame.maxX - 28, dy: frame.midY)).tap()
+    }
+
     func testTaskWorkspaceDueSoon() throws {
         launchDemo()
         #if targetEnvironment(macCatalyst)

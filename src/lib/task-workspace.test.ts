@@ -20,6 +20,22 @@ const task: TaskRecord = {
 };
 describe("task workspace", () => {
   it.each([
+    { isBacklog: true, planningDate: null },
+    { isBacklog: false, planningDate: "2026-10-22" },
+    { isBacklog: false, planningDate: null },
+  ])("finds open tasks without deadlines regardless of placement: %j", (placement) => {
+    const undated = { ...task, ...placement, deadline: null };
+    expect(taskMatchesFilter(undated, "No deadline", "other", "2026-10-22", " PACK ")).toBe(true);
+    expect(taskMatchesFilter(undated, "No deadline", "other", "2026-10-22", "missing")).toBe(false);
+    expect(taskMatchesFilter({ ...undated, isCompleted: true }, "No deadline", "adult", "2026-10-22")).toBe(false);
+    for (const deadline of ["2026-10-21", "2026-10-22", "2026-10-23"]) {
+      expect(taskMatchesFilter({ ...undated, deadline }, "No deadline", "adult", "2026-10-22")).toBe(false);
+    }
+    expect(taskMatchesFilter(undated, "No deadline", "adult", "2026-10-22")).toBe(true);
+    expect(undated).toEqual({ ...task, ...placement, deadline: null });
+  });
+
+  it.each([
     { now: "2026-03-09T00:30:00Z", zone: "America/New_York", today: "2026-03-08", last: "2026-03-14", before: "2026-03-07", after: "2026-03-15" },
     { now: "2026-11-01T04:30:00Z", zone: "America/New_York", today: "2026-11-01", last: "2026-11-07", before: "2026-10-31", after: "2026-11-08" },
     { now: "2026-12-31T12:00:00Z", zone: "Pacific/Auckland", today: "2027-01-01", last: "2027-01-07", before: "2026-12-31", after: "2027-01-08" },

@@ -123,6 +123,7 @@ export function taskMatchesFilter(
   if (filter === "Mine") return task.responsibleMemberId === userId;
   if (filter === "Unassigned") return !task.responsibleMemberId;
   if (filter === "Backlog") return task.isBacklog;
+  if (filter === "No deadline") return task.deadline === null;
   if (filter === "Overdue") return !!task.deadline && task.deadline < today;
   if (filter === "Due soon") {
     return !!task.deadline && task.deadline >= today && task.deadline <= addDateDays(today, 6);

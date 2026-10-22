@@ -104,6 +104,42 @@ describe("task workspace create retries", () => {
 
 
 describe("task workspace search", () => {
+  it("lets read-only members find tasks without deadlines and compose search without writes", async () => {
+    const task: TaskRecord = { id: "backlog", text: "Pack school lunch", type: "task", responsibleMemberId: "other", deadline: null, isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
+    fetchMock.mockResolvedValue(reply({ ...empty, tasks: [task,
+      { ...task, id: "planned", text: "Order books", isBacklog: false, planningDate: "2026-10-12" },
+      { ...task, id: "weekly", text: "Plan school trip", isBacklog: false },
+      { ...task, id: "dated", text: "Return books", deadline: "2026-10-12" },
+      { ...task, id: "done", text: "Pack supplies", isCompleted: true },
+    ] }));
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />, "household", "reader", false));
+    await screen.findByRole("button", { name: /Pack school lunch/ });
+    fireEvent.click(screen.getByRole("button", { name: "No deadline" }));
+    expect(screen.getByText("Open tasks without a deadline, whether planned or in the backlog.")).toBeVisible();
+    for (const name of [/Pack school lunch/, /Order books/, /Plan school trip/]) {
+      expect(screen.getByRole("button", { name })).toBeVisible();
+    }
+    expect(screen.queryByRole("button", { name: /Return books/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Pack supplies/ })).not.toBeInTheDocument();
+    const search = screen.getByRole("searchbox", { name: "Search tasks" });
+    fireEvent.change(search, { target: { value: "  LUNCH  " } });
+    expect(screen.getByRole("button", { name: /Pack school lunch/ })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Order books/ })).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "missing" } });
+    expect(screen.getByRole("status")).toHaveTextContent("No tasks match your search in this view.");
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByRole("button", { name: "No deadline" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Order books/ })).toBeVisible();
+    expect(posts()).toEqual([]);
+  });
+
+  it("explains an empty No deadline view", async () => {
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    fireEvent.click(screen.getByRole("button", { name: "No deadline" }));
+    expect(screen.getByRole("status")).toHaveTextContent("No open tasks without a deadline.");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  });
+
   it("shows upcoming deadlines in both scheduled and backlog tasks without mutating them", async () => {
     const task: TaskRecord = { id: "today", text: "Pack school lunch", type: "task", responsibleMemberId: "other", deadline: "2026-10-12", isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
     fetchMock.mockResolvedValue(reply({ ...empty, tasks: [task,
