@@ -377,6 +377,65 @@ final class CommonWeekScreenshots: XCTestCase {
         attachCurrentScreen(named: "Tomorrow deadline saved in backlog")
     }
 
+    func testTaskWorkspaceSorting() throws {
+        launchDemo()
+        #if targetEnvironment(macCatalyst)
+        app.buttons["Tasks & backlog"].tap()
+        #else
+        app.buttons["Tasks and backlog"].tap()
+        #endif
+        let prefix = "Sort review \(UUID().uuidString.prefix(4))"
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8))
+        for suffix in ["10", "2", "Alpha"] {
+            capture.tap(); capture.typeText("\(prefix) \(suffix)")
+            app.buttons["Add to backlog"].tap()
+            // Earlier preview runs may leave enough tasks for this row to be
+            // outside the lazy List. Confirm capture, then search this run.
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == '' OR value == 'New task'"), object: capture)], timeout: 8), .completed)
+        }
+        let search = app.textFields["task-workspace-search"]
+        search.tap(); search.typeText(prefix + "\n")
+        let sort = app.buttons["task-workspace-sort"]
+        XCTAssertTrue(sort.waitForExistence(timeout: 8))
+        sort.tap(); app.buttons["Task name"].tap()
+        let two = app.buttons.containing(.staticText, identifier: "\(prefix) 2").firstMatch
+        let ten = app.buttons.containing(.staticText, identifier: "\(prefix) 10").firstMatch
+        let alpha = app.buttons.containing(.staticText, identifier: "\(prefix) Alpha").firstMatch
+        XCTAssertTrue(two.exists && ten.exists && alpha.exists)
+        XCTAssertLessThan(two.frame.minY, ten.frame.minY)
+        XCTAssertLessThan(ten.frame.minY, alpha.frame.minY)
+        attachCurrentScreen(named: "Tasks sorted naturally by name")
+        alpha.tap()
+        let today = app.buttons["Set deadline to today"]
+        XCTAssertTrue(today.waitForExistence(timeout: 8)); today.tap()
+        XCTAssertTrue(app.staticTexts["Must be done by"].waitForExistence(timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(sort.waitForExistence(timeout: 8))
+        XCTAssertTrue(sort.label.contains("Task name"))
+        XCTAssertEqual(search.value as? String, prefix)
+        sort.tap(); app.buttons["Deadline"].tap()
+        XCTAssertLessThan(alpha.frame.minY, two.frame.minY)
+        XCTAssertLessThan(two.frame.minY, ten.frame.minY)
+        let filter = app.buttons["task-workspace-filter"]
+        filter.tap(); app.buttons["No deadline"].tap()
+        XCTAssertFalse(alpha.exists)
+        XCTAssertTrue(two.exists && ten.exists)
+        sort.tap(); app.buttons["Planned date"].tap()
+        XCTAssertLessThan(two.frame.minY, ten.frame.minY)
+        attachCurrentScreen(named: "Planned task sorting with No deadline")
+        #if !targetEnvironment(macCatalyst)
+        XCUIDevice.shared.press(.home)
+        #endif
+        app.activate()
+        XCTAssertTrue(sort.label.contains("Planned date"))
+        XCTAssertTrue(filter.label.contains("No deadline"))
+        XCTAssertEqual(search.value as? String, prefix)
+        sort.tap(); app.buttons["Default order"].tap()
+        XCTAssertTrue(two.exists && ten.exists)
+    }
+
     func testTaskWorkspaceNoDeadline() throws {
         launchDemo()
         #if targetEnvironment(macCatalyst)

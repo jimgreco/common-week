@@ -355,6 +355,7 @@ struct TaskWorkspaceView: View {
     @State private var tasks: [WorkspaceTask] = []
     @State private var filter = "All"
     @State private var query = ""
+    @State private var sort: WorkspaceTaskSort = .defaultOrder
     @State private var capture = ""
     @State private var createAttempts = WorkspaceCreateAttempts()
     @FocusState private var captureFocused: Bool
@@ -364,7 +365,7 @@ struct TaskWorkspaceView: View {
     @State private var selected: WorkspaceTask?
     @State private var loadRequest = UUID()
     private var today: String { WeekDate.string(Date(), timeZoneIdentifier: planner.household.timezone) }
-    private var filtered: [WorkspaceTask] { tasks.filter { $0.matches(filter, userId: viewModel.workspaceUserId, today: today, query: query) } }
+    private var filtered: [WorkspaceTask] { WorkspaceTask.sorted(tasks.filter { $0.matches(filter, userId: viewModel.workspaceUserId, today: today, query: query) }, by: sort) }
 
     var body: some View {
         NavigationStack {
@@ -401,6 +402,14 @@ struct TaskWorkspaceView: View {
                         Text("Open tasks without a deadline, whether planned or in the backlog.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    Picker("Sort by", selection: $sort) { ForEach(WorkspaceTaskSort.allCases) { Text($0.rawValue).tag($0) } }
+                        .accessibilityIdentifier("task-workspace-sort")
+                    if sort == .deadline {
+                        Text("Earliest deadlines first; tasks without a deadline last.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if sort == .planned {
+                        Text("Earliest plans first. Whole-week tasks use the week’s start; backlog tasks come last.").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 if let error { Section { Text(error).foregroundStyle(.red) } }
                 Section("\(filtered.count) tasks") {
@@ -411,7 +420,7 @@ struct TaskWorkspaceView: View {
                                 Text("\(person(task.responsibleMemberId)) · \(task.isBacklog ? "Backlog" : task.planningDate ?? "Week of \(task.weekStartDate)")").font(.caption).foregroundStyle(.secondary)
                                 if let deadline = task.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(!task.isCompleted && deadline < today ? .red : .secondary) }
                             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.plain).accessibilityIdentifier("workspace-task-\(task.id)")
                     }
                     if filtered.isEmpty { Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (filter == "No deadline" ? "No open tasks without a deadline." : filter == "Due soon" ? "No tasks due in the next 7 days." : "No tasks in this view.") : "No tasks match your search in this view.").foregroundStyle(.secondary) }
                 }

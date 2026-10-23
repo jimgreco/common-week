@@ -134,3 +134,36 @@ export function taskMatchesFilter(
 export function taskDeadlineDate(daysFromToday: 0 | 1, timeZone: string, now = new Date()): string {
   return addDateDays(todayInTimeZone(timeZone, now), daysFromToday);
 }
+
+export const taskSortOptions = [
+  { value: "default", label: "Default order" },
+  { value: "deadline", label: "Deadline" },
+  { value: "planned", label: "Planned date" },
+  { value: "name", label: "Task name" },
+] as const;
+export type TaskSort = (typeof taskSortOptions)[number]["value"];
+
+const taskNameCollator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+
+/** Sort only this view. Date-only values retain their household calendar meaning. */
+export function sortWorkspaceTasks(tasks: readonly TaskRecord[], sort: TaskSort): TaskRecord[] {
+  const result = [...tasks];
+  if (sort === "default") return result;
+  const dateKey = (task: TaskRecord) => sort === "deadline"
+    ? task.deadline
+    : task.isBacklog ? null : (task.planningDate ?? task.weekStartDate);
+  return result.sort((left, right) => {
+    if (sort !== "name") {
+      const a = dateKey(left);
+      const b = dateKey(right);
+      if (a !== b) {
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return a < b ? -1 : 1;
+      }
+    }
+    const nameOrder = taskNameCollator.compare(left.text.trim(), right.text.trim());
+    if (nameOrder) return nameOrder;
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+  });
+}

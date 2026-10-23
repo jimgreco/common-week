@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   taskMatchesFilter,
   taskDeadlineDate,
+  sortWorkspaceTasks,
   workspaceMutationSchema,
   WorkspaceCreateAttempts,
   type WorkspaceMutation,
@@ -18,6 +19,58 @@ const task: TaskRecord = {
   weekStartDate: "2026-09-07",
   isCompleted: false,
 };
+describe("task workspace sorting", () => {
+  const tasks: TaskRecord[] = [
+    { ...task, id: "later", text: "Review 10", deadline: "2026-11-01", isBacklog: false, planningDate: "2026-11-03", weekStartDate: "2026-11-02" },
+    { ...task, id: "undated", text: "Review 2", deadline: null },
+    { ...task, id: "weekly", text: "Weekly plan", deadline: "2026-10-31", isBacklog: false, planningDate: null, weekStartDate: "2026-10-26" },
+    { ...task, id: "earlier", text: "Earlier plan", deadline: "2026-10-30", isBacklog: false, planningDate: "2026-10-27", weekStartDate: "2026-10-26" },
+  ];
+  const ids = (records: TaskRecord[]) => records.map(({ id }) => id);
+
+  it("keeps the exact default order and never changes the input", () => {
+    const before = structuredClone(tasks);
+    expect(ids(sortWorkspaceTasks(tasks, "default"))).toEqual(ids(tasks));
+    for (const sort of ["deadline", "planned", "name", "default"] as const) sortWorkspaceTasks(tasks, sort);
+    expect(tasks).toEqual(before);
+  });
+
+  it("sorts deadlines ascending with undated tasks last, independently of planned dates", () => {
+    expect(ids(sortWorkspaceTasks(tasks, "deadline"))).toEqual(["earlier", "weekly", "later", "undated"]);
+    expect(sortWorkspaceTasks([{ ...task, id: "a", deadline: "2026-12-31" }, { ...task, id: "b", deadline: "2027-01-01" }], "deadline").map(t => t.deadline)).toEqual(["2026-12-31", "2027-01-01"]);
+  });
+
+  it("sorts whole-week tasks by week start and puts backlog last even when stale placement exists", () => {
+    expect(ids(sortWorkspaceTasks(tasks, "planned"))).toEqual(["weekly", "earlier", "later", "undated"]);
+    const backlog = { ...tasks[1], planningDate: "2000-01-01", weekStartDate: "2000-01-01" };
+    expect(ids(sortWorkspaceTasks([backlog, tasks[0]], "planned"))).toEqual(["later", "undated"]);
+    expect(backlog.planningDate).toBe("2000-01-01");
+  });
+
+  it("uses natural case-insensitive names and stable IDs to resolve equivalent names", () => {
+    const sameNames = [
+      { ...task, id: "z", text: " École 2 " },
+      { ...task, id: "b", text: "ecole 10" },
+      { ...task, id: "a", text: "ecole 2" },
+    ];
+    for (const sort of ["name", "deadline", "planned"] as const) {
+      expect(ids(sortWorkspaceTasks(sameNames, sort))).toEqual(["a", "z", "b"]);
+      expect(ids(sortWorkspaceTasks([...sameNames].reverse(), sort))).toEqual(["a", "z", "b"]);
+    }
+  });
+
+  it("composes with filters and updates from edits without changing stored dates or completion", () => {
+    const records = tasks.map(t => ({ ...t }));
+    records[0].deadline = null;
+    records[2].isCompleted = true;
+    const visible = records.filter(t => taskMatchesFilter(t, "No deadline", "adult", "2026-10-23", " REVIEW "));
+    expect(ids(sortWorkspaceTasks(visible, "name"))).toEqual(["undated", "later"]);
+    expect(ids(sortWorkspaceTasks(visible, "planned"))).toEqual(["later", "undated"]);
+    expect(records[0].deadline).toBeNull();
+    expect(records[2].isCompleted).toBe(true);
+  });
+});
+
 describe("task workspace", () => {
   it.each([
     { isBacklog: true, planningDate: null },

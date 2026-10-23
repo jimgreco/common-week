@@ -183,6 +183,11 @@ final class FamilyPlanningStore: ObservableObject {
     }
 }
 
+enum WorkspaceTaskSort: String, CaseIterable, Identifiable {
+    case defaultOrder = "Default order", deadline = "Deadline", planned = "Planned date", name = "Task name"
+    var id: String { rawValue }
+}
+
 struct WorkspaceTask: Codable, Identifiable, Hashable {
     let id: String
     var text: String
@@ -196,6 +201,28 @@ struct WorkspaceTask: Codable, Identifiable, Hashable {
 
     static func deadlineDate(daysFromToday: Int, timeZoneIdentifier: String, now: Date = Date()) -> String {
         WeekDate.addDays(daysFromToday, to: WeekDate.string(now, timeZoneIdentifier: timeZoneIdentifier))
+    }
+
+    static func sorted(_ tasks: [WorkspaceTask], by sort: WorkspaceTaskSort) -> [WorkspaceTask] {
+        guard sort != .defaultOrder else { return tasks }
+        func dateKey(_ task: WorkspaceTask) -> String? {
+            sort == .deadline ? task.deadline : task.isBacklog ? nil : task.planningDate ?? task.weekStartDate
+        }
+        return tasks.sorted { left, right in
+            if sort != .name {
+                let a = dateKey(left), b = dateKey(right)
+                if a != b {
+                    guard let a else { return false }
+                    guard let b else { return true }
+                    return a < b
+                }
+            }
+            let nameOrder = left.text.trimmingCharacters(in: .whitespacesAndNewlines).compare(
+                right.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                options: [.caseInsensitive, .diacriticInsensitive, .numeric], locale: Locale(identifier: "en"))
+            if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+            return left.id < right.id
+        }
     }
 
     func matches(_ filter: String, userId: String, today: String, query: String = "") -> Bool {

@@ -53,3 +53,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   for retry and roll back failed optimistic completion/deletion changes.
 - Native personal Apple Reminders appear under Everyone or the signed-in person.
   Today resets both the visible week and selected household-local date.
+- Task workspace sorting is view-only; Default order preserves the server order.
+  Deadline sorts use deadline only; Planned date uses a daily date or a whole-week
+  task's week start and puts backlog last. Keep web/native natural-name and ID tie
+  ordering aligned, and reset view choices at account/household boundaries.

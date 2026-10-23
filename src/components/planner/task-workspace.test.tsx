@@ -201,6 +201,95 @@ describe("task workspace search", () => {
 });
 
 
+describe("task workspace sorting", () => {
+  const task: TaskRecord = { id: "later", text: "Review Zulu", type: "task", responsibleMemberId: "user", deadline: "2026-10-13", isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
+  const tasks = [task, { ...task, id: "earlier", text: "Review Alpha", deadline: "2026-10-12", isBacklog: false, planningDate: "2026-10-14" }, { ...task, id: "undated", text: "Review Beta", deadline: null, isBacklog: false }];
+  const names = () => [...document.querySelectorAll(".workspace-task strong")].map(node => node.textContent);
+  const chooseSort = (value: string) => fireEvent.change(screen.getByRole("combobox", { name: "Sort tasks" }), { target: { value } });
+
+  it("sorts and restores the default order for a read-only member without writes", async () => {
+    fetchMock.mockResolvedValue(reply({ ...empty, tasks }));
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />, "household", "reader", false));
+    await screen.findByRole("button", { name: /Review Zulu/ });
+    expect(names()).toEqual(["Review Zulu", "Review Alpha", "Review Beta"]);
+    chooseSort("deadline");
+    expect(names()).toEqual(["Review Alpha", "Review Zulu", "Review Beta"]);
+    chooseSort("planned");
+    expect(names()).toEqual(["Review Beta", "Review Alpha", "Review Zulu"]);
+    chooseSort("name");
+    chooseSort("name");
+    expect(names()).toEqual(["Review Alpha", "Review Beta", "Review Zulu"]);
+    fireEvent.click(screen.getByRole("button", { name: "No deadline" }));
+    expect(names()).toEqual(["Review Beta"]);
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    chooseSort("default");
+    expect(names()).toEqual(["Review Zulu", "Review Alpha", "Review Beta"]);
+    expect(posts()).toEqual([]);
+  });
+
+  it("retains search, filter and sort after a failed edit, retry and returning to the list", async () => {
+    const saved = tasks.map(t => ({ ...t }));
+    let fail = true;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (init?.method === "POST") {
+        if (fail) throw new TypeError("Connection interrupted");
+        const input = JSON.parse(init.body);
+        Object.assign(saved.find(t => t.id === input.resource.itemId)!, { deadline: input.deadline });
+        return reply();
+      }
+      const id = new URL(url, "http://local").searchParams.get("itemId");
+      return reply(id ? { ...empty, task: saved.find(t => t.id === id)! } : { ...empty, tasks: saved });
+    });
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    await screen.findByRole("button", { name: /Review Alpha/ });
+    fireEvent.click(screen.getByRole("button", { name: "Due soon" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search tasks" }), { target: { value: " REVIEW " } });
+    chooseSort("deadline");
+    expect(names()).toEqual(["Review Alpha", "Review Zulu"]);
+    fireEvent.click(screen.getByRole("button", { name: /Review Alpha/ }));
+    const deadline = await screen.findByLabelText("Must be done by");
+    fireEvent.change(deadline, { target: { value: "2026-10-14" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Connection interrupted");
+    fireEvent.click(screen.getByRole("button", { name: "← All tasks" }));
+    await screen.findByRole("button", { name: /Review Alpha/ });
+    expect(names()).toEqual(["Review Alpha", "Review Zulu"]);
+    expect(screen.getByRole("combobox", { name: "Sort tasks" })).toHaveValue("deadline");
+    fireEvent.click(screen.getByRole("button", { name: /Review Alpha/ }));
+    fail = false;
+    fireEvent.change(await screen.findByLabelText("Must be done by"), { target: { value: "2026-10-14" } });
+    await waitFor(() => expect(screen.getByLabelText("Must be done by")).toHaveValue("2026-10-14"));
+    fireEvent.click(screen.getByRole("button", { name: "← All tasks" }));
+    await waitFor(() => expect(names()).toEqual(["Review Zulu", "Review Alpha"]));
+    expect(screen.getByRole("searchbox", { name: "Search tasks" })).toHaveValue(" REVIEW ");
+    expect(screen.getByRole("button", { name: "Due soon" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("combobox", { name: "Sort tasks" })).toHaveValue("deadline");
+    expect(saved[1]).toMatchObject({ planningDate: "2026-10-14", isBacklog: false, isCompleted: false });
+    expect(posts()).toHaveLength(2);
+  });
+
+  it.each([
+    { scope: "household", householdId: "other-household", userId: "user" },
+    { scope: "account", householdId: "household", userId: "other-user" },
+  ])("resets the view and ignores an old refresh after changing $scope", async ({ householdId, userId }) => {
+    let resolve!: (value: ReturnType<typeof reply>) => void;
+    fetchMock.mockImplementationOnce(() => new Promise(yes => { resolve = yes; }));
+    const { rerender } = render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    chooseSort("name");
+    fireEvent.click(screen.getByRole("button", { name: "Mine" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search tasks" }), { target: { value: "old" } });
+    fetchMock.mockResolvedValue(reply({ ...empty, tasks: [{ ...task, id: "new", text: "New household task" }] }));
+    rerender(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />, householdId, userId));
+    await screen.findByRole("button", { name: /New household task/ });
+    await act(async () => { resolve(reply({ ...empty, tasks })); });
+    expect(names()).toEqual(["New household task"]);
+    expect(screen.getByRole("combobox", { name: "Sort tasks" })).toHaveValue("default");
+    expect(screen.getByRole("searchbox", { name: "Search tasks" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    expect(posts()).toEqual([]);
+  });
+});
+
 describe("quick task deadlines", () => {
   const task: TaskRecord = { id: "deadline-task", text: "Pack", type: "task", responsibleMemberId: null, deadline: null, isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
 

@@ -2,6 +2,49 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testTaskSortKeepsDefaultAndDateOnlyPlacementMeaning() {
+        let tasks = [
+            WorkspaceTask(id: "later", text: "Review 10", type: "task", deadline: "2026-11-01", isBacklog: false, planningDate: "2026-11-03", weekStartDate: "2026-11-02", isCompleted: false),
+            WorkspaceTask(id: "undated", text: "Review 2", type: "task", deadline: nil, isBacklog: true, planningDate: "2000-01-01", weekStartDate: "2000-01-01", isCompleted: false),
+            WorkspaceTask(id: "weekly", text: "Weekly plan", type: "task", deadline: "2026-10-31", isBacklog: false, planningDate: nil, weekStartDate: "2026-10-26", isCompleted: false),
+            WorkspaceTask(id: "earlier", text: "Earlier plan", type: "task", deadline: "2026-10-30", isBacklog: false, planningDate: "2026-10-27", weekStartDate: "2026-10-26", isCompleted: false)
+        ]
+        XCTAssertEqual(WorkspaceTask.sorted(tasks, by: .defaultOrder), tasks)
+        XCTAssertEqual(WorkspaceTask.sorted(tasks, by: .deadline).map(\.id), ["earlier", "weekly", "later", "undated"])
+        XCTAssertEqual(WorkspaceTask.sorted(tasks, by: .planned).map(\.id), ["weekly", "earlier", "later", "undated"])
+        XCTAssertEqual(WorkspaceTask.sorted(tasks, by: .name).map(\.id), ["earlier", "undated", "later", "weekly"])
+        XCTAssertEqual(tasks[1].planningDate, "2000-01-01")
+        XCTAssertNil(tasks[1].deadline)
+        XCTAssertEqual(WorkspaceTask.sorted(tasks, by: .defaultOrder), tasks)
+    }
+
+    func testTaskSortNamesAreNaturalAndTiesStayDeterministic() {
+        let names = [("z", " École 2 "), ("b", "ecole 10"), ("a", "ecole 2")]
+        let tasks = names.map { WorkspaceTask(id: $0.0, text: $0.1, type: "task", deadline: "2026-12-31", isBacklog: true, weekStartDate: "2026-12-28", isCompleted: false) }
+        for sort in [WorkspaceTaskSort.name, .deadline, .planned] {
+            XCTAssertEqual(WorkspaceTask.sorted(tasks, by: sort).map(\.id), ["a", "z", "b"])
+            XCTAssertEqual(WorkspaceTask.sorted(Array(tasks.reversed()), by: sort).map(\.id), ["a", "z", "b"])
+        }
+    }
+
+    func testTaskSortComposesSearchAndFiltersAndReflectsEdits() {
+        var tasks = [
+            WorkspaceTask(id: "a", text: "Review Zulu", type: "task", deadline: "2026-12-31", isBacklog: true, weekStartDate: "2026-12-28", isCompleted: false),
+            WorkspaceTask(id: "b", text: "Review Alpha", type: "task", deadline: "2027-01-01", isBacklog: false, planningDate: "2026-12-31", weekStartDate: "2026-12-28", isCompleted: false)
+        ]
+        func visible() -> [WorkspaceTask] { tasks.filter { $0.matches("Due soon", userId: "adult", today: "2026-12-31", query: " REVIEW ") } }
+        XCTAssertEqual(WorkspaceTask.sorted(visible(), by: .deadline).map(\.id), ["a", "b"])
+        tasks[0].deadline = "2027-01-02"
+        XCTAssertEqual(WorkspaceTask.sorted(visible(), by: .deadline).map(\.id), ["b", "a"])
+        tasks[1].isCompleted = true
+        XCTAssertEqual(WorkspaceTask.sorted(visible(), by: .deadline).map(\.id), ["a"])
+        tasks[1].isCompleted = false
+        tasks[1].deadline = nil
+        let undated = tasks.filter { $0.matches("No deadline", userId: "adult", today: "2026-12-31", query: "Review") }
+        XCTAssertEqual(WorkspaceTask.sorted(undated, by: .name).map(\.id), ["b"])
+        XCTAssertEqual(tasks[1].planningDate, "2026-12-31")
+    }
+
     func testNoDeadlineIncludesEveryPlacementAndTracksCompletionAndDeadlineChanges() {
         for (backlog, planningDate) in [(true, nil), (false, "2026-10-22"), (false, nil)] as [(Bool, String?)] {
             var task = WorkspaceTask(id: "task", text: "Pack school lunches", type: "task", responsibleMemberId: "other", deadline: nil, isBacklog: backlog, planningDate: planningDate, weekStartDate: "2026-10-19", isCompleted: false)

@@ -13,6 +13,9 @@ import { Modal } from "@/components/planner/dialogs";
 import {
   taskMatchesFilter,
   taskDeadlineDate,
+  sortWorkspaceTasks,
+  taskSortOptions,
+  type TaskSort,
   WorkspaceCreateAttempts,
   type TaskRecord,
   type ItemResource,
@@ -217,6 +220,7 @@ export function TaskWorkspaceDialog({
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [filter, setFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<TaskSort>("default");
   const [text, setText] = useState("");
   const [selected, setSelected] = useState<string | null>(
     initialItemId ?? null,
@@ -266,9 +270,9 @@ export function TaskWorkspaceDialog({
       setBusy(false);
     }
   }
-  const filteredTasks = tasks.filter((task) =>
+  const filteredTasks = sortWorkspaceTasks(tasks.filter((task) =>
     taskMatchesFilter(task, filter, context.userId, context.today, query),
-  );
+  ), sort);
   if (selected)
     return (
       <Modal
@@ -357,6 +361,16 @@ export function TaskWorkspaceDialog({
         {filter === "No deadline" && (
           <p className="muted">Open tasks without a deadline, whether planned or in the backlog.</p>
         )}
+        <div className="workspace-sort">
+          <label>
+            Sort by
+            <select aria-label="Sort tasks" value={sort} onChange={(event) => setSort(event.target.value as TaskSort)}>
+              {taskSortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          {sort === "deadline" && <p className="muted">Earliest deadlines first; tasks without a deadline last.</p>}
+          {sort === "planned" && <p className="muted">Earliest plans first. Whole-week tasks use the week’s start; backlog tasks come last.</p>}
+        </div>
         {error && <p role="alert">{error}</p>}
         <div className="workspace-task-list">
           {filteredTasks.map((t) => (

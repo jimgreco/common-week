@@ -1366,6 +1366,10 @@ textarea:focus-visible {
 .workspace-filters { display:flex; gap:6px; flex-wrap:wrap; }
 .workspace-filters button { border:1px solid var(--rule); border-radius:20px; padding:7px 12px; }
 .workspace-filters button[aria-pressed="true"] { background:var(--ink); color:var(--paper); }
+.workspace-sort { display:grid; gap:8px; }
+.workspace-sort label { display:flex; align-items:center; gap:10px; font-size:13px; }
+.workspace-sort select { min-width:0; padding:9px 12px; border:1px solid var(--rule); border-radius:8px; background:var(--paper); color:inherit; }
+.workspace-sort p { margin:0; }
 .workspace-task-list { display:grid; gap:8px; }
 .workspace-task { text-align:left; display:grid; gap:5px; padding:14px; border:1px solid var(--rule); border-radius:12px; }
 .workspace-task span { font-size:13px; opacity:.8; }
