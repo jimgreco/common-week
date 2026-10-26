@@ -418,13 +418,23 @@ struct TaskWorkspaceView: View {
                 if let error { Section { Text(error).foregroundStyle(.red) } }
                 Section("\(filtered.count) tasks") {
                     ForEach(filtered) { task in
-                        Button { selected = task } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(task.text).foregroundStyle(.primary)
-                                Text("\(person(task.responsibleMemberId)) · \(task.isBacklog ? "Backlog" : task.planningDate ?? "Week of \(task.weekStartDate)")").font(.caption).foregroundStyle(.secondary)
-                                if let deadline = task.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(!task.isCompleted && deadline < today ? .red : .secondary) }
-                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                        }.buttonStyle(.plain).accessibilityIdentifier("workspace-task-\(task.id)")
+                        HStack {
+                            Button { selected = task } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(task.text).foregroundStyle(.primary)
+                                    Text("\(person(task.responsibleMemberId)) · \(task.isBacklog ? "Backlog" : task.planningDate ?? "Week of \(task.weekStartDate)")").font(.caption).foregroundStyle(.secondary)
+                                    if let deadline = task.deadline { Text("Due \(deadline)").font(.caption).foregroundStyle(!task.isCompleted && deadline < today ? .red : .secondary) }
+                                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityIdentifier("workspace-task-\(task.id)")
+                            if viewModel.canEditHousehold {
+                                Button(task.isCompleted ? "Reopen" : "Complete") {
+                                    Task { await setCompleted(task) }
+                                }
+                                .buttonStyle(.bordered)
+                                .accessibilityHint(task.text)
+                                .accessibilityIdentifier("workspace-complete-\(task.id)")
+                            }
+                        }.disabled(busy)
                     }
                     if filtered.isEmpty { Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (filter == "No deadline" ? "No open tasks without a deadline." : filter == "Due today" ? "No tasks due today." : filter == "Due soon" ? "No tasks due in the next 7 days." : "No tasks in this view.") : "No tasks match your search in this view.").foregroundStyle(.secondary) }
                 }
@@ -437,6 +447,22 @@ struct TaskWorkspaceView: View {
                 ItemCollaborationView(resource: ["itemId": task.id], title: task.text, planner: planner, viewModel: viewModel).familyPlanningSheetSize()
             }
         }
+    }
+    private func setCompleted(_ task: WorkspaceTask) async {
+        guard !busy, viewModel.canEditHousehold else { return }
+        loadRequest = UUID()
+        busy = true; error = nil; defer { busy = false }
+        let completed = !task.isCompleted
+        do {
+            try await WorkspaceAccess.mutate([
+                "action": .string("task"),
+                "resource": .object(["itemId": .string(task.id)]),
+                "isCompleted": .bool(completed)
+            ], planner: planner, userId: viewModel.workspaceUserId)
+            if let index = tasks.firstIndex(where: { $0.id == task.id }) { tasks[index].isCompleted = completed }
+            await reload()
+            await viewModel.load(quietly: true)
+        } catch { self.error = error.localizedDescription }
     }
     private func person(_ id: String?) -> String { planner.members.first { $0.userId == id }?.displayName ?? planner.childProfiles?.first { $0.id == id }?.name ?? "Unassigned" }
     private func reload() async {

@@ -517,9 +517,10 @@ final class CommonWeekScreenshots: XCTestCase {
         #endif
         let capture = app.textFields["backlog-capture"]
         XCTAssertTrue(capture.waitForExistence(timeout: 8))
-        capture.tap(); capture.typeText("Today school checklist")
+        let name = "Today school checklist \(UUID().uuidString.prefix(5))"
+        capture.tap(); capture.typeText(name)
         app.buttons["Add to backlog"].tap()
-        let task = app.buttons.containing(.staticText, identifier: "Today school checklist").firstMatch
+        let task = app.buttons.containing(.staticText, identifier: name).firstMatch
         XCTAssertTrue(task.waitForExistence(timeout: 8)); task.tap()
         let tomorrow = app.buttons["Set deadline to today"]
         XCTAssertTrue(tomorrow.waitForExistence(timeout: 8)); tomorrow.tap()
@@ -535,8 +536,19 @@ final class CommonWeekScreenshots: XCTestCase {
         XCTAssertTrue(app.staticTexts["No tasks match your search in this view."].waitForExistence(timeout: 5))
         XCTAssertFalse(task.exists)
         app.buttons["Clear search"].tap()
+        search.tap(); search.typeText(name + "\n")
         XCTAssertTrue(task.waitForExistence(timeout: 5))
-        attachCurrentScreen(named: "Household tasks due today")
+        let completion = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'workspace-complete-'")).firstMatch
+        XCTAssertTrue(completion.waitForExistence(timeout: 8)); completion.tap()
+        XCTAssertTrue(app.staticTexts["No tasks match your search in this view."].waitForExistence(timeout: 8))
+        XCTAssertFalse(task.exists)
+        filter.tap(); app.buttons["Completed"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 8))
+        XCTAssertEqual(completion.label, "Reopen"); completion.tap()
+        XCTAssertFalse(task.waitForExistence(timeout: 2))
+        filter.tap(); app.buttons["Due today"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 8))
+        attachCurrentScreen(named: "Household task reopened from list")
         filter.tap(); app.buttons["Overdue"].tap()
         XCTAssertFalse(task.exists)
     }

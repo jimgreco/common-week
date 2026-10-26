@@ -327,3 +327,57 @@ describe("quick task deadlines", () => {
     expect(screen.getByRole("button", { name: "Set deadline to tomorrow" })).toBeDisabled();
   });
 });
+
+describe("list completion", () => {
+  const task: TaskRecord = { id: "task", text: "Pack lunch", type: "task", responsibleMemberId: "user", deadline: "2026-10-12", isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
+  it("completes and reopens without opening details or losing search, sort and filter", async () => {
+    let current = { ...task };
+    fetchMock.mockImplementation(async (_url, init) => {
+      if (init?.method === "POST") current = { ...current, isCompleted: JSON.parse(init.body).isCompleted };
+      return reply({ ...empty, tasks: [current] });
+    });
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    await screen.findByRole("button", { name: "Complete" });
+    fireEvent.click(screen.getByRole("button", { name: "Due today" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "lunch" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort tasks" }), { target: { value: "name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Pack lunch/ })).not.toBeInTheDocument());
+    expect(posts()).toEqual([{ action: "task", resource: { itemId: "task" }, isCompleted: true }]);
+    expect(screen.getByRole("searchbox")).toHaveValue("lunch");
+    expect(screen.getByRole("combobox", { name: "Sort tasks" })).toHaveValue("name");
+    expect(screen.getByRole("button", { name: "Due today" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Completed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Reopen" })).not.toBeInTheDocument());
+    expect(posts()[1].isCompleted).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Due today" }));
+    fireEvent.click(screen.getByRole("button", { name: /Pack lunch/ }));
+    expect(screen.getByRole("button", { name: "← All tasks" })).toBeVisible();
+  });
+  it("blocks overlapping clicks and preserves the row on a failed save for an idempotent retry", async () => {
+    let reject!: (error: Error) => void;
+    fetchMock.mockImplementation(async (_url, init) => init?.method === "POST"
+      ? new Promise((_resolve, no) => { reject = no; })
+      : reply({ ...empty, tasks: [task] }));
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />));
+    const complete = await screen.findByRole("button", { name: "Complete" });
+    fireEvent.click(complete); fireEvent.click(complete);
+    expect(posts()).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Pack lunch/ })).toBeDisabled();
+    await act(async () => { reject(new Error("Connection interrupted")); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Connection interrupted");
+    expect(screen.getByRole("button", { name: /Pack lunch/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
+    expect(posts()[1]).toEqual(posts()[0]);
+    await act(async () => { reject(new Error("Still offline")); });
+  });
+  it("keeps completion unavailable to readers", async () => {
+    fetchMock.mockResolvedValue(reply({ ...empty, tasks: [task] }));
+    render(workspace(<TaskWorkspaceDialog onClose={vi.fn()} />, "household", "reader", false));
+    await screen.findByRole("button", { name: /Pack lunch/ });
+    expect(screen.queryByRole("button", { name: "Complete" })).not.toBeInTheDocument();
+    expect(posts()).toEqual([]);
+  });
+});

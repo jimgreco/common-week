@@ -228,6 +228,7 @@ export function TaskWorkspaceDialog({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const capturing = useRef(false);
+  const [completing, setCompleting] = useState<string | null>(null);
   const loadRequest = useRef(0);
   const loadTasks = context.load;
   const refresh = useCallback(async () => {
@@ -248,7 +249,7 @@ export function TaskWorkspaceDialog({
   }, [refresh]);
   async function capture() {
     const submittedText = text.trim();
-    if (!submittedText || capturing.current) return;
+    if (!context.canEdit || !submittedText || capturing.current) return;
     capturing.current = true;
     loadRequest.current += 1;
     setBusy(true);
@@ -268,6 +269,26 @@ export function TaskWorkspaceDialog({
     } finally {
       capturing.current = false;
       setBusy(false);
+    }
+  }
+  async function setCompleted(task: TaskRecord) {
+    if (!context.canEdit || capturing.current) return;
+    capturing.current = true;
+    loadRequest.current += 1;
+    setBusy(true);
+    setCompleting(task.id);
+    setError("");
+    const isCompleted = !task.isCompleted;
+    try {
+      await context.mutate({ action: "task", resource: { itemId: task.id }, isCompleted });
+      setTasks((current) => current.map((row) => row.id === task.id ? { ...row, isCompleted } : row));
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      capturing.current = false;
+      setBusy(false);
+      setCompleting(null);
     }
   }
   const filteredTasks = sortWorkspaceTasks(tasks.filter((task) =>
@@ -375,13 +396,14 @@ export function TaskWorkspaceDialog({
         {error && <p role="alert">{error}</p>}
         <div className="workspace-task-list">
           {filteredTasks.map((t) => (
+              <div className="workspace-task" key={t.id}>
               <button
                 type="button"
-                className="workspace-task"
-                key={t.id}
+                className="workspace-task-open"
+                disabled={busy}
                 onClick={() => setSelected(t.id)}
               >
-                <strong>{t.text}</strong>
+                <strong id={`workspace-task-title-${t.id}`}>{t.text}</strong>
                 <span>
                   {context.people.find((p) => p.id === t.responsibleMemberId)
                     ?.name ?? "Unassigned"}{" "}
@@ -402,6 +424,14 @@ export function TaskWorkspaceDialog({
                   </span>
                 )}
               </button>
+              {context.canEdit && <button
+                type="button"
+                className="workspace-task-complete"
+                aria-describedby={`workspace-task-title-${t.id}`}
+                disabled={busy}
+                onClick={() => void setCompleted(t)}
+              >{completing === t.id ? "Saving…" : t.isCompleted ? "Reopen" : "Complete"}</button>}
+              </div>
             ))}
         </div>
         {filteredTasks.length === 0 && (
