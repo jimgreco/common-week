@@ -508,6 +508,39 @@ final class CommonWeekScreenshots: XCTestCase {
             .withOffset(CGVector(dx: frame.maxX - 28, dy: frame.midY)).tap()
     }
 
+    func testTaskWorkspaceDueToday() throws {
+        launchDemo()
+        #if targetEnvironment(macCatalyst)
+        app.buttons["Tasks & backlog"].tap()
+        #else
+        app.buttons["Tasks and backlog"].tap()
+        #endif
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8))
+        capture.tap(); capture.typeText("Today school checklist")
+        app.buttons["Add to backlog"].tap()
+        let task = app.buttons.containing(.staticText, identifier: "Today school checklist").firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 8)); task.tap()
+        let tomorrow = app.buttons["Set deadline to today"]
+        XCTAssertTrue(tomorrow.waitForExistence(timeout: 8)); tomorrow.tap()
+        XCTAssertTrue(app.staticTexts["Must be done by"].waitForExistence(timeout: 8))
+        app.buttons["Done"].firstMatch.tap()
+        let filter = app.buttons["task-workspace-filter"]
+        XCTAssertTrue(filter.waitForExistence(timeout: 8)); filter.tap()
+        app.buttons["Due today"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Open tasks due today ('")).firstMatch.exists)
+        let search = app.textFields["task-workspace-search"]
+        search.tap(); search.typeText("missing\n")
+        XCTAssertTrue(app.staticTexts["No tasks match your search in this view."].waitForExistence(timeout: 5))
+        XCTAssertFalse(task.exists)
+        app.buttons["Clear search"].tap()
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        attachCurrentScreen(named: "Household tasks due today")
+        filter.tap(); app.buttons["Overdue"].tap()
+        XCTAssertFalse(task.exists)
+    }
+
     func testTaskWorkspaceDueSoon() throws {
         launchDemo()
         #if targetEnvironment(macCatalyst)

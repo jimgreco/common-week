@@ -125,6 +125,7 @@ export function taskMatchesFilter(
   if (filter === "Backlog") return task.isBacklog;
   if (filter === "No deadline") return task.deadline === null;
   if (filter === "Overdue") return !!task.deadline && task.deadline < today;
+  if (filter === "Due today") return task.deadline === today;
   if (filter === "Due soon") {
     return !!task.deadline && task.deadline >= today && task.deadline <= addDateDays(today, 6);
   }

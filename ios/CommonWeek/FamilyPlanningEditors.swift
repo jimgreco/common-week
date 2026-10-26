@@ -392,8 +392,12 @@ struct TaskWorkspaceView: View {
                                 .accessibilityLabel("Clear search")
                         }
                     }
-                    Picker("Show", selection: $filter) { ForEach(["All", "Mine", "Unassigned", "Backlog", "No deadline", "Due soon", "Overdue", "Completed"], id: \.self) { Text($0).tag($0) } }
+                    Picker("Show", selection: $filter) { ForEach(["All", "Mine", "Unassigned", "Backlog", "No deadline", "Due today", "Due soon", "Overdue", "Completed"], id: \.self) { Text($0).tag($0) } }
                         .accessibilityIdentifier("task-workspace-filter")
+                    if filter == "Due today" {
+                        Text("Open tasks due today (\(today)), in your household’s time zone.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if filter == "Due soon" {
                         Text("Open tasks due \(today) through \(WeekDate.addDays(6, to: today)) (7 days).")
                             .font(.caption).foregroundStyle(.secondary)
@@ -422,7 +426,7 @@ struct TaskWorkspaceView: View {
                             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("workspace-task-\(task.id)")
                     }
-                    if filtered.isEmpty { Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (filter == "No deadline" ? "No open tasks without a deadline." : filter == "Due soon" ? "No tasks due in the next 7 days." : "No tasks in this view.") : "No tasks match your search in this view.").foregroundStyle(.secondary) }
+                    if filtered.isEmpty { Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? (filter == "No deadline" ? "No open tasks without a deadline." : filter == "Due today" ? "No tasks due today." : filter == "Due soon" ? "No tasks due in the next 7 days." : "No tasks in this view.") : "No tasks match your search in this view.").foregroundStyle(.secondary) }
                 }
             }
             .navigationTitle("Household tasks")

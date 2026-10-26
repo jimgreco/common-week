@@ -177,3 +177,23 @@ describe("task workspace", () => {
     ).toBe(false);
   });
 });
+
+
+describe("Due today", () => {
+  it.each([
+    ["2026-11-02T00:30:00Z", "America/New_York", "2026-11-01"],
+    ["2026-12-31T12:00:00Z", "Pacific/Auckland", "2027-01-01"],
+  ])("uses household today at %s in %s independently of planned week", (instant, zone, expected) => {
+    const today = taskDeadlineDate(0, zone, new Date(instant));
+    expect(today).toBe(expected);
+    for (const isBacklog of [true, false]) {
+      const due = { ...task, deadline: today, isBacklog, planningDate: "2000-01-01" };
+      expect(taskMatchesFilter(due, "Due today", "other", today, "  PACK ")).toBe(true);
+      expect(taskMatchesFilter(due, "Due today", "other", today, "missing")).toBe(false);
+      expect(taskMatchesFilter({ ...due, isCompleted: true }, "Due today", "adult", today)).toBe(false);
+      for (const deadline of [null, "2000-01-01", "2099-01-01"]) {
+        expect(taskMatchesFilter({ ...due, deadline }, "Due today", "adult", today)).toBe(false);
+      }
+    }
+  });
+});

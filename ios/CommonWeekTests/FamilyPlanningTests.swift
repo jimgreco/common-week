@@ -2,6 +2,24 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testDueTodayUsesHouseholdDateAndIgnoresPlacement() throws {
+        let instant = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-02T00:30:00Z"))
+        let today = WorkspaceTask.deadlineDate(daysFromToday: 0, timeZoneIdentifier: "America/New_York", now: instant)
+        XCTAssertEqual(today, "2026-11-01")
+        for backlog in [true, false] {
+            var task = WorkspaceTask(id: "today", text: "Pack school lunch", type: "task", deadline: today, isBacklog: backlog, planningDate: "2000-01-01", weekStartDate: "2000-01-01", isCompleted: false)
+            XCTAssertTrue(task.matches("Due today", userId: "adult", today: today, query: " LUNCH "))
+            XCTAssertFalse(task.matches("Due today", userId: "adult", today: today, query: "missing"))
+            task.isCompleted = true
+            XCTAssertFalse(task.matches("Due today", userId: "adult", today: today))
+            task.isCompleted = false
+            for deadline in [nil, "2026-10-31", "2026-11-02"] as [String?] {
+                task.deadline = deadline
+                XCTAssertFalse(task.matches("Due today", userId: "adult", today: today))
+            }
+        }
+    }
+
     func testTaskSortKeepsDefaultAndDateOnlyPlacementMeaning() {
         let tasks = [
             WorkspaceTask(id: "later", text: "Review 10", type: "task", deadline: "2026-11-01", isBacklog: false, planningDate: "2026-11-03", weekStartDate: "2026-11-02", isCompleted: false),
