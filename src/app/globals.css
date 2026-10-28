@@ -1380,7 +1380,7 @@ textarea:focus-visible {
 .item-collaboration fieldset { border:0; padding:0; margin:0; display:grid; gap:12px; min-width:0; }
 .item-collaboration h3 { font-size:16px; margin:12px 0 2px; }
 .item-collaboration label, .workspace-task-details { display:grid; gap:8px; }
-.deadline-shortcuts { display:flex; flex-wrap:wrap; gap:8px; }
+.deadline-shortcuts, .planning-shortcuts { display:flex; flex-wrap:wrap; gap:8px; }
 .item-collaboration input, .item-collaboration select, .item-collaboration textarea, .workspace-capture input { width:100%; padding:10px; border:1px solid var(--rule); border-radius:8px; background:var(--paper); color:inherit; }
 .item-collaboration .workspace-check { display:flex; flex-direction:row; align-items:center; gap:10px; }
 .item-collaboration .workspace-check input { width:18px; height:18px; min-height:18px; flex:none; }

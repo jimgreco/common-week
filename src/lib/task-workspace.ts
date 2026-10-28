@@ -136,6 +136,13 @@ export function taskDeadlineDate(daysFromToday: 0 | 1, timeZone: string, now = n
   return addDateDays(todayInTimeZone(timeZone, now), daysFromToday);
 }
 
+export function taskPlanningFields(daysFromToday: 0 | 1, timeZone: string, now = new Date()): Pick<TaskRecord, "isBacklog" | "planningDate"> {
+  return {
+    isBacklog: false,
+    planningDate: addDateDays(todayInTimeZone(timeZone, now), daysFromToday),
+  };
+}
+
 export const taskSortOptions = [
   { value: "default", label: "Default order" },
   { value: "deadline", label: "Deadline" },

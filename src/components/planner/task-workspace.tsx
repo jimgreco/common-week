@@ -13,6 +13,7 @@ import { Modal } from "@/components/planner/dialogs";
 import {
   taskMatchesFilter,
   taskDeadlineDate,
+  taskPlanningFields,
   sortWorkspaceTasks,
   taskSortOptions,
   type TaskSort,
@@ -648,6 +649,22 @@ function ItemCollaborationDetails({ resource, includePlacement }: { resource: It
                     <option value="day">Choose a day</option>
                   </select>
                 </label>
+                {!task.isCompleted && (
+                  <>
+                    <div className="planning-shortcuts" role="group" aria-label="Quick planning">
+                      {([0, 1] as const).map((days) => (
+                        <button
+                          type="button"
+                          key={days}
+                          onClick={() => void save({ action: "task", resource: { itemId: task.id }, ...taskPlanningFields(days, context.timeZone) })}
+                        >
+                          {days === 0 ? "Plan today" : "Plan tomorrow"}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="muted">Plan a day in your household’s time zone. The deadline stays the same.</p>
+                  </>
+                )}
                 {!task.isBacklog && task.planningDate && (
                   <label>
                     Plan to do on

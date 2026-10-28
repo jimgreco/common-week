@@ -646,6 +646,17 @@ private struct ItemCollaborationContent: View {
                 Picker("Placement", selection: Binding(get: { task.isBacklog ? "backlog" : task.planningDate == nil ? "week" : "day" }, set: { value in Task { await save("task", fields: ["isBacklog": .bool(value == "backlog"), "planningDate": value == "day" ? .string(planner.weekStart) : .null, "weekStartDate": .string(planner.weekStart)]) } })) {
                     Text("Unscheduled backlog").tag("backlog"); Text("Selected week").tag("week"); Text("Choose a day").tag("day")
                 }
+                if !task.isCompleted {
+                    HStack {
+                        ForEach(0..<2) { days in
+                            Button(days == 0 ? "Plan today" : "Plan tomorrow") {
+                                Task { await save("task", fields: WorkspaceTask.planningFields(daysFromToday: days, timeZoneIdentifier: planner.household.timezone)) }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    Text("Plan a day in your household’s time zone. The deadline stays the same.").font(.caption).foregroundStyle(.secondary)
+                }
                 if !task.isBacklog, let date = task.planningDate {
                     DatePicker("Plan to do on", selection: Binding(get: { WeekDate.calendarDate(date) }, set: { value in Task { await save("task", fields: ["planningDate": .string(WeekDate.string(value, timeZoneIdentifier: TimeZone.current.identifier))]) } }), displayedComponents: .date)
                 }

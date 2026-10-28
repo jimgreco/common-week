@@ -2,6 +2,24 @@ import XCTest
 @testable import CommonWeek
 
 final class FamilyPlanningTests: XCTestCase {
+    func testQuickPlanningUsesHouseholdCalendarDayAndOnlyChangesPlacement() throws {
+        for (instant, zone, today, tomorrow) in [
+            ("2026-11-02T00:30:00Z", "America/New_York", "2026-11-01", "2026-11-02"),
+            ("2026-03-08T06:30:00Z", "America/New_York", "2026-03-08", "2026-03-09"),
+            ("2026-12-31T11:30:00Z", "Pacific/Auckland", "2027-01-01", "2027-01-02")
+        ] {
+            let now = try XCTUnwrap(ISO8601DateFormatter().date(from: instant))
+            for (offset, expected) in [today, tomorrow].enumerated() {
+                let fields = WorkspaceTask.planningFields(daysFromToday: offset, timeZoneIdentifier: zone, now: now)
+                let encoded = try JSONEncoder().encode(fields)
+                let body = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+                XCTAssertEqual(Set(body.keys), ["isBacklog", "planningDate"])
+                XCTAssertEqual(body["isBacklog"] as? Bool, false)
+                XCTAssertEqual(body["planningDate"] as? String, expected)
+            }
+        }
+    }
+
     func testDueTodayUsesHouseholdDateAndIgnoresPlacement() throws {
         let instant = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-02T00:30:00Z"))
         let today = WorkspaceTask.deadlineDate(daysFromToday: 0, timeZoneIdentifier: "America/New_York", now: instant)

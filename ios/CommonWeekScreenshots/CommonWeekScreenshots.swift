@@ -341,6 +341,55 @@ final class CommonWeekScreenshots: XCTestCase {
         app.buttons["Cancel"].tap()
     }
 
+    func testQuickTaskPlanning() throws {
+        launchDemo()
+        #if targetEnvironment(macCatalyst)
+        app.buttons["Tasks & backlog"].tap()
+        #else
+        app.buttons["Tasks and backlog"].tap()
+        #endif
+        let name = "Quick planning \(UUID().uuidString.prefix(5))"
+        let capture = app.textFields["backlog-capture"]
+        XCTAssertTrue(capture.waitForExistence(timeout: 8))
+        capture.tap(); capture.typeText(name)
+        app.buttons["Add to backlog"].tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == '' OR value == 'New task'"), object: capture)], timeout: 8), .completed)
+        let search = app.textFields["task-workspace-search"]
+        search.tap(); search.typeText(name + "\n")
+        let filter = app.buttons["task-workspace-filter"]
+        filter.tap(); app.buttons["All"].tap()
+        let task = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'workspace-task-' AND label CONTAINS %@", name)).firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 8)); task.tap()
+        let claim = app.buttons["I’ll take this"]
+        XCTAssertTrue(claim.waitForExistence(timeout: 8)); claim.tap()
+        let deadline = app.buttons["Set deadline to today"]
+        XCTAssertTrue(deadline.waitForExistence(timeout: 8)); deadline.tap()
+        let today = app.buttons["Plan today"]
+        XCTAssertTrue(scrollToExistence(today)); today.tap()
+        XCTAssertTrue(app.staticTexts["Plan to do on"].waitForExistence(timeout: 8))
+        attachCurrentScreen(named: "Quick planning in shared task details")
+        app.navigationBars[name].buttons["Done"].tap()
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let todayDate = formatter.string(from: Date())
+        let plannedToday = NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Jim · \(todayDate)", "Due \(todayDate)")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: plannedToday, object: task)], timeout: 8), .completed)
+        task.tap()
+        let tomorrow = app.buttons["Plan tomorrow"]
+        XCTAssertTrue(scrollToExistence(tomorrow)); tomorrow.tap()
+        app.navigationBars[name].buttons["Done"].tap()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let nextDate = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: Date()))
+        let plannedTomorrow = NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Jim · \(formatter.string(from: nextDate))", "Due \(todayDate)")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: plannedTomorrow, object: task)], timeout: 8), .completed)
+        attachCurrentScreen(named: "Tomorrow plan preserves owner and deadline")
+    }
+
     func testQuickTaskDeadlines() throws {
         launchDemo()
         #if targetEnvironment(macCatalyst)

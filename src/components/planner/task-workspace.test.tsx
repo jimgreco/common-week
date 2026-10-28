@@ -328,6 +328,64 @@ describe("quick task deadlines", () => {
   });
 });
 
+describe("quick task planning", () => {
+  const task: TaskRecord = { id: "plan-task", text: "Pack lunch", type: "task", responsibleMemberId: "user", deadline: "2026-11-05", isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
+
+  it("plans today and tomorrow independently of the selected week and preserves drafts on a failed retry", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T00:30:00Z"));
+    let saved = { ...task };
+    let reject: ((error: Error) => void) | undefined;
+    let fail = true;
+    fetchMock.mockImplementation(async (_url, init) => {
+      if (init?.method === "POST") {
+        if (fail) return new Promise((_resolve, no) => { reject = no; });
+        const fields = JSON.parse(init.body);
+        saved = { ...saved, isBacklog: fields.isBacklog, planningDate: fields.planningDate };
+      }
+      return reply({ ...empty, task: saved });
+    });
+    render(workspace(<ItemCollaboration resource={{ itemId: task.id }} />));
+    const today = await screen.findByRole("button", { name: "Plan today" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Task name" }), { target: { value: "Keep this name draft" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Comment" }), { target: { value: "Keep this comment" } });
+    fireEvent.click(today);
+    fireEvent.click(today);
+    expect(posts()).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Plan tomorrow" })).toBeDisabled();
+    await act(async () => { reject!(new Error("Please retry")); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Please retry");
+    expect(screen.getByLabelText("Placement")).toHaveValue("backlog");
+    expect(screen.getByRole("textbox", { name: "Task name" })).toHaveValue("Keep this name draft");
+    expect(screen.getByRole("textbox", { name: "Comment" })).toHaveValue("Keep this comment");
+    fail = false;
+    fireEvent.click(today);
+    await waitFor(() => expect(screen.getByLabelText("Plan to do on")).toHaveValue("2026-11-01"));
+    expect(posts()[1]).toEqual(posts()[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Plan tomorrow" }));
+    await waitFor(() => expect(screen.getByLabelText("Plan to do on")).toHaveValue("2026-11-02"));
+    expect(posts()[2]).toEqual({ action: "task", resource: { itemId: task.id }, isBacklog: false, planningDate: "2026-11-02" });
+    expect(saved).toMatchObject({ deadline: task.deadline, responsibleMemberId: task.responsibleMemberId, isCompleted: false });
+    expect(screen.getByRole("textbox", { name: "Comment" })).toHaveValue("Keep this comment");
+  });
+
+  it("disables planning for read-only members", async () => {
+    fetchMock.mockResolvedValue(reply({ ...empty, task }));
+    render(workspace(<ItemCollaboration resource={{ itemId: task.id }} />, "household", "reader", false));
+    expect(await screen.findByRole("button", { name: "Plan today" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Plan tomorrow" })).toBeDisabled();
+    expect(posts()).toEqual([]);
+  });
+
+  it.each([{ isCompleted: true, includePlacement: true }, { isCompleted: false, includePlacement: false }])("omits shortcuts when planning is unavailable: %j", async ({ isCompleted, includePlacement }) => {
+    fetchMock.mockResolvedValue(reply({ ...empty, task: { ...task, isCompleted } }));
+    render(workspace(<ItemCollaboration resource={{ itemId: task.id }} includePlacement={includePlacement} />));
+    await screen.findByLabelText("Must be done by");
+    expect(screen.queryByRole("button", { name: "Plan today" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Plan tomorrow" })).not.toBeInTheDocument();
+  });
+});
+
 describe("list completion", () => {
   const task: TaskRecord = { id: "task", text: "Pack lunch", type: "task", responsibleMemberId: "user", deadline: "2026-10-12", isBacklog: true, planningDate: null, weekStartDate: "2026-10-12", isCompleted: false };
   it("completes and reopens without opening details or losing search, sort and filter", async () => {

@@ -203,6 +203,10 @@ struct WorkspaceTask: Codable, Identifiable, Hashable {
         WeekDate.addDays(daysFromToday, to: WeekDate.string(now, timeZoneIdentifier: timeZoneIdentifier))
     }
 
+    static func planningFields(daysFromToday: Int, timeZoneIdentifier: String, now: Date = Date()) -> [String: WorkspaceValue] {
+        ["isBacklog": .bool(false), "planningDate": .string(WeekDate.addDays(daysFromToday, to: WeekDate.string(now, timeZoneIdentifier: timeZoneIdentifier)))]
+    }
+
     static func sorted(_ tasks: [WorkspaceTask], by sort: WorkspaceTaskSort) -> [WorkspaceTask] {
         guard sort != .defaultOrder else { return tasks }
         func dateKey(_ task: WorkspaceTask) -> String? {

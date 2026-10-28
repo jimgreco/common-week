@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   taskMatchesFilter,
   taskDeadlineDate,
+  taskPlanningFields,
   sortWorkspaceTasks,
   workspaceMutationSchema,
   WorkspaceCreateAttempts,
@@ -19,6 +20,20 @@ const task: TaskRecord = {
   weekStartDate: "2026-09-07",
   isCompleted: false,
 };
+
+describe("quick task planning", () => {
+  it.each([
+    ["2026-11-02T00:30:00Z", "America/New_York", "2026-11-01", "2026-11-02"],
+    ["2026-03-08T06:30:00Z", "America/New_York", "2026-03-08", "2026-03-09"],
+    ["2026-12-31T11:30:00Z", "Pacific/Auckland", "2027-01-01", "2027-01-02"],
+  ])("plans a household calendar day across boundaries at %s", (instant, zone, today, tomorrow) => {
+    for (const [days, date] of [[0, today], [1, tomorrow]] as const) {
+      const fields = taskPlanningFields(days, zone, new Date(instant));
+      expect(fields).toEqual({ isBacklog: false, planningDate: date });
+      expect({ ...task, ...fields }).toMatchObject({ deadline: task.deadline, responsibleMemberId: task.responsibleMemberId, isCompleted: false });
+    }
+  });
+});
 describe("task workspace sorting", () => {
   const tasks: TaskRecord[] = [
     { ...task, id: "later", text: "Review 10", deadline: "2026-11-01", isBacklog: false, planningDate: "2026-11-03", weekStartDate: "2026-11-02" },
