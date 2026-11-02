@@ -57,3 +57,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   Deadline sorts use deadline only; Planned date uses a daily date or a whole-week
   task's week start and puts backlog last. Keep web/native natural-name and ID tie
   ordering aligned, and reset view choices at account/household boundaries.
+
+## Current takeover guide
+
+Read [the coding handoff](docs/AGENT_HANDOFF.md) for the verified source/release snapshot, setup, tests, active work and remaining gaps. Reconcile it with current Git state before editing; historical release receipts are not new authorization.
