@@ -146,7 +146,7 @@ jobs:
           OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" \
           APP_PROFILE_NAME="ad674c27-b01c-465c-8fac-e14113150367" \
           WIDGET_PROFILE_NAME="a228a243-faf6-48d3-8888-d88d92edbede"
-    - name: Export internal-only IPA without provisioning updates
+    - name: Export App Store-eligible IPA without provisioning updates
       run: |
         set -euo pipefail
         python3 .github/scripts/verify-release.py export-options --output "$RELEASE_TEMP/ExportOptions.plist"

@@ -106,7 +106,7 @@ def source(sha, build, prepare=False, policy=POLICY):
 def export_options(policy=POLICY):
     return dict(method='app-store-connect', destination='export', teamID=policy['teamId'], signingStyle='manual',
                 signingCertificate=policy['certificateSha1'], manageAppVersionAndBuildNumber=False,
-                testFlightInternalTestingOnly=True, stripSwiftSymbols=True, uploadSymbols=True,
+                testFlightInternalTestingOnly=False, stripSwiftSymbols=True, uploadSymbols=True,
                 provisioningProfiles={p['bundleId']: p['uuid'] for p in policy['profiles'].values()})
 
 
