@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyDemoCalendarDraft, calendarMoveDraft, calendarSlot, newCalendarDraft, slotInstant } from "./calendar-interactions";
 import { getDemoPlannerData } from "./demo-data";
+import { calendarLocalInstant } from "./calendar-event-input";
 
 const zone = "America/New_York";
 const data = getDemoPlannerData();
@@ -49,6 +50,6 @@ describe("calendar interactions", () => {
     expect(created[1].events.filter(item => item.id === event.id)).toHaveLength(1);
     const moved = applyDemoCalendarDraft(created, calendarMoveDraft(event, { date: data.days[3].date, minute: 720 }, zone), data.editableCalendars, zone);
     expect(moved.flatMap(day => day.events).filter(item => item.id === event.id)).toHaveLength(1);
-    expect(moved[3].events.find(item => item.id === event.id)?.start).toContain("T16:00:00");
+    expect(moved[3].events.find(item => item.id === event.id)?.start).toBe(calendarLocalInstant(data.days[3].date, "12:00", zone).toISOString());
   });
 });

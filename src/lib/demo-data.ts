@@ -1,3 +1,4 @@
+import { fromZonedTime } from "date-fns-tz";
 import { addDateDays, currentWeekStart, weekDates } from "@/lib/date";
 import { calendarAbbreviation } from "@/lib/calendar-utils";
 import type {
@@ -84,6 +85,8 @@ function weatherFor(date: string, locationId: string, index: number): DailyWeath
   };
 }
 
+const demoTimeZone = "America/New_York";
+
 function event(
   id: string,
   date: string,
@@ -93,7 +96,8 @@ function event(
   owner: "J" | "R" | "M" | "F",
   duration = 60,
 ): CalendarEvent {
-  const start = new Date(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00-04:00`);
+  // Household-local wall time, so demo events keep their stated time across daylight-saving changes.
+  const start = fromZonedTime(`${date}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`, demoTimeZone);
   const end = new Date(start.getTime() + duration * 60_000);
   const colors = { J: "#587f9b", R: "#a76f67", M: "#88729d", F: "#688173" };
   const names = { J: "Jim", R: "Rachel", M: "Miriam", F: "Family" };
