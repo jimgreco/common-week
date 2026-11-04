@@ -34,6 +34,7 @@ Responsibility, deadlines, checklists, discussion, and files appear directly in 
 - Daily and weekly notes/tasks, completion, editing, date moves, weekly moves, deletion, search, optimistic saves, and retry state
 - Repeating shared tasks with daily, weekday, weekly, and custom-interval schedules; reusable templates for a week's one-off plans and tasks
 - Children’s profiles with names, colors, linked calendars, and tagged shared plans/tasks, without creating sign-in accounts
+- Week recap at the start of guided planning: tasks finished and still open from the previous week, a few finished highlights, and each person’s count and busiest day (from dated shared tasks, not calendar events). The Sunday planning prompt opens with the same counts. No migration is needed.
 - Guided weekly planning with unfinished work, calendar commitments, routines, children’s schedules, shared priorities/meals/logistics notes, and each adult’s review status
 - Email and iPhone-push reminders, morning agendas, Sunday planning prompts, and opt-in household-change alerts with a shared web/native inbox, per-channel delivery history, reliable deep links, and catch-up after downtime
 - Calendar search, attendee status and RSVP, plus occurrence-or-series editing and deletion for recurring Google events

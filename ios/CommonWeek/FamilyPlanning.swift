@@ -73,6 +73,27 @@ struct WeeklyReview: Codable, Equatable {
     let reviewedBy: [Reviewer]
 }
 
+/// Summary of the week before the planned week, computed by the server from shared tasks.
+struct WeekRecap: Codable, Equatable {
+    struct Highlight: Codable, Identifiable, Equatable { let id: String; let text: String }
+    struct Person: Codable, Identifiable, Equatable {
+        let id: String
+        let name: String
+        let color: String?
+        let completedCount: Int
+        let busiestDay: String?
+        let busiestDayCount: Int
+    }
+    let weekStart: String
+    let completedCount: Int
+    let unfinishedCount: Int
+    let sharedCompletedCount: Int
+    let highlights: [Highlight]
+    let people: [Person]
+
+    var isEmpty: Bool { completedCount == 0 && unfinishedCount == 0 }
+}
+
 struct FamilyPlanningData: Codable, Equatable {
     let weekStart: String
     let currentUserId: String
@@ -83,6 +104,7 @@ struct FamilyPlanningData: Codable, Equatable {
     var review: WeeklyReview
     var openTasks: [PlanningItem]? = nil
     var adults: [AdultCalendarAssignment]? = nil
+    var recap: WeekRecap? = nil
 }
 
 struct FamilyPlanningMutation: Encodable {

@@ -152,6 +152,7 @@ struct FamilyPlanningView: View {
         }
         switch reviewStep {
         case 0:
+            if let recap = data.recap { recapSection(recap) }
             Section {
                 let tasks = reviewTasks(data).filter { $0.type == .task && !$0.isCompleted }
                     .sorted { ($0.carryoverCount ?? 0) > ($1.carryoverCount ?? 0) }
@@ -233,6 +234,47 @@ struct FamilyPlanningView: View {
                 Button("Save or apply a week template") { tab = .templates }
             }
         }
+    }
+
+    private func recapSection(_ recap: WeekRecap) -> some View {
+        Section {
+            if recap.isEmpty {
+                Text("No shared tasks were planned that week.").foregroundStyle(.secondary)
+            } else {
+                HStack {
+                    recapStat(recap.completedCount, "tasks done")
+                    recapStat(recap.unfinishedCount, "still open or carried")
+                    recapStat(recap.sharedCompletedCount, "unassigned, done")
+                }
+                ForEach(recap.highlights) { item in
+                    Label(item.text, systemImage: "checkmark.circle.fill").foregroundStyle(.primary)
+                }
+                if recap.completedCount > recap.highlights.count {
+                    Text("and \(recap.completedCount - recap.highlights.count) more").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(recap.people) { person in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(person.name).font(.subheadline.bold())
+                        Text(recapPersonDetail(person)).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: { Text("Looking back · \(WeekDate.weekTitle(recap.weekStart))") }
+    }
+
+    private func recapStat(_ value: Int, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text("\(value)").font(.title2.bold()).foregroundStyle(CWTheme.accentStrong)
+            Text(label).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func recapPersonDetail(_ person: WeekRecap.Person) -> String {
+        guard let day = person.busiestDay else { return "\(person.completedCount) done" }
+        let tasks = person.busiestDayCount == 1 ? "task" : "tasks"
+        return "\(person.completedCount) done · busiest \(WeekDate.longDay(day)) (\(person.busiestDayCount) \(tasks))"
     }
 
     private func reviewSummary(_ title: String, text: String) -> some View {

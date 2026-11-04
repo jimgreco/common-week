@@ -6,7 +6,8 @@ import type { PoolClient } from "pg";
 import { todayInTimeZone } from "@/lib/date";
 import { familyDateOffset, familyMutationSchema, familyWeekSchema, familyWeekStart, routineOccurrencesForWeek } from "@/lib/family-planning";
 import { query, withTransaction } from "@/lib/server/database";
-import type { FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeekTemplateItem } from "@/types/domain";
+import { buildWeekRecap, type RecapItem } from "@/lib/week-recap";
+import type { FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeekRecap, WeekTemplateItem } from "@/types/domain";
 
 type Context = { householdId: string; userId: string };
 const routineColumns = `id, text, assigned_member_ids as "assignedMemberIds", child_id as "childId", frequency, interval, weekdays,
@@ -68,10 +69,32 @@ export async function materializeTaskRoutines(context: Context, weekStart: strin
   });
 }
 
+/** Callers must already have confirmed household membership. */
+export async function loadWeekRecap(householdId: string, weekStart: string, database: { query: typeof query } = { query }): Promise<WeekRecap> {
+  const recapWeek = familyDateOffset(familyWeekSchema.parse(weekStart), -7);
+  const [items, people] = await Promise.all([
+    database.query<RecapItem>(
+      `select id,text,type,is_completed as "isCompleted",planning_date::text as "planningDate",week_start_date::text as "weekStartDate",
+        original_week_start_date::text as "originalWeekStartDate",assigned_member_ids as "assignedMemberIds",child_id as "childId",
+        responsible_member_id as "responsibleMemberId",is_backlog as "isBacklog"
+       from planning_items
+       where household_id=$1 and type='task' and not is_backlog
+         and (week_start_date=$2::date
+           or (week_start_date>$2::date and original_week_start_date<=$2::date and (not is_completed or carryover_count>0)))
+       order by week_start_date,sort_order,created_at limit 500`, [householdId, recapWeek]),
+    database.query<{ id: string; name: string; color: string | null }>(
+      `select * from (select hm.user_id::text as id,u.display_name as name,null::text as color from household_members hm join users u on u.id=hm.user_id
+         where hm.household_id=$1 and hm.role<>'viewer' order by hm.created_at) adults
+       union all select * from (select id::text,name,color from child_profiles where household_id=$1 order by created_at) children`, [householdId]),
+  ]);
+  return buildWeekRecap(weekStart, items.rows, people.rows);
+}
+
 export async function getFamilyPlanningData(context: Context, requestedWeek: string): Promise<FamilyPlanningData> {
   const weekStart = familyWeekSchema.parse(requestedWeek);
   const membership = await access(context, { query });
-  const [adults, children, routines, templates, reviewRows, acknowledgements, openTasks] = await Promise.all([
+  const [recap, adults, children, routines, templates, reviewRows, acknowledgements, openTasks] = await Promise.all([
+    loadWeekRecap(context.householdId, weekStart),
     query<FamilyPlanningData["adults"][number]>(
       `select hm.user_id as "userId",u.display_name as "displayName",
         coalesce(array_agg(cp.id::text) filter(where cp.id is not null),'{}') as "calendarPreferenceIds"
@@ -107,7 +130,7 @@ export async function getFamilyPlanningData(context: Context, requestedWeek: str
        order by pi.week_start_date desc,pi.sort_order,pi.created_at limit 100`, [context.householdId, weekStart]),
   ]);
   return {
-    weekStart, currentUserId: context.userId, canEdit: membership.role !== "viewer", adults: adults.rows, children: children.rows,
+    weekStart, recap, currentUserId: context.userId, canEdit: membership.role !== "viewer", adults: adults.rows, children: children.rows,
     routines: routines.rows, templates: templates.rows, openTasks: openTasks.rows.map((item) => ({ ...item, updatedAt: item.updatedAt.toISOString() })),
     review: { weekStart, ...(reviewRows.rows[0] ?? { priorities: "", meals: "", logistics: "", revision: 0 }),
       reviewedBy: acknowledgements.rows.map((ack) => ({ ...ack, reviewedAt: ack.reviewedAt.toISOString() })) },

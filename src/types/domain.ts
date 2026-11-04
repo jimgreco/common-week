@@ -372,7 +372,18 @@ export interface WeeklyReview {
   reviewedBy: Array<{ userId: string; displayName: string; reviewedAt: string }>;
 }
 
+export interface WeekRecap {
+  /** Monday of the week being summarized (the week before the planned one). */
+  weekStart: string;
+  completedCount: number;
+  unfinishedCount: number;
+  sharedCompletedCount: number;
+  highlights: Array<{ id: string; text: string }>;
+  people: Array<{ id: string; name: string; color: string | null; completedCount: number; busiestDay: string | null; busiestDayCount: number }>;
+}
+
 export interface FamilyPlanningData {
+  recap?: WeekRecap;
   weekStart: string;
   currentUserId: string;
   canEdit: boolean;

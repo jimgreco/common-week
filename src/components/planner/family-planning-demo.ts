@@ -1,5 +1,6 @@
 import { addDateDays, todayInTimeZone } from "@/lib/date";
 import { routineOccurrencesForWeek } from "@/lib/family-planning";
+import { buildWeekRecap } from "@/lib/week-recap";
 import type { FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeeklyPlannerData, WeeklyReview } from "@/types/domain";
 
 const storageKey = "week-of-us:family-planning-demo:v1";
@@ -35,7 +36,8 @@ function materialize(data: WeeklyPlannerData, store: DemoStore, items: PlanningI
 }
 function familyFromStore(data: WeeklyPlannerData, currentUserId: string, store: DemoStore): FamilyPlanningData {
   const adults = data.members.map((member) => ({ userId: member.userId, displayName: member.displayName, calendarPreferenceIds: store.adultCalendars?.[member.userId] ?? data.visibleCalendars.filter((calendar) => calendar.sourceUserId === member.userId).map((calendar) => calendar.id) }));
-  return { ...emptyFamilyPlanning(data.weekStart, currentUserId), adults, children: store.children, routines: store.routines, templates: store.templates.map((template) => ({ ...template, appliedToWeek: (store.appliedWeeks[template.id] ?? []).includes(data.weekStart) })), review: store.reviews[data.weekStart] ?? emptyFamilyPlanning(data.weekStart, currentUserId).review, openTasks: Object.entries(store.itemsByWeek).filter(([week]) => week < data.weekStart).flatMap(([, items]) => items).filter((item) => item.type === "task" && !item.isCompleted).slice(-100) };
+  return { ...emptyFamilyPlanning(data.weekStart, currentUserId), adults, children: store.children, routines: store.routines, templates: store.templates.map((template) => ({ ...template, appliedToWeek: (store.appliedWeeks[template.id] ?? []).includes(data.weekStart) })), review: store.reviews[data.weekStart] ?? emptyFamilyPlanning(data.weekStart, currentUserId).review, openTasks: Object.entries(store.itemsByWeek).filter(([week]) => week < data.weekStart).flatMap(([, items]) => items).filter((item) => item.type === "task" && !item.isCompleted).slice(-100),
+    recap: buildWeekRecap(data.weekStart, Object.values(store.itemsByWeek).flat(), [...data.members.filter((member) => member.role !== "viewer").map((member) => ({ id: member.userId, name: member.displayName })), ...store.children]) };
 }
 export function loadDemoFamilyPlanning(data: WeeklyPlannerData, currentUserId: string): { family: FamilyPlanningData; items: PlanningItem[] } {
   const store = readStore();

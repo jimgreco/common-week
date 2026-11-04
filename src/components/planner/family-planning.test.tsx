@@ -14,6 +14,14 @@ const task: PlanningItem = { id: "task-1", text: "School bag", planningDate: "20
 const callbacks = { onClose: vi.fn(), onToggle: vi.fn().mockResolvedValue(undefined), onEdit: vi.fn(), onMove: vi.fn().mockResolvedValue(null), onEvent: vi.fn() };
 
 describe("FamilyPlanningPanel", () => {
+  it("shows last week's recap at the start of the guide", () => {
+    const family = { ...base(), recap: { weekStart: "2026-08-31", completedCount: 6, unfinishedCount: 2, sharedCompletedCount: 1, highlights: [{ id: "h1", text: "Book dentist" }], people: [{ id: "user-1", name: "Alex", color: null, completedCount: 4, busiestDay: "2026-09-02", busiestDayCount: 3 }] } };
+    render(<FamilyPlanningPanel family={family} data={data} items={[]} onMutation={vi.fn()} {...callbacks} />);
+    expect(screen.getByRole("heading", { name: /Looking back/ })).toBeInTheDocument();
+    expect(screen.getByText("Book dentist")).toBeInTheDocument();
+    expect(screen.getByText("and 5 more")).toBeInTheDocument();
+    expect(screen.getByText("4 done · busiest Wednesday (3 tasks)")).toBeInTheDocument();
+  });
   it("edits adult calendars and retains selections when saving fails", async () => {
     const family = { ...base(), adults: [{ userId: "user-1", displayName: "Alex", calendarPreferenceIds: [] }] };
     const onMutation = vi.fn().mockResolvedValueOnce("Connection interrupted").mockResolvedValue(null);

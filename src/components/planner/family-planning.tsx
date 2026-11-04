@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight, Circle, Copy, LoaderCircle, Plus, Repeat2, Trash2, Users } from "lucide-react";
 import { Modal } from "@/components/planner/dialogs";
 import { formatMobileDate, formatWeekRange } from "@/lib/date";
-import type { AdultCalendarAssignment, ChildProfile, FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeeklyPlannerData } from "@/types/domain";
+import type { AdultCalendarAssignment, ChildProfile, FamilyPlanningData, FamilyPlanningMutation, PlanningItem, TaskRoutine, WeekRecap, WeeklyPlannerData } from "@/types/domain";
 
 import { childColors, weekdays, ChildBadge, RoutineFields, routineDescription, type FamilyMutationHandler } from "@/components/planner/family-planning-fields";
 export { RoutineFields } from "@/components/planner/family-planning-fields";
@@ -47,6 +47,20 @@ function RoutineEditor({ routine, members, childProfiles, weekStart, onSave, onC
     <p className="family-muted">Each repetition is a separate shared task. Completed tasks stay in their original week.</p>
     {error && <p className="family-error" role="alert">{error}</p>}<div className="family-form-actions"><button type="button" className="button button-secondary" disabled={busy} onClick={onCancel}>Cancel</button><button className="button button-primary" disabled={busy || !draft.text.trim()}>{busy && <LoaderCircle size={14} className="spin" />}{routine ? "Save routine" : "Create routine"}</button></div>
   </form>;
+}
+
+const recapDay = (date: string) => new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
+
+export function WeekRecapCard({ recap }: { recap: WeekRecap }) {
+  const empty = !recap.completedCount && !recap.unfinishedCount;
+  return <section className="family-recap" aria-labelledby="family-recap-title">
+    <div className="family-recap-heading"><h4 id="family-recap-title">Looking back · week of {formatMobileDate(recap.weekStart)}</h4></div>
+    {empty ? <p className="family-muted">No shared tasks were planned that week.</p> : <>
+      <div className="family-plan-summary"><div><strong>{recap.completedCount}</strong><span>tasks done</span></div><div><strong>{recap.unfinishedCount}</strong><span>still open or carried</span></div><div><strong>{recap.sharedCompletedCount}</strong><span>unassigned, done</span></div></div>
+      {recap.highlights.length > 0 && <ul className="family-recap-highlights" aria-label="Finished tasks">{recap.highlights.map((item) => <li key={item.id}><CheckCircle2 size={14} />{item.text}</li>)}{recap.completedCount > recap.highlights.length && <li className="family-muted">and {recap.completedCount - recap.highlights.length} more</li>}</ul>}
+      {recap.people.length > 0 && <ul className="family-recap-people" aria-label="By person">{recap.people.map((person) => <li key={person.id}>{person.color ? <span className="family-child-avatar" style={{ backgroundColor: person.color }}>{person.name.slice(0, 1)}</span> : <Users size={16} />}<strong>{person.name}</strong><small>{person.completedCount} done{person.busiestDay ? ` · busiest ${recapDay(person.busiestDay)} (${person.busiestDayCount} task${person.busiestDayCount === 1 ? "" : "s"})` : ""}</small></li>)}</ul>}
+    </>}
+  </section>;
 }
 
 const steps = ["Carry forward", "Look ahead", "Routines", "Family", "Make a plan", "Review together"];
@@ -109,6 +123,7 @@ export function FamilyPlanningPanel({ family, data, items, onMutation, onClose, 
       <div className="family-step-content">
         {step === 0 && <>
           <div className="family-section-heading"><div><span className="eyebrow">01 · Carry forward</span><h3>What still needs a little attention?</h3><p>Finish, adjust, or bring open tasks into this week.</p></div><span className="family-count">{openItems.length} open</span></div>
+          {family.recap && <WeekRecapCard recap={family.recap} />}
           {openItems.length ? <div className="family-item-list">{openItems.map((item) => <div className="family-task" key={item.id}><button className="family-complete" type="button" disabled={!family.canEdit || Boolean(busy)} aria-label={`Complete ${item.text}`} onClick={async () => { setBusy(item.id); await onToggle(item, true); setBusy(null); }}><Circle size={19} /></button><button type="button" className="family-task-copy" onClick={() => onEdit(item)}><strong>{item.text}</strong><small>{item.carryoverCount ? "Carried forward · " : ""}{item.planningDate ? formatMobileDate(item.planningDate) : `Week of ${formatMobileDate(item.weekStartDate)}`}</small></button><ChildBadge child={family.children.find((child) => child.id === item.childId)} />{item.weekStartDate !== data.weekStart && <button className="text-button" disabled={!family.canEdit || Boolean(busy)} onClick={async () => { setBusy(item.id); const result = await onMove(item); setBusy(null); if (result) setError(result); }}>Bring here <ArrowRight size={12} /></button>}</div>)}</div> : <div className="family-empty"><CheckCircle2 size={30} /><h4>A fresh start</h4><p>No unfinished shared tasks to review.</p></div>}
         </>}
         {step === 1 && <>

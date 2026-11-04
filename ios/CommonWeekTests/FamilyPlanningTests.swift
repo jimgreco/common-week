@@ -136,6 +136,18 @@ final class FamilyPlanningTests: XCTestCase {
         }
     }
 
+    func testWeekRecapDecodesAndOlderPayloadsStillLoad() throws {
+        let base = #"{"weekStart":"2026-11-02","currentUserId":"u","canEdit":true,"children":[],"routines":[],"templates":[],"review":{"weekStart":"2026-11-02","priorities":"","meals":"","logistics":"","revision":0,"reviewedBy":[]}"#
+        let legacy = try JSONDecoder().decode(FamilyPlanningData.self, from: Data((base + "}").utf8))
+        XCTAssertNil(legacy.recap)
+        let recapJSON = #","recap":{"weekStart":"2026-10-26","completedCount":3,"unfinishedCount":1,"sharedCompletedCount":0,"highlights":[{"id":"t1","text":"Book dentist"}],"people":[{"id":"u","name":"Sam","color":null,"completedCount":3,"busiestDay":"2026-10-27","busiestDayCount":2}]}}"#
+        let recap = try XCTUnwrap(JSONDecoder().decode(FamilyPlanningData.self, from: Data((base + recapJSON).utf8)).recap)
+        XCTAssertEqual(recap.weekStart, "2026-10-26")
+        XCTAssertFalse(recap.isEmpty)
+        XCTAssertEqual(recap.people.first?.busiestDay, "2026-10-27")
+        XCTAssertEqual(recap.highlights.map(\.text), ["Book dentist"])
+    }
+
     func testQuickDeadlinesUseHouseholdDateAcrossUTCAndDSTBoundaries() throws {
         let formatter = ISO8601DateFormatter()
         let spring = try XCTUnwrap(formatter.date(from: "2026-03-09T00:30:00Z"))

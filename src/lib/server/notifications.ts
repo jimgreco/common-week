@@ -15,6 +15,8 @@ import {
 } from "@/lib/notification-links";
 import { query } from "@/lib/server/database";
 import { getPlannerData } from "@/lib/server/planner-data";
+import { loadWeekRecap } from "@/lib/server/family-planning";
+import { weekRecapSentence } from "@/lib/week-recap";
 import type {
   NotificationChannelState,
   NotificationDeliveryStatus,
@@ -546,17 +548,19 @@ async function materializeScheduledDigests(now: Date, since: Date) {
         );
       } else {
         const nextWeek = addDateDays(weekStartForDate(occurrence.localDate), 7);
+        const prompt = "Review unfinished tasks, prepare your routines, and make a shared plan for the week.";
+        // A recap failure must never block the planning prompt itself.
+        const recap = await loadWeekRecap(row.household_id, nextWeek).then(weekRecapSentence, () => null);
         await query(
           `insert into notification_outbox (
              user_id, household_id, dedupe_key, kind, title, body, deep_link, scheduled_for
-           ) values ($1, $2, $3, 'sunday_planning', 'Plan the week together',
-                     'Review unfinished tasks, prepare your routines, and make a shared plan for the week.',
-                     $4, $5)
+           ) values ($1, $2, $3, 'sunday_planning', 'Plan the week together', $4, $5, $6)
            on conflict (dedupe_key) do nothing`,
           [
             row.user_id,
             row.household_id,
             `sunday:${row.user_id}:${occurrence.localDate}`,
+            recap ? `This week: ${recap} ${prompt}` : prompt,
             `/planner?week=${nextWeek}&review=1`,
             occurrence.scheduledFor,
           ],

@@ -51,7 +51,15 @@ final class FamilyPlanningDemo {
         let adults = planner.members.map { member in
             AdultCalendarAssignment(userId: member.userId, displayName: member.displayName, calendarPreferenceIds: adultCalendars[member.userId] ?? CalendarEventFilter.calendars(in: planner).filter { $0.sourceUserId == member.userId }.map(\.id))
         }
-        return FamilyPlanningData(weekStart: weekStart, currentUserId: PreviewData.user.userId, canEdit: true, children: children, routines: routines, templates: templates.map { .init(id: $0.id, name: $0.name, items: $0.items, appliedToWeek: applied.contains("\($0.id):\(weekStart)")) }, review: review, openTasks: weeks.values.filter { $0.weekStart < weekStart }.flatMap { $0.weeklyItems + $0.days.flatMap(\.items) }.filter { $0.type == .task && !$0.isCompleted }, adults: adults)
+        return FamilyPlanningData(weekStart: weekStart, currentUserId: PreviewData.user.userId, canEdit: true, children: children, routines: routines, templates: templates.map { .init(id: $0.id, name: $0.name, items: $0.items, appliedToWeek: applied.contains("\($0.id):\(weekStart)")) }, review: review, openTasks: weeks.values.filter { $0.weekStart < weekStart }.flatMap { $0.weeklyItems + $0.days.flatMap(\.items) }.filter { $0.type == .task && !$0.isCompleted }, adults: adults, recap: demoRecap(weekStart: weekStart, planner: planner))
+    }
+
+    private func demoRecap(weekStart: String, planner: WeeklyPlannerData) -> WeekRecap {
+        let recapWeek = WeekDate.addDays(-7, to: weekStart)
+        let people = planner.members.prefix(2).enumerated().map { index, member in
+            WeekRecap.Person(id: member.userId, name: member.displayName, color: nil, completedCount: 4 - index, busiestDay: WeekDate.addDays(index + 1, to: recapWeek), busiestDayCount: 3 - index)
+        }
+        return WeekRecap(weekStart: recapWeek, completedCount: 9, unfinishedCount: 2, sharedCompletedCount: 2, highlights: [.init(id: "demo-recap-1", text: "Book swim lessons"), .init(id: "demo-recap-2", text: "Return library books")], people: Array(people))
     }
 
     func apply(_ mutation: FamilyPlanningMutation) throws -> FamilyPlanningData {

@@ -1314,6 +1314,16 @@ textarea:focus-visible {
 .family-plan-summary > div { padding: 16px 10px; text-align: center; border-radius: 12px; background: var(--accent-wash); }
 .family-plan-summary strong { display: block; color: var(--accent); font: 500 31px var(--font-display), Georgia, serif; }
 .family-plan-summary span { display: block; color: var(--ink-soft); font-size: 10px; margin-top: 5px; }
+.family-recap { margin-bottom: 21px; padding: 16px; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); }
+.family-recap-heading h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
+.family-recap .family-plan-summary { margin-bottom: 12px; }
+.family-recap-highlights, .family-recap-people { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; font-size: 12px; }
+.family-recap-highlights li { display: flex; gap: 8px; align-items: center; }
+.family-recap-highlights svg { color: var(--accent); flex: none; }
+.family-recap-people { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.family-recap-people li { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+.family-recap-people small { color: var(--muted); }
+.family-recap-people .family-child-avatar { width: 22px; height: 22px; font-size: 11px; }
 .family-reviewers { display: flex; flex-direction: column; gap: 12px; }
 .family-reviewers > div { display: flex; gap: 11px; align-items: center; }
 .family-review-check { display: grid; place-items: center; width: 29px; height: 29px; color: var(--muted); background: var(--paper); border-radius: 50%; }
