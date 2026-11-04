@@ -72,7 +72,13 @@
       "appleSignin": [
         "Default"
       ],
-      "push": "production"
+      "push": "production",
+      "signedGroups": [],
+      "signedRequired": {
+        "com.apple.security.app-sandbox": true,
+        "com.apple.security.network.client": true,
+        "com.apple.security.personal-information.calendars": true
+      }
     }
   },
   "macInstaller": {

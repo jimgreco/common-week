@@ -141,6 +141,22 @@ def installer_identity(identities, policy=POLICY):
     return found[0]
 
 
+def check_mac_entitlements(e, target, policy=POLICY):
+    identifier = policy['teamId'] + '.' + target['bundleId']
+    expected = {
+        'application-identifier': identifier, 'com.apple.application-identifier': identifier,
+        'com.apple.developer.team-identifier': policy['teamId'], 'get-task-allow': False,
+        'com.apple.developer.applesignin': target['appleSignin'],
+        'aps-environment': target['push'], 'com.apple.developer.aps-environment': target['push'],
+        **target.get('signedRequired', {}),
+    }
+    # Entitlement names and values are public signing metadata, safe to report.
+    wrong = sorted(key for key, value in expected.items() if e.get(key) != value)
+    if e.get('com.apple.security.application-groups', []) != target.get('signedGroups', target['groups']):
+        wrong.append('com.apple.security.application-groups')
+    check(not wrong, 'Signed Mac artifact entitlements differ: ' + ', '.join(wrong))
+
+
 def mac_artifact(pkg, sha, build, policy=POLICY):
     target = policy['macProfiles']['app']
     signature = run('pkgutil', '--check-signature', str(pkg)).decode(errors='replace')
@@ -166,14 +182,7 @@ def mac_artifact(pkg, sha, build, policy=POLICY):
         run('codesign', '--verify', '--deep', '--strict', str(app))
         check(hashlib.sha256(signing_certificate(app, directory)).hexdigest() == policy['certificateSha256'], 'Mac artifact signing identity differs.')
         e = plistlib.loads(run('codesign', '-d', '--entitlements', ':-', str(app)))
-        push = e.get('com.apple.developer.aps-environment', e.get('aps-environment'))
-        check(e.get('com.apple.application-identifier', e.get('application-identifier')) == policy['teamId'] + '.' + target['bundleId']
-              and e.get('com.apple.developer.team-identifier') == policy['teamId']
-              and e.get('get-task-allow', False) is False
-              and e.get('com.apple.security.app-sandbox') is True
-              and e.get('com.apple.security.application-groups', []) == target['groups']
-              and e.get('com.apple.developer.applesignin') == target['appleSignin']
-              and push == target['push'], 'Signed Mac artifact identity, sandbox, App Groups, sign-in or push differ.')
+        check_mac_entitlements(e, target, policy)
     return {'platform': 'mac', 'sha': sha, 'build': build, 'appId': policy['appId'], 'pkgSha256': hashlib.sha256(Path(pkg).read_bytes()).hexdigest()}
 
 

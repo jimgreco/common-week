@@ -138,6 +138,25 @@ class MacReleaseTests(unittest.TestCase):
                 profile = self.profile(); profile['Entitlements'][key] = value
                 with self.assertRaises(ValueError): v.verify_profile(profile, target, self.cert, self.now, self.p, platform='mac')
 
+    def signed(self):
+        # Exactly what a local Mac Catalyst archive with the pinned profile is signed with.
+        return {'com.apple.security.network.client': True, 'get-task-allow': False, 'com.apple.developer.applesignin': ['Default'],
+                'com.apple.developer.team-identifier': 'V6JPQCD336', 'com.apple.security.app-sandbox': True,
+                'application-identifier': 'V6JPQCD336.com.jimgreco.commonweek', 'com.apple.developer.aps-environment': 'production',
+                'com.apple.security.personal-information.calendars': True, 'com.apple.application-identifier': 'V6JPQCD336.com.jimgreco.commonweek',
+                'aps-environment': 'production'}
+
+    def test_signed_mac_entitlements_match_real_archive(self):
+        v.check_mac_entitlements(self.signed(), self.p['macProfiles']['app'], self.p)
+        for key, value in [('com.apple.security.app-sandbox', None), ('aps-environment', 'development'), ('get-task-allow', True),
+                           ('com.apple.security.network.client', None), ('com.apple.security.application-groups', ['group.other'])]:
+            with self.subTest(key=key):
+                e = self.signed()
+                if value is None: e.pop(key)
+                else: e[key] = value
+                with self.assertRaisesRegex(ValueError, key.replace('.', '[.]')):
+                    v.check_mac_entitlements(e, self.p['macProfiles']['app'], self.p)
+
     def test_mac_profile_installs_as_provisionprofile(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root); src = root/'source'; src.mkdir(); dest = root/'cache'
