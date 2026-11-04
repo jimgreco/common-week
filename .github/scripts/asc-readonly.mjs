@@ -27,15 +27,28 @@ export function token(env = process.env) {
     return `${input}.${sign('sha256', Buffer.from(input), { key: createPrivateKey(readFileSync(path)), dsaEncoding: 'ieee-p1363' }).toString('base64url')}`;
   } catch { throw new Error('Existing app-specific API authentication could not be loaded.'); }
 }
-export function readClient(fetcher = fetch, auth = token) {
+// Reads are GET-only, so retrying a dropped connection, rate limit or Apple
+// server error is safe. Client errors such as 401/403/404 are never retried.
+const retryable = status => status === 429 || status >= 500;
+export function readClient(fetcher = fetch, auth = token, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), attempts = 5) {
   async function get(path) {
     const url = new URL(path, `${origin}/v1/`);
     check(url.origin === origin && url.pathname.startsWith('/v1/') && !url.username && !url.password && !url.hash, 'Untrusted Apple read URL.');
-    let response;
-    try { response = await fetcher(url.href, { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(30000), headers: { Authorization: `Bearer ${auth()}`, Accept: 'application/json' } }); }
-    catch { throw new Error('Apple read failed; no changes attempted.'); }
-    check(response.ok, `Apple read rejected (${response.status}) at ${url.pathname}; no changes attempted.`);
-    return response.json();
+    for (let attempt = 1; ; attempt++) {
+      let response;
+      try { response = await fetcher(url.href, { method: 'GET', redirect: 'error', signal: AbortSignal.timeout(30000), headers: { Authorization: `Bearer ${auth()}`, Accept: 'application/json' } }); }
+      catch {
+        if (attempt < attempts) { await wait(2000 * 2 ** (attempt - 1)); continue; }
+        throw new Error(`Apple read failed after ${attempts} attempts at ${url.pathname}; no changes attempted.`);
+      }
+      if (!response.ok && retryable(response.status) && attempt < attempts) { await wait(2000 * 2 ** (attempt - 1)); continue; }
+      check(response.ok, `Apple read rejected (${response.status}) at ${url.pathname}; no changes attempted.`);
+      try { return await response.json(); }
+      catch {
+        if (attempt < attempts) { await wait(2000 * 2 ** (attempt - 1)); continue; }
+        throw new Error(`Apple read returned an unreadable response at ${url.pathname}; no changes attempted.`);
+      }
+    }
   }
   async function list(path) {
     const rows = [], seen = new Set();

@@ -61,6 +61,29 @@ test('API errors do not emit private response contents', async () => {
   const client = readClient(async () => ({ ok: false, status: 401, text: async () => 'private-response' }), () => 'fake');
   await assert.rejects(() => client.get('/v1/apps'), error => error.message.includes('401') && !error.message.includes('private-response'));
 });
+test('transient Apple read failures are retried; client errors are not', async () => {
+  const waits = [];
+  let calls = 0;
+  const flaky = readClient(async () => {
+    calls++;
+    if (calls === 1) throw new Error('socket hang up');
+    if (calls === 2) return { ok: false, status: 503 };
+    if (calls === 3) return { ok: false, status: 429 };
+    return { ok: true, json: async () => ({ data: { id: 'app' } }) };
+  }, () => 'fake', async ms => waits.push(ms));
+  assert.deepEqual(await flaky.get('/v1/apps/1'), { data: { id: 'app' } });
+  assert.deepEqual(waits, [2000, 4000, 8000]);
+  for (const status of [401, 403, 404]) {
+    let tries = 0;
+    const denied = readClient(async () => { tries++; return { ok: false, status }; }, () => 'fake', async () => {});
+    await assert.rejects(() => denied.get('/v1/apps'), new RegExp(String(status)));
+    assert.equal(tries, 1);
+  }
+  let down = 0;
+  const outage = readClient(async () => { down++; throw new Error('offline'); }, () => 'fake', async () => {});
+  await assert.rejects(() => outage.get('/v1/apps'), /after 5 attempts.*no changes attempted/);
+  assert.equal(down, 5);
+});
 test('approved app-specific audience passes', async () => {
   const f = fixture(); assert.equal((await audience(f.client, f.p)).internalTesters, 1);
 });
