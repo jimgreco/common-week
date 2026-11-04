@@ -130,9 +130,13 @@ available_kb="$(df -Pk "$backup_dir" | awk 'NR == 2 {print $4}')"
 backup="$backup_dir/common-week-$(date -u +%Y%m%dT%H%M%SZ)-before-$release_build.dump"
 (umask 077 && docker exec shared_db pg_dump -U admin -d common_week -Fc </dev/null > "$backup.partial") \
   || { rm -f "$backup.partial"; echo 'Pre-release database backup failed; not releasing.'; exit 1; }
-# Prove the archive is readable and contains the core planner table.
-docker exec -i shared_db pg_restore --list < "$backup.partial" | grep -Eq 'TABLE public planning_items ' \
+# Prove the archive is readable and contains the core planner table. Read the
+# whole listing before matching: `grep -q` in a pipeline closes it early, and
+# with pipefail pg_restore's resulting SIGPIPE would fail a good backup.
+backup_listing="$(docker exec -i shared_db pg_restore --list < "$backup.partial")" \
   || { rm -f "$backup.partial"; echo 'Pre-release backup could not be read back; not releasing.'; exit 1; }
+grep -Eq 'TABLE public planning_items ' <<< "$backup_listing" \
+  || { rm -f "$backup.partial"; echo 'Pre-release backup is missing the planner tables; not releasing.'; exit 1; }
 mv "$backup.partial" "$backup"
 echo "Verified pre-release backup: $backup ($(wc -c < "$backup" | tr -d ' ') bytes)"
 # Keep the 20 newest Week of Us release backups; never touch other files.

@@ -27,7 +27,15 @@ if command == "docker":
             sys.stdout.write("PGDMP synthetic archive")
         elif program == "pg_restore":
             sys.stdin.read()
-            if mode != "unreadable-backup": print("215; 1259 16401 TABLE public planning_items admin")
+            if mode == "unreadable-backup": sys.exit(1)
+            if mode != "incomplete-backup":
+                # A real listing continues long after the matching table line.
+                try:
+                    print("215; 1259 16401 TABLE public planning_items common_week_app")
+                    for index in range(200000): print(f"{index}; 0 0 ACL public table_{index} common_week_app")
+                    sys.stdout.flush()
+                except BrokenPipeError:
+                    sys.exit(141)
         sys.exit(0)
     if args[0] == "ps": print(old_id[:12])
     elif args[0] == "inspect":
@@ -231,7 +239,7 @@ class DeploymentSafetyTests(unittest.TestCase):
                 self.assertIn("Verified pre-release backup", result.stdout)
 
     def test_backup_problems_stop_release_while_current_build_serves(self):
-        for mode, message in (("backup-failure", "backup failed"), ("unreadable-backup", "could not be read back"), ("disk-full", "Not enough free disk")):
+        for mode, message in (("backup-failure", "backup failed"), ("unreadable-backup", "could not be read back"), ("incomplete-backup", "missing the planner tables"), ("disk-full", "Not enough free disk")):
             with self.subTest(mode=mode):
                 result, calls, _ = self.run_fixture(mode)
                 self.assertNotEqual(result.returncode, 0)
