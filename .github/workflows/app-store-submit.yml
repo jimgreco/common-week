@@ -1,0 +1,77 @@
+name: Submit to App Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: plan only reads and lists every change; submit makes them
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - submit
+      build:
+        description: Uploaded App Store-eligible build number (for example 174)
+        required: true
+        type: string
+      platforms:
+        description: Platforms to submit
+        required: true
+        default: IOS,MAC_OS
+        type: choice
+        options:
+          - IOS,MAC_OS
+          - IOS
+          - MAC_OS
+      release_type:
+        description: AFTER_APPROVAL releases as soon as Apple approves; MANUAL waits for Release in App Store Connect
+        required: true
+        default: AFTER_APPROVAL
+        type: choice
+        options:
+          - AFTER_APPROVAL
+          - MANUAL
+
+permissions:
+  contents: read
+
+concurrency:
+  group: common-week-app-store-submit
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Test submission logic
+        run: node --test scripts/submit-app-store.test.mjs
+      - name: Plan (read-only)
+        env:
+          ASC_SUBMIT_MODE: plan
+          BUILD_NUMBER: ${{ inputs.build }}
+          PLATFORMS: ${{ inputs.platforms }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: node scripts/submit-app-store.mjs
+      - name: Submit for App Store review
+        if: inputs.mode == 'submit'
+        env:
+          ASC_SUBMIT_MODE: submit
+          BUILD_NUMBER: ${{ inputs.build }}
+          PLATFORMS: ${{ inputs.platforms }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        run: node scripts/submit-app-store.mjs

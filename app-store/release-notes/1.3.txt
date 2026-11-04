@@ -1,0 +1,11 @@
+A look back before you plan: guided weekly planning now opens with last week's recap — what got done, what's still open, and each person's busiest day.
+
+Household tasks are easier to manage:
+• Search tasks, and sort by deadline or planned date
+• Filter to Due today, Due soon, Overdue, or No deadline
+• Set a deadline of Today or Tomorrow in one tap, or plan a task for today or tomorrow
+• Complete tasks right from the list
+
+On Mac, add events directly from planner lists, with a refined layout and Reminders-style editing.
+
+Plus reliability fixes: steadier dates around daylight-saving changes and across time zones, better recovery from dropped connections, and calendar privacy enforced in notifications.
