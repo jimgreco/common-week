@@ -31,7 +31,20 @@ def decode(path):
     return plistlib.loads(run('security', 'cms', '-D', '-i', str(path)))
 
 
-def verify_profile(profile, target, certificate=None, now=None, policy=POLICY):
+PLATFORMS = {
+    # Mac Catalyst App Store profiles report OSX and omit beta-reports-active.
+    'ios': {'profiles': 'profiles', 'platform': 'iOS', 'extension': '.mobileprovision', 'beta': True},
+    'mac': {'profiles': 'macProfiles', 'platform': 'OSX', 'extension': '.provisionprofile', 'beta': False},
+}
+
+
+def platform_config(platform):
+    check(platform in PLATFORMS, 'Unknown release platform.')
+    return PLATFORMS[platform]
+
+
+def verify_profile(profile, target, certificate=None, now=None, policy=POLICY, platform='ios'):
+    kind = platform_config(platform)
     now = now or dt.datetime.now(dt.timezone.utc)
     e = profile.get('Entitlements', {})
     expiry, created = profile.get('ExpirationDate'), profile.get('CreationDate')
@@ -40,11 +53,11 @@ def verify_profile(profile, target, certificate=None, now=None, policy=POLICY):
     check(str(profile.get('UUID', '')).lower() == target['uuid'] and profile.get('Name') == target['name']
           and profile.get('TeamIdentifier') == [policy['teamId']]
           and profile.get('ApplicationIdentifierPrefix') == [policy['teamId']]
-          and 'iOS' in profile.get('Platform', []) and 'ProvisionedDevices' not in profile
+          and kind['platform'] in profile.get('Platform', []) and 'ProvisionedDevices' not in profile
           and profile.get('ProvisionsAllDevices') is not True, 'Profile identity, platform or distribution type differs.')
     check(e.get('application-identifier') == policy['teamId'] + '.' + target['bundleId']
           and e.get('com.apple.developer.team-identifier') == policy['teamId']
-          and e.get('get-task-allow') is False and e.get('beta-reports-active') is True, 'Profile app/team or distribution entitlement differs.')
+          and e.get('get-task-allow') is False and (not kind['beta'] or e.get('beta-reports-active') is True), 'Profile app/team or distribution entitlement differs.')
     check(e.get('com.apple.security.application-groups', []) == target['groups'], 'Profile App Groups differ.')
     check(e.get('com.apple.developer.applesignin', []) == target['appleSignin'], 'Profile Apple sign-in entitlement differs.')
     check(e.get('aps-environment') == target['push'], 'Profile push entitlement differs.')
@@ -57,14 +70,15 @@ def verify_profile(profile, target, certificate=None, now=None, policy=POLICY):
         check(hashlib.sha256(certificate).hexdigest() == policy['certificateSha256'], 'Imported certificate differs.')
 
 
-def install_profiles(directory, certificate, destination, policy=POLICY):
+def install_profiles(directory, certificate, destination, policy=POLICY, platform='ios'):
     # Validate every profile first. Never overwrite a cached profile at the same UUID.
+    kind = platform_config(platform)
     values = []
-    for name, target in policy['profiles'].items():
-        path = directory / (name + '.mobileprovision')
+    for name, target in policy[kind['profiles']].items():
+        path = directory / (name + kind['extension'])
         content = path.read_bytes()
-        verify_profile(decode(path), target, certificate, policy=policy)
-        dest = destination / (target['uuid'] + '.mobileprovision')
+        verify_profile(decode(path), target, certificate, policy=policy, platform=platform)
+        dest = destination / (target['uuid'] + kind['extension'])
         if dest.exists():
             check(dest.read_bytes() == content, 'Existing cached profile differs; preserve it and stop.')
         values.append((dest, content))
@@ -103,11 +117,64 @@ def source(sha, build, prepare=False, policy=POLICY):
                     check(original.get(key) == current.get(key), 'Unexpected source plist change.')
 
 
-def export_options(policy=POLICY):
-    return dict(method='app-store-connect', destination='export', teamID=policy['teamId'], signingStyle='manual',
-                signingCertificate=policy['certificateSha1'], manageAppVersionAndBuildNumber=False,
-                testFlightInternalTestingOnly=False, stripSwiftSymbols=True, uploadSymbols=True,
-                provisioningProfiles={p['bundleId']: p['uuid'] for p in policy['profiles'].values()})
+def export_options(policy=POLICY, platform='ios', installer_sha1=None):
+    kind = platform_config(platform)
+    options = dict(method='app-store-connect', destination='export', teamID=policy['teamId'], signingStyle='manual',
+                   signingCertificate=policy['certificateSha1'], manageAppVersionAndBuildNumber=False,
+                   testFlightInternalTestingOnly=False, stripSwiftSymbols=True, uploadSymbols=True,
+                   provisioningProfiles={p['bundleId']: p['uuid'] for p in policy[kind['profiles']].values()})
+    if platform == 'mac':
+        check(isinstance(installer_sha1, str) and re.fullmatch('[0-9A-Fa-f]{40}', installer_sha1), 'Mac export requires the imported installer identity.')
+        options['installerSigningCertificate'] = installer_sha1.upper()
+    return options
+
+
+def installer_identity(identities, policy=POLICY):
+    # `security find-identity -v` output from this run's temporary keychain only.
+    rule = policy['macInstaller']
+    found = []
+    for line in identities.splitlines():
+        match = re.search(r'\b([0-9A-F]{40}) "([^"]+)"', line)
+        if match and match.group(2).startswith((rule['identityPrefix'], rule['alternateIdentityPrefix'])) and match.group(2).endswith(rule['teamSuffix']):
+            found.append(match.group(1))
+    check(len(set(found)) == 1, 'Expected exactly one Mac installer identity for the approved team.')
+    return found[0]
+
+
+def mac_artifact(pkg, sha, build, policy=POLICY):
+    target = policy['macProfiles']['app']
+    signature = run('pkgutil', '--check-signature', str(pkg)).decode(errors='replace')
+    rule = policy['macInstaller']
+    check(any((rule['identityPrefix'] in line or rule['alternateIdentityPrefix'] in line) and rule['teamSuffix'] in line
+              for line in signature.splitlines()), 'Mac package is not signed by the approved installer identity.')
+    with tempfile.TemporaryDirectory(prefix='verify-mac-') as directory:
+        expanded = Path(directory) / 'expanded'
+        run('pkgutil', '--expand-full', str(pkg), str(expanded))
+        apps = [p for p in expanded.rglob('*.app') if p.is_dir() and not any(parent.suffix == '.app' for parent in p.parents)]
+        check(len(apps) == 1, 'Expected one Mac application in the package.')
+        app = apps[0]
+        check(not list(app.rglob('*.appex')), 'Mac package unexpectedly contains app extensions.')
+        info = plistlib.loads((app / 'Contents' / 'Info.plist').read_bytes())
+        check(info.get('CFBundleIdentifier') == target['bundleId'] and info.get('CFBundleShortVersionString') == policy['marketingVersion']
+              and info.get('CFBundleVersion') == build and info.get('ReleaseCommit') == sha and info.get('DTPlatformName') == 'macosx',
+              'Mac artifact bundle/version/build/source/platform differs.')
+        if policy.get('apiOrigin'):
+            check(info.get('API_BASE_URL') == policy['apiOrigin'], 'Mac artifact production origin differs.')
+        profile = app / 'Contents' / 'embedded.provisionprofile'
+        check(profile.is_file(), 'Mac artifact has no embedded existing profile.')
+        verify_profile(decode(profile), target, policy=policy, platform='mac')
+        run('codesign', '--verify', '--deep', '--strict', str(app))
+        check(hashlib.sha256(signing_certificate(app, directory)).hexdigest() == policy['certificateSha256'], 'Mac artifact signing identity differs.')
+        e = plistlib.loads(run('codesign', '-d', '--entitlements', ':-', str(app)))
+        push = e.get('com.apple.developer.aps-environment', e.get('aps-environment'))
+        check(e.get('com.apple.application-identifier', e.get('application-identifier')) == policy['teamId'] + '.' + target['bundleId']
+              and e.get('com.apple.developer.team-identifier') == policy['teamId']
+              and e.get('get-task-allow', False) is False
+              and e.get('com.apple.security.app-sandbox') is True
+              and e.get('com.apple.security.application-groups', []) == target['groups']
+              and e.get('com.apple.developer.applesignin') == target['appleSignin']
+              and push == target['push'], 'Signed Mac artifact identity, sandbox, App Groups, sign-in or push differ.')
+    return {'platform': 'mac', 'sha': sha, 'build': build, 'appId': policy['appId'], 'pkgSha256': hashlib.sha256(Path(pkg).read_bytes()).hexdigest()}
 
 
 def inspect_package(ipa, sha, build, policy=POLICY):
@@ -173,17 +240,23 @@ def artifact(ipa, sha, build, policy=POLICY):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['prepare-source', 'source', 'profiles', 'export-options', 'artifact'])
-    for name in ['sha', 'build', 'directory', 'certificate-der', 'destination', 'output', 'ipa']:
+    parser.add_argument('mode', choices=['prepare-source', 'source', 'profiles', 'export-options', 'artifact', 'installer-identity'])
+    for name in ['sha', 'build', 'directory', 'certificate-der', 'destination', 'output', 'ipa', 'pkg', 'installer-sha1', 'identities']:
         parser.add_argument('--' + name)
+    parser.add_argument('--platform', choices=sorted(PLATFORMS), default='ios')
     args = parser.parse_args()
     if args.mode in ['prepare-source', 'source']:
         source(args.sha, args.build, args.mode == 'prepare-source')
     elif args.mode == 'profiles':
-        install_profiles(Path(args.directory), Path(args.certificate_der).read_bytes(), Path(args.destination))
+        install_profiles(Path(args.directory), Path(args.certificate_der).read_bytes(), Path(args.destination), platform=args.platform)
     elif args.mode == 'export-options':
         with open(args.output, 'xb') as file:
-            plistlib.dump(export_options(), file)
+            plistlib.dump(export_options(platform=args.platform, installer_sha1=args.installer_sha1), file)
+    elif args.mode == 'installer-identity':
+        print(installer_identity(Path(args.identities).read_text()))
+    elif args.platform == 'mac':
+        source(args.sha, args.build)
+        print(json.dumps(mac_artifact(args.pkg, args.sha, args.build)))
     else:
         source(args.sha, args.build)
         print(json.dumps(artifact(args.ipa, args.sha, args.build)))

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       upload:
-        description: Upload only iOS using the pinned existing signing assets
+        description: Upload iOS and Mac using the pinned existing signing assets
         type: boolean
         default: false
 
@@ -195,5 +195,187 @@ jobs:
           fi
           if [ -n "${KEYCHAIN_PATH:-}" ] && [ -f "$KEYCHAIN_PATH" ]; then security delete-keychain "$KEYCHAIN_PATH"; fi
           rm -f "$RELEASE_TEMP/cert.p12" "$RELEASE_TEMP"/AuthKey_*.p8
+        fi
+      if: always()
+
+  mac:
+    # Same app record, certificate, audience and Git-count build as iOS, on the
+    # MAC_OS train. The widgets extension is iOS-only, so the package has no appex.
+    if: inputs.upload && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+    - name: Select Xcode 26
+      run: |
+        set -euo pipefail
+        for path in /Applications/Xcode_26.4.app /Applications/Xcode_26.3.app /Applications/Xcode_26.2.app /Applications/Xcode_26.1.app /Applications/Xcode_26.0.app /Applications/Xcode_26.app /Applications/Xcode-26.app /Applications/Xcode.app; do
+          if [ -d "$path" ]; then
+            sudo xcode-select -s "$path/Contents/Developer"
+            echo "Selected: $path"
+            break
+          fi
+        done
+        xcodebuild -version
+    - name: Test no-mutation release guards
+      run: |
+        node --test .github/scripts/release-guard-tests.mjs
+        PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/test_release.py
+    - name: Bind release to clean source
+      run: |
+        set -euo pipefail
+        BUILD_NUMBER="$(git rev-list --count HEAD)"
+        python3 .github/scripts/verify-release.py prepare-source --sha "$GITHUB_SHA" --build "$BUILD_NUMBER"
+        echo "MAC_BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+    - name: Configure production origin
+      run: |
+        set -euo pipefail
+        /usr/libexec/PlistBuddy -c 'Set :API_BASE_URL https://weekofus.com' ios/CommonWeek/Info.plist
+    - name: Prepare existing app-specific authentication
+      run: |
+        set -euo pipefail
+        for name in APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID API_KEY CERT_P12 CERT_PWD INSTALLER_P12 INSTALLER_PWD KC_PWD; do
+          test -n "${!name}" || { echo "Missing existing app-specific configuration: $name"; exit 1; }
+        done
+        umask 077
+        RELEASE_TEMP="$(mktemp -d "$RUNNER_TEMP/mac-release.XXXXXX")"
+        echo "RELEASE_TEMP=$RELEASE_TEMP" >> "$GITHUB_ENV"
+        KEY_PATH="$RELEASE_TEMP/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+        export KEY_PATH
+        python3 - <<'PY'
+        import base64, os
+        key = os.environ['API_KEY'].strip().replace('\\n', '\n')
+        if 'BEGIN PRIVATE KEY' not in key:
+            key = base64.b64decode(key).decode()
+        if 'BEGIN PRIVATE KEY' not in key:
+            raise SystemExit('Existing API key encoding is unsupported.')
+        with open(os.environ['KEY_PATH'], 'x') as file:
+            file.write(key.rstrip() + '\n')
+        PY
+        {
+          echo "APP_STORE_CONNECT_API_KEY_PATH=$KEY_PATH"
+          echo "APP_STORE_CONNECT_KEY_ID=$APP_STORE_CONNECT_KEY_ID"
+          echo "APP_STORE_CONNECT_ISSUER_ID=$APP_STORE_CONNECT_ISSUER_ID"
+        } >> "$GITHUB_ENV"
+        mkdir "$RELEASE_TEMP/private_keys"
+        ln -s "$KEY_PATH" "$RELEASE_TEMP/private_keys/$(basename "$KEY_PATH")"
+      env:
+        APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+        CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+        CERT_PWD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        INSTALLER_P12: ${{ secrets.MAC_INSTALLER_CERT_P12 }}
+        INSTALLER_PWD: ${{ secrets.MAC_INSTALLER_CERT_PASSWORD }}
+        KC_PWD: ${{ secrets.KEYCHAIN_PASSWORD }}
+    - name: Check current app, Jim-only audience and Mac build number
+      run: |
+        set -euo pipefail
+        node .github/scripts/asc-readonly.mjs preflight --platform mac --sha "$GITHUB_SHA" --build "$MAC_BUILD_NUMBER"
+    - name: Import existing signing and installer identities and verify pinned profile
+      run: |
+        set -euo pipefail
+        umask 077
+        KEYCHAIN_PATH="$RELEASE_TEMP/signing.keychain-db"
+        echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+        security list-keychains -d user > "$RELEASE_TEMP/original-keychains.txt"
+        security create-keychain -p "$KC_PWD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KC_PWD" "$KEYCHAIN_PATH"
+        python3 - "$KEYCHAIN_PATH" "$RELEASE_TEMP/original-keychains.txt" <<'PY'
+        import shlex, subprocess, sys
+        from pathlib import Path
+        subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', sys.argv[1], *shlex.split(Path(sys.argv[2]).read_text())], check=True)
+        PY
+        printf '%s' "$CERT_P12" | base64 -d > "$RELEASE_TEMP/cert.p12"
+        security import "$RELEASE_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$CERT_PWD" -T /usr/bin/codesign -T /usr/bin/security
+        printf '%s' "$INSTALLER_P12" | base64 -d > "$RELEASE_TEMP/installer.p12"
+        security import "$RELEASE_TEMP/installer.p12" -k "$KEYCHAIN_PATH" -P "$INSTALLER_PWD" -T /usr/bin/xcodebuild -T /usr/bin/productbuild -T /usr/bin/productsign -T /usr/bin/security
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PWD" "$KEYCHAIN_PATH" >/dev/null
+        security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -Fq '963A7A5107DB8D4C141371C285F71CCAE84A5452'
+        security find-identity -v "$KEYCHAIN_PATH" > "$RELEASE_TEMP/identities.txt"
+        echo "INSTALLER_SHA1=$(python3 .github/scripts/verify-release.py installer-identity --identities "$RELEASE_TEMP/identities.txt")" >> "$GITHUB_ENV"
+        security find-certificate -c 'Apple Distribution: James Greco' -p "$KEYCHAIN_PATH" > "$RELEASE_TEMP/certificate.pem"
+        openssl x509 -in "$RELEASE_TEMP/certificate.pem" -outform DER -out "$RELEASE_TEMP/certificate.der"
+        mkdir "$RELEASE_TEMP/profiles"
+        node .github/scripts/asc-readonly.mjs profiles --platform mac --certificate-der "$RELEASE_TEMP/certificate.der" --directory "$RELEASE_TEMP/profiles"
+        python3 .github/scripts/verify-release.py profiles --platform mac --directory "$RELEASE_TEMP/profiles" --certificate-der "$RELEASE_TEMP/certificate.der" --destination "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+      env:
+        CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+        CERT_PWD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        INSTALLER_P12: ${{ secrets.MAC_INSTALLER_CERT_P12 }}
+        INSTALLER_PWD: ${{ secrets.MAC_INSTALLER_CERT_PASSWORD }}
+        KC_PWD: ${{ secrets.KEYCHAIN_PASSWORD }}
+    - name: Archive Mac Catalyst using only the verified existing profile
+      run: |
+        set -euo pipefail
+        python3 .github/scripts/verify-release.py source --sha "$GITHUB_SHA" --build "$MAC_BUILD_NUMBER"
+        xcodebuild archive \
+          -project "ios/CommonWeek.xcodeproj" \
+          -scheme "CommonWeek" \
+          -configuration Release \
+          -destination 'generic/platform=macOS,variant=Mac Catalyst' \
+          -archivePath "$RELEASE_TEMP/Mac.xcarchive" \
+          DEVELOPMENT_TEAM=V6JPQCD336 \
+          CODE_SIGN_STYLE=Manual \
+          CODE_SIGN_IDENTITY=963A7A5107DB8D4C141371C285F71CCAE84A5452 \
+          CURRENT_PROJECT_VERSION="$MAC_BUILD_NUMBER" \
+          OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" \
+          PROVISIONING_PROFILE_SPECIFIER="9544f616-3b55-4296-8ce0-62383e6fa71c"
+    - name: Export App Store-eligible Mac package without provisioning updates
+      run: |
+        set -euo pipefail
+        python3 .github/scripts/verify-release.py export-options --platform mac --installer-sha1 "$INSTALLER_SHA1" --output "$RELEASE_TEMP/ExportOptions.plist"
+        xcodebuild -exportArchive -archivePath "$RELEASE_TEMP/Mac.xcarchive" -exportOptionsPlist "$RELEASE_TEMP/ExportOptions.plist" -exportPath "$RELEASE_TEMP/export"
+        python3 - <<'PY'
+        import os
+        from pathlib import Path
+        files = list((Path(os.environ['RELEASE_TEMP'])/'export').glob('*.pkg'))
+        if len(files) != 1:
+            raise SystemExit('Expected exactly one exported Mac package.')
+        with open(os.environ['GITHUB_ENV'], 'a') as file:
+            file.write('PKG_PATH=' + str(files[0]) + '\n')
+        PY
+    - name: Verify signed package and recheck current Apple scope
+      run: |
+        set -euo pipefail
+        python3 .github/scripts/verify-release.py artifact --platform mac --pkg "$PKG_PATH" --sha "$GITHUB_SHA" --build "$MAC_BUILD_NUMBER"
+        mkdir "$RELEASE_TEMP/final-profiles"
+        node .github/scripts/asc-readonly.mjs profiles --platform mac --certificate-der "$RELEASE_TEMP/certificate.der" --directory "$RELEASE_TEMP/final-profiles"
+        for path in "$RELEASE_TEMP/profiles/"*.provisionprofile; do
+          cmp "$path" "$RELEASE_TEMP/final-profiles/$(basename "$path")"
+        done
+        node .github/scripts/asc-readonly.mjs preflight --platform mac --sha "$GITHUB_SHA" --build "$MAC_BUILD_NUMBER"
+    - name: Upload one verified Mac build to existing TestFlight app
+      run: |
+        set -euo pipefail
+        cd "$RELEASE_TEMP"
+        xcrun altool --upload-app --type macos --file "$PKG_PATH" --apiKey "$APP_STORE_CONNECT_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" 2>&1 | tee "$RELEASE_TEMP/upload.log"
+        if grep -Eiq 'UPLOAD FAILED|Validation failed|Failed to upload package' "$RELEASE_TEMP/upload.log"; then exit 1; fi
+        grep -Eiq 'UPLOAD SUCCEEDED|successfully uploaded' "$RELEASE_TEMP/upload.log"
+    - name: Verify processing and approved internal group availability
+      run: |
+        set -euo pipefail
+        node .github/scripts/asc-readonly.mjs verify-upload --platform mac --sha "$GITHUB_SHA" --build "$MAC_BUILD_NUMBER"
+    - name: Clean only this run signing files
+      run: |
+        set -euo pipefail
+        if [ -n "${RELEASE_TEMP:-}" ]; then
+          if [ -f "$RELEASE_TEMP/original-keychains.txt" ]; then
+            python3 - "$RELEASE_TEMP/original-keychains.txt" <<'PY'
+        import shlex, subprocess, sys
+        from pathlib import Path
+        subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', *shlex.split(Path(sys.argv[1]).read_text())], check=True)
+        PY
+          fi
+          if [ -n "${KEYCHAIN_PATH:-}" ] && [ -f "$KEYCHAIN_PATH" ]; then security delete-keychain "$KEYCHAIN_PATH"; fi
+          rm -f "$RELEASE_TEMP/cert.p12" "$RELEASE_TEMP/installer.p12" "$RELEASE_TEMP"/AuthKey_*.p8
         fi
       if: always()

@@ -60,5 +60,24 @@
       "id": "4220dfd9-6389-4124-ac77-26b5c09c2a17",
       "emailSha256": "585d07537897adb6073389f204e47c7fb5bc1c743fa8ed3c387334912ca3006d"
     }
-  ]
+  ],
+  "macProfiles": {
+    "app": {
+      "uuid": "9544f616-3b55-4296-8ce0-62383e6fa71c",
+      "name": "Week of Us Mac Catalyst App Store 20260908",
+      "bundleId": "com.jimgreco.commonweek",
+      "groups": [
+        "group.com.jimgreco.commonweek"
+      ],
+      "appleSignin": [
+        "Default"
+      ],
+      "push": "production"
+    }
+  },
+  "macInstaller": {
+    "identityPrefix": "3rd Party Mac Developer Installer: ",
+    "alternateIdentityPrefix": "Mac Installer Distribution: ",
+    "teamSuffix": " (V6JPQCD336)"
+  }
 }

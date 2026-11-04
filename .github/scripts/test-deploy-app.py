@@ -19,6 +19,16 @@ with (root / "trace").open("a") as log:
 if command in ("flock", "sleep"):
     sys.exit(1 if command == "flock" and mode == "lock-conflict" else 0)
 if command == "docker":
+    if args[0] == "exec":
+        program = args[3] if args[1] == "-i" else args[2]
+        if program == "psql": print(10 ** 20 if mode == "disk-full" else 4096)
+        elif program == "pg_dump":
+            if mode == "backup-failure": sys.exit(4)
+            sys.stdout.write("PGDMP synthetic archive")
+        elif program == "pg_restore":
+            sys.stdin.read()
+            if mode != "unreadable-backup": print("215; 1259 16401 TABLE public planning_items admin")
+        sys.exit(0)
     if args[0] == "ps": print(old_id[:12])
     elif args[0] == "inspect":
         template, container = args[2], args[3]
@@ -69,10 +79,16 @@ elif args[0] == "exec" and mode == "health-failure": sys.exit(6)
 
 
 class DeploymentSafetyTests(unittest.TestCase):
-    def run_fixture(self, mode="success", acknowledged=True):
+    def run_fixture(self, mode="success", acknowledged=True, flag="--recovery-reviewed", old_backups=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "deploy").mkdir()
+            backups = root / "deploy" / "backups" / "common-week"
+            if old_backups:
+                backups.mkdir(parents=True)
+                for index in range(old_backups):
+                    (backups / f"common-week-20260101T{index:06d}Z-before-{'0' * 40}.dump").write_text("old")
+                (backups / "unrelated-notes.txt").write_text("keep")
             (root / "bin").mkdir()
             (root / "compose.yml").touch()
             (root / "override.yml").touch()
@@ -87,7 +103,7 @@ class DeploymentSafetyTests(unittest.TestCase):
             script.write_text(SCRIPT.read_text().replace('"$HOME/deploy', '"' + str(root / "deploy")))
             args = ["bash", str(script), "b" * 40, "a" * 40]
             if acknowledged:
-                args.append("--recovery-reviewed")
+                args.append(flag)
             result = subprocess.run(args, text=True, capture_output=True, env={
                 **os.environ, "PATH": str(root / "bin") + os.pathsep + os.environ["PATH"],
                 "PLANNER_TEST_STATE": str(root), "PLANNER_TEST_MODE": mode,
@@ -102,6 +118,7 @@ class DeploymentSafetyTests(unittest.TestCase):
                 while args and args[0] in ("-p", "-f", "--project-directory"):
                     args = args[2:]
                 compose_calls.append(args)
+            self.backups = sorted(p.name for p in backups.iterdir()) if backups.exists() else []
             return result, compose_calls, calls
 
     def test_success_stops_worker_before_migration_and_recreates_only_app(self):
@@ -197,6 +214,43 @@ class DeploymentSafetyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(calls[-1], ["stop", "-t", "60", "common-week"])
         self.assertEqual(sum(call[0] == "up" for call in calls), 1)
+
+    def test_verified_backup_precedes_stop_and_uses_no_credentials(self):
+        for flag in ("--automatic-backup", "--recovery-reviewed"):
+            with self.subTest(flag=flag):
+                result, _, calls = self.run_fixture(flag=flag)
+                self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+                dump = next(i for i, c in enumerate(calls) if c[:2] == ["docker", "exec"] and "pg_dump" in c)
+                verify = next(i for i, c in enumerate(calls) if c[:3] == ["docker", "exec", "-i"] and "pg_restore" in c)
+                stop = next(i for i, c in enumerate(calls) if c[0] == "docker-compose" and "stop" in c)
+                self.assertLess(dump, verify)
+                self.assertLess(verify, stop)
+                self.assertEqual(calls[dump], ["docker", "exec", "shared_db", "pg_dump", "-U", "admin", "-d", "common_week", "-Fc"])
+                self.assertEqual(len(self.backups), 1)
+                self.assertRegex(self.backups[0], r"^common-week-\d{8}T\d{6}Z-before-" + "b" * 40 + r"\.dump$")
+                self.assertIn("Verified pre-release backup", result.stdout)
+
+    def test_backup_problems_stop_release_while_current_build_serves(self):
+        for mode, message in (("backup-failure", "backup failed"), ("unreadable-backup", "could not be read back"), ("disk-full", "Not enough free disk")):
+            with self.subTest(mode=mode):
+                result, calls, _ = self.run_fixture(mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stdout)
+                self.assertFalse(any(call[0] in ("stop", "up") or "scripts/migrate.mjs" in call for call in calls))
+                self.assertEqual(self.backups, [])
+
+    def test_backup_retention_keeps_twenty_newest_release_backups_only(self):
+        result, _, _ = self.run_fixture(old_backups=25)
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        dumps = [name for name in self.backups if name.endswith(".dump")]
+        self.assertEqual(len(dumps), 20)
+        self.assertIn("unrelated-notes.txt", self.backups)
+        self.assertTrue(any(("b" * 40) in name for name in dumps))
+
+    def test_unknown_release_flag_is_rejected_before_host_commands(self):
+        result, _, calls = self.run_fixture(flag="--skip-backup")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
 
     def test_recovery_review_is_required_before_host_commands(self):
         result, _, calls = self.run_fixture(acknowledged=False)

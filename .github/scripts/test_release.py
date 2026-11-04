@@ -106,6 +106,65 @@ class ProfileTests(unittest.TestCase):
             self.assertEqual(mtimes, {p.name:p.stat().st_mtime_ns for p in dest.iterdir()})
 
 
+class MacReleaseTests(unittest.TestCase):
+    def setUp(self):
+        self.p = copy.deepcopy(v.POLICY)
+        self.cert = b'synthetic public certificate, not a credential'
+        self.p['certificateSha256'] = hashlib.sha256(self.cert).hexdigest()
+        self.now = dt.datetime(2026, 11, 4, tzinfo=dt.timezone.utc)
+
+    def profile(self):
+        t = self.p['macProfiles']['app']
+        # Mirrors the decoded pinned Mac Catalyst App Store profile: OSX, no beta-reports-active.
+        e = {'application-identifier': self.p['teamId'] + '.' + t['bundleId'],
+             'com.apple.developer.team-identifier': self.p['teamId'], 'get-task-allow': False,
+             'com.apple.security.application-groups': t['groups'], 'com.apple.developer.applesignin': t['appleSignin'],
+             'aps-environment': t['push'], 'com.apple.developer.aps-environment': t['push']}
+        return dict(UUID=t['uuid'], Name=t['name'], TeamIdentifier=[self.p['teamId']], ApplicationIdentifierPrefix=[self.p['teamId']],
+                    Platform=['OSX'], CreationDate=dt.datetime(2026, 9, 8), ExpirationDate=dt.datetime(2027, 5, 12),
+                    DeveloperCertificates=[self.cert], Entitlements=e)
+
+    def test_pinned_mac_profile_verifies_only_as_mac(self):
+        target = self.p['macProfiles']['app']
+        v.verify_profile(self.profile(), target, self.cert, self.now, self.p, platform='mac')
+        with self.assertRaises(ValueError):
+            v.verify_profile(self.profile(), target, self.cert, self.now, self.p, platform='ios')
+        for key, value in [('Platform', ['iOS']), ('UUID', 'other'), ('DeveloperCertificates', [b'other']), ('ProvisionsAllDevices', True)]:
+            with self.subTest(key=key):
+                profile = self.profile(); profile[key] = value
+                with self.assertRaises(ValueError): v.verify_profile(profile, target, self.cert, self.now, self.p, platform='mac')
+        for key, value in [('aps-environment', 'development'), ('get-task-allow', True), ('com.apple.security.application-groups', [])]:
+            with self.subTest(entitlement=key):
+                profile = self.profile(); profile['Entitlements'][key] = value
+                with self.assertRaises(ValueError): v.verify_profile(profile, target, self.cert, self.now, self.p, platform='mac')
+
+    def test_mac_profile_installs_as_provisionprofile(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root); src = root/'source'; src.mkdir(); dest = root/'cache'
+            (src/'app.provisionprofile').write_bytes(b'mac')
+            with patch.object(v, 'decode', lambda path: self.profile()):
+                v.install_profiles(src, self.cert, dest, self.p, platform='mac')
+            self.assertEqual([p.name for p in dest.iterdir()], [self.p['macProfiles']['app']['uuid'] + '.provisionprofile'])
+
+    def test_mac_export_is_app_store_eligible_and_installer_signed(self):
+        options = v.export_options(self.p, 'mac', 'a' * 40)
+        self.assertIs(options['testFlightInternalTestingOnly'], False)
+        self.assertEqual(options['installerSigningCertificate'], 'A' * 40)
+        self.assertEqual(options['provisioningProfiles'], {self.p['macProfiles']['app']['bundleId']: self.p['macProfiles']['app']['uuid']})
+        with self.assertRaises(ValueError): v.export_options(self.p, 'mac', None)
+        self.assertNotIn('installerSigningCertificate', v.export_options(self.p))
+
+    def test_installer_identity_requires_exactly_one_team_installer(self):
+        sha = 'B' * 40
+        good = f'  1) {"9" * 40} "Apple Distribution: James Greco (V6JPQCD336)"\n  2) {sha} "3rd Party Mac Developer Installer: James Greco (V6JPQCD336)"\n'
+        self.assertEqual(v.installer_identity(good, self.p), sha)
+        self.assertEqual(v.installer_identity(good.replace('3rd Party Mac Developer Installer', 'Mac Installer Distribution'), self.p), sha)
+        for identities in ['', good.replace('V6JPQCD336)"\n  2', 'X)"\n  2').replace('(V6JPQCD336)"\n', '(OTHERTEAM)"\n'),
+                           good + f'  3) {"C" * 40} "Mac Installer Distribution: James Greco (V6JPQCD336)"\n']:
+            with self.subTest(identities=identities):
+                with self.assertRaises(ValueError): v.installer_identity(identities, self.p)
+
+
 class ArtifactTests(unittest.TestCase):
     def setUp(self):
         self.p = copy.deepcopy(v.POLICY)

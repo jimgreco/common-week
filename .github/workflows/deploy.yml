@@ -6,14 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Deploy this commit after release-coordinator approval
+        description: Redeploy this commit (pushes to main deploy automatically)
         type: boolean
         default: false
       expected_live_build:
-        description: Exact currently deployed 40-character commit
+        description: Exact currently deployed 40-character commit (default reads /api/health)
         type: string
       recovery_evidence:
-        description: Reference to verified backup restore and migration staging evidence
+        description: Optional note; every cutover takes and verifies its own database backup first
         type: string
 
 permissions:
@@ -91,23 +91,40 @@ jobs:
           cache-to: type=gha,mode=max,scope=common-week-arm64
 
   deploy:
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+    # Every push to main deploys once its own verify and publish jobs pass.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy))
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
     steps:
       - uses: actions/checkout@v7
-      - name: Validate coordinated cutover
+        with:
+          fetch-depth: 0
+      - name: Resolve live build and refuse to move production backwards
         env:
-          EXPECTED_LIVE_BUILD: ${{ inputs.expected_live_build }}
-          RECOVERY_EVIDENCE: ${{ inputs.recovery_evidence }}
+          REQUESTED_LIVE_BUILD: ${{ inputs.expected_live_build }}
         run: |
           set -euo pipefail
-          [[ "$EXPECTED_LIVE_BUILD" =~ ^[0-9a-f]{40}$ ]]
-          test -n "$RECOVERY_EVIDENCE" || { echo 'Backup, restore, and migration staging evidence is required.'; exit 1; }
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          live="$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 3 https://weekofus.com/api/health \
+            | node -e 'let t="";process.stdin.on("data",c=>t+=c).on("end",()=>{const b=JSON.parse(t);if(!/^[0-9a-f]{40}$/.test(b.build||""))process.exit(1);console.log(b.build)})')"
+          if [ -n "${REQUESTED_LIVE_BUILD:-}" ] && [ "$REQUESTED_LIVE_BUILD" != "$live" ]; then
+            echo "Live build is $live, not the requested $REQUESTED_LIVE_BUILD."; exit 1
+          fi
+          if [ "$live" = "$GITHUB_SHA" ]; then
+            echo "Production already runs $GITHUB_SHA."; echo "ALREADY_LIVE=true" >> "$GITHUB_ENV"; exit 0
+          fi
+          # A re-run of an older push, or a hotfix deployed from another branch,
+          # must never be replaced by unrelated or older code automatically.
+          git merge-base --is-ancestor "$live" "$GITHUB_SHA" \
+            || { echo "Live build $live is not an ancestor of $GITHUB_SHA; reconcile before deploying."; exit 1; }
+          echo "EXPECTED_LIVE_BUILD=$live" >> "$GITHUB_ENV"
+          echo "Deploying $GITHUB_SHA over live $live:"
+          git log --oneline "$live..$GITHUB_SHA"
+          git diff --name-only "$live" "$GITHUB_SHA" -- db/migrations | sed 's/^/  migration: /'
       - name: Prepare existing SSH identity
+        if: env.ALREADY_LIVE != 'true'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
@@ -122,10 +139,10 @@ jobs:
           printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           test -s "$HOME/.ssh/known_hosts"
       - name: Deploy only Week of Us with existing live configuration
+        if: env.ALREADY_LIVE != 'true'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
-          EXPECTED_LIVE_BUILD: ${{ inputs.expected_live_build }}
         run: |
           set -euo pipefail
           [[ "$EXPECTED_LIVE_BUILD" =~ ^[0-9a-f]{40}$ ]]
@@ -134,7 +151,7 @@ jobs:
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             -o StrictHostKeyChecking=yes \
             "$EC2_USER@$EC2_HOST" \
-            "bash -s -- '$GITHUB_SHA' '$EXPECTED_LIVE_BUILD' --recovery-reviewed" < .github/scripts/deploy-app.sh
+            "bash -s -- '$GITHUB_SHA' '$EXPECTED_LIVE_BUILD' --automatic-backup" < .github/scripts/deploy-app.sh
       - name: Verify canonical public endpoint
         run: |
           set -euo pipefail

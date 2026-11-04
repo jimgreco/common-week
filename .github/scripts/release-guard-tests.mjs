@@ -193,3 +193,27 @@ test('excluded external group accepts null all-builds metadata while internal di
   groups.find(g => g.attributes.isInternalGroup).attributes.hasAccessToAllBuilds = null;
   await assert.rejects(() => audience(f.client, f.p));
 });
+
+test('Mac releases read only the MAC_OS train and require App Store-eligible processing', async () => {
+  const f = fixture(), id = 'mac-uploaded';
+  f.routes[`/v1/preReleaseVersions?filter[app]=${f.p.appId}&filter[platform]=MAC_OS&limit=200`] = { data: [{ type: 'preReleaseVersions', id: 'mac-train', attributes: { platform: 'MAC_OS', version: f.p.marketingVersion } }] };
+  f.routes['/v1/preReleaseVersions/mac-train/builds?limit=200'] = { data: [{ type: 'builds', id: 'mac-previous', attributes: { version: '2' } }] };
+  assert.equal((await preflight(f.client, '3', 'a'.repeat(40), f.p, 'mac')).platform, 'mac');
+  await assert.rejects(() => preflight(f.client, '2', 'a'.repeat(40), f.p, 'mac'), /Mac build preflight/);
+  f.routes['/v1/preReleaseVersions/mac-train/builds?limit=200'].data = [{ type: 'builds', id, attributes: { version: '3', processingState: 'VALID', expired: false, buildAudienceType: 'APP_STORE_ELIGIBLE' } }];
+  f.routes[`/v1/betaGroups/${f.p.groups[0].id}/builds?limit=200`] = { data: [{ id, type: 'builds' }] };
+  f.routes[`/v1/builds/${id}/individualTesters?limit=200`] = { data: [] };
+  assert.equal((await verifyUploaded(f.client, '3', 'a'.repeat(40), f.p, 'mac')).audience, 'APP_STORE_ELIGIBLE');
+  f.routes['/v1/preReleaseVersions/mac-train/builds?limit=200'].data[0].attributes.buildAudienceType = 'INTERNAL_ONLY';
+  await assert.rejects(() => verifyUploaded(f.client, '3', 'a'.repeat(40), f.p, 'mac'), /Mac version/);
+  await assert.rejects(() => preflight(f.client, '3', 'a'.repeat(40), f.p, 'watchos'), /Unknown release platform/);
+});
+test('Mac profile must be the pinned Mac Catalyst App Store profile', () => {
+  const target = policy.macProfiles.app, now = Date.parse('2026-11-04T00:00:00Z');
+  const resource = { type: 'profiles', attributes: { uuid: target.uuid.toUpperCase(), name: target.name, profileType: 'MAC_CATALYST_APP_STORE', profileState: 'ACTIVE', platform: 'IOS', expirationDate: '2027-05-12T18:58:45Z' } };
+  validateProfile(resource, target, now, 'mac');
+  assert.throws(() => validateProfile(resource, target, now, 'ios'), /iOS profile/);
+  for (const [key, value] of Object.entries({ profileType: 'MAC_APP_STORE', profileState: 'INVALID', uuid: 'other', expirationDate: '2026-01-01T00:00:00Z' })) {
+    const changed = clone(resource); changed.attributes[key] = value; assert.throws(() => validateProfile(changed, target, now, 'mac'));
+  }
+});

@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Invoke only after backup/restore and migration staging review, with the
-# coordinator's existing pinned SSH connection. No credentials are transferred.
+# Invoked by the Deploy workflow on every push to main (--automatic-backup) or
+# by a coordinator after manual review (--recovery-reviewed). Either way the
+# script takes and verifies its own database backup before stopping the app.
+# Uses the existing pinned SSH connection. No credentials are transferred.
 set -euo pipefail
 
 release_build="${1:-}"
 expected_live_build="${2:-}"
 [[ "$release_build" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact release SHA required.'; exit 1; }
 [[ "$expected_live_build" =~ ^[0-9a-f]{40}$ ]] || { echo 'Exact expected live SHA required.'; exit 1; }
-[ "${3:-}" = --recovery-reviewed ] || { echo 'Verified backup restore and migration staging review must be acknowledged.'; exit 1; }
+case "${3:-}" in
+  --recovery-reviewed|--automatic-backup) ;;
+  *) echo 'Choose --automatic-backup or acknowledge manual review with --recovery-reviewed.'; exit 1 ;;
+esac
 release_image="ghcr.io/jimgreco/common-week:$release_build"
 
 # All shared-host app coordinators must use this same lock.
@@ -109,6 +114,30 @@ current_container="$(compose ps -q common-week)"
 # Read-only ownership/role preflight before stopping any service. Migration and
 # runtime must use the same dedicated non-superuser table owner, not RLS bypass.
 compose run --rm --no-deps -T common-week node scripts/check-offline-recovery-role.mjs --before-migration </dev/null
+
+# Verified logical backup of only the Week of Us database, before any downtime.
+# It runs inside the existing shared Postgres container over its local socket,
+# so no credential leaves the host. A failure here stops the release while the
+# current build is still serving.
+backup_dir="$HOME/deploy/backups/common-week"
+mkdir -p "$backup_dir"
+chmod 700 "$backup_dir"
+database_bytes="$(docker exec shared_db psql -U admin -d common_week -Atc "select pg_database_size('common_week')" </dev/null)"
+[[ "$database_bytes" =~ ^[0-9]+$ ]] || { echo 'Could not read the Week of Us database size; not releasing.'; exit 1; }
+available_kb="$(df -Pk "$backup_dir" | awk 'NR == 2 {print $4}')"
+[[ "$available_kb" =~ ^[0-9]+$ ]] && [ $((available_kb * 1024)) -gt $((database_bytes * 3 + 268435456)) ] \
+  || { echo 'Not enough free disk for a pre-release backup; not releasing.'; exit 1; }
+backup="$backup_dir/common-week-$(date -u +%Y%m%dT%H%M%SZ)-before-$release_build.dump"
+(umask 077 && docker exec shared_db pg_dump -U admin -d common_week -Fc </dev/null > "$backup.partial") \
+  || { rm -f "$backup.partial"; echo 'Pre-release database backup failed; not releasing.'; exit 1; }
+# Prove the archive is readable and contains the core planner table.
+docker exec -i shared_db pg_restore --list < "$backup.partial" | grep -Eq 'TABLE public planning_items ' \
+  || { rm -f "$backup.partial"; echo 'Pre-release backup could not be read back; not releasing.'; exit 1; }
+mv "$backup.partial" "$backup"
+echo "Verified pre-release backup: $backup ($(wc -c < "$backup" | tr -d ' ') bytes)"
+# Keep the 20 newest Week of Us release backups; never touch other files.
+find "$backup_dir" -maxdepth 1 -type f -name 'common-week-*-before-*.dump' -print | sort -r | tail -n +21 | while IFS= read -r old; do rm -f -- "$old"; done
+
 compose stop -t 60 common-week
 cutover_started=true
 cutover_complete=false
