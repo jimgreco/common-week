@@ -20,6 +20,21 @@ After local invocation, independently check the canonical `https://weekofus.com/
 
 Native distribution is separate: dispatch **CI** on the same `main` SHA with `upload_native: true` after its upload is authorized. iOS test failures now fail CI. The signing helper only inspects/downloads existing approved Apple Developer assets and fails if bundles, capabilities or profiles are missing; it cannot create them. Confirm uploader acceptance and App Store Connect processing separately from device installation. Old clients retain ordinary sign-in but cannot finish new Calendar linking until updated. Older ambiguous offline drafts remain quarantined; never automatically reassign or delete them.
 
+## Weekly summary endpoint
+
+`GET /api/weekly-summary?week=<Monday>` is a read-only summary for the separate weekly-review routine (contract: weekly-review `docs/weekly-summary-contract.md`). It returns 404 unless both optional variables below are set, so shipping the code is inert.
+
+| Variable | Meaning |
+|---|---|
+| `WEEKLY_SUMMARY_TOKEN_SHA256` | Lowercase hex SHA-256 of the routine's bearer token. The plaintext token is never stored in the app. |
+| `WEEKLY_SUMMARY_EMAIL` | The account whose household is reported (case-insensitive). The token cannot choose another user. |
+
+- The route accepts only this token. It never reads user session cookies or bearer tokens, and this token is accepted nowhere else. A missing, wrong, or session token is a 404; demo mode is a 404.
+- It runs plain `SELECT`s only: no task carry-over, routine materialization, Google calls, or session/audit writes.
+- Generate the token with `TOKEN=$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-40)` and the hash with `printf %s "$TOKEN" | shasum -a 256 | cut -d' ' -f1`. Store `$TOKEN` only in the routine's environment.
+- Releases do not transfer environment values. To enable it, the owner adds both variables to the `common-week` service's environment in the live host Compose layer (the reference copy is `.github/deploy/common-week-apple.yml`, where they are optional with empty defaults) and recreates only that service. Because this changes the recorded Compose configuration, do it as its own step outside a release, then confirm `/api/health` and the configuration guard on the next deploy.
+- Verify with `curl -fsS -H "Authorization: Bearer $TOKEN" "https://weekofus.com/api/weekly-summary?week=<Monday>"`: expect `200`, `Cache-Control: no-store`, and `"app":"planner"`. Without the header, expect `404`.
+
 ## Vercel note
 
 The application remains build-compatible with Vercel, but the chosen production database is private on the consolidated EC2 Compose network. A Vercel deployment would need secure network access to that database or a separate managed PostgreSQL instance. The canonical deployment path is therefore the existing EC2 server.
