@@ -18,7 +18,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: deploy-common-week
@@ -46,6 +45,17 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/common_week_test
       PGSSL: "false"
     steps:
+      - name: Check the requested live build
+        if: inputs.expected_live_build != ''
+        env:
+          REQUESTED_LIVE_BUILD: ${{ inputs.expected_live_build }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_LIVE_BUILD" =~ ^[0-9a-f]{40}$ ]] || { echo 'expected_live_build must be a full commit.'; exit 1; }
+          live="$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 3 https://weekofus.com/api/health \
+            | node -e 'let t="";process.stdin.on("data",c=>t+=c).on("end",()=>console.log(JSON.parse(t).build||""))')"
+          [ "$live" = "$REQUESTED_LIVE_BUILD" ] || { echo "Live build is $live, not the requested $REQUESTED_LIVE_BUILD."; exit 1; }
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
@@ -63,96 +73,34 @@ jobs:
       - run: npm run test:run -- src/lib/server/notifications.integration.test.ts
         env:
           NOTIFICATION_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
-      - run: python3 .github/scripts/test-deploy-app.py
 
-  publish:
+  release:
+    # Every run publishes the exact-commit ARM64 image. Pushes to main, and
+    # dispatches on main with deploy: true, also release it on the shared host
+    # (backup, role preflight, migrations, exact-build health; see
+    # .github/release/server.json and release-tools server/README.md).
     needs: verify
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish exact-commit ARM64 image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
-          build-args: |
-            APP_BUILD=${{ github.sha }}
-            NEXT_PUBLIC_APP_URL=https://weekofus.com
-          cache-from: type=gha,scope=common-week-arm64
-          cache-to: type=gha,mode=max,scope=common-week-arm64
+    permissions:
+      contents: read
+      packages: write
+    uses: jimgreco/release-tools/.github/workflows/server-release.yml@ff61f1c6a6eb51ea982246473203bcc903ce8153
+    with:
+      tools_ref: ff61f1c6a6eb51ea982246473203bcc903ce8153
+      deploy: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy) }}
+    secrets:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      EC2_SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
 
-  deploy:
-    # Every push to main deploys once its own verify and publish jobs pass.
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy))
-    needs: publish
+  smoke:
+    name: Verify canonical public health
+    needs: release
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.deploy)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: production
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Resolve live build and refuse to move production backwards
-        env:
-          REQUESTED_LIVE_BUILD: ${{ inputs.expected_live_build }}
-        run: |
-          set -euo pipefail
-          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
-          live="$(curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 3 https://weekofus.com/api/health \
-            | node -e 'let t="";process.stdin.on("data",c=>t+=c).on("end",()=>{const b=JSON.parse(t);if(!/^[0-9a-f]{40}$/.test(b.build||""))process.exit(1);console.log(b.build)})')"
-          if [ -n "${REQUESTED_LIVE_BUILD:-}" ] && [ "$REQUESTED_LIVE_BUILD" != "$live" ]; then
-            echo "Live build is $live, not the requested $REQUESTED_LIVE_BUILD."; exit 1
-          fi
-          if [ "$live" = "$GITHUB_SHA" ]; then
-            echo "Production already runs $GITHUB_SHA."; echo "ALREADY_LIVE=true" >> "$GITHUB_ENV"; exit 0
-          fi
-          # A re-run of an older push, or a hotfix deployed from another branch,
-          # must never be replaced by unrelated or older code automatically.
-          git merge-base --is-ancestor "$live" "$GITHUB_SHA" \
-            || { echo "Live build $live is not an ancestor of $GITHUB_SHA; reconcile before deploying."; exit 1; }
-          echo "EXPECTED_LIVE_BUILD=$live" >> "$GITHUB_ENV"
-          echo "Deploying $GITHUB_SHA over live $live:"
-          git log --oneline "$live..$GITHUB_SHA"
-          git diff --name-only "$live" "$GITHUB_SHA" -- db/migrations | sed 's/^/  migration: /'
-      - name: Prepare existing SSH identity
-        if: env.ALREADY_LIVE != 'true'
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          test -n "$EC2_HOST" && test -n "$EC2_SSH_KEY"
-          test -n "$EC2_KNOWN_HOSTS" || { echo 'Pinned host trust is not configured; use the release coordinator existing pinned SSH connection.'; exit 1; }
-          install -d -m 700 "$HOME/.ssh"
-          umask 077
-          printf '%s\n' "$EC2_SSH_KEY" > "$HOME/.ssh/common-week"
-          printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          test -s "$HOME/.ssh/known_hosts"
-      - name: Deploy only Week of Us with existing live configuration
-        if: env.ALREADY_LIVE != 'true'
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          set -euo pipefail
-          [[ "$EXPECTED_LIVE_BUILD" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
-          ssh -i "$HOME/.ssh/common-week" \
-            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-            -o StrictHostKeyChecking=yes \
-            "$EC2_USER@$EC2_HOST" \
-            "bash -s -- '$GITHUB_SHA' '$EXPECTED_LIVE_BUILD' --automatic-backup" < .github/scripts/deploy-app.sh
-      - name: Verify canonical public endpoint
+      - name: Public health reports this build with a ready database
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 3 \
@@ -163,6 +111,3 @@ jobs:
                 const body = JSON.parse(text);
                 if (body.status !== "ok" || body.database !== "ready" || body.build !== process.env.BUILD) process.exit(1);
               });'
-      - name: Remove runner SSH copy
-        if: always()
-        run: rm -f "$HOME/.ssh/common-week"

@@ -1,6 +1,6 @@
 # Existing-assets-only iOS TestFlight release
 
-Every push to `main` that passes CI uploads one iOS build (app plus widgets extension) and one Mac Catalyst build to the existing App Store Connect record, in two parallel jobs. Both use the same Git-count build number, source SHA and marketing version, on the IOS and MAC_OS version trains. `release-policy.json` pins the existing profile UUIDs and public certificate fingerprint, app identity, production origin, marketing version, and Jim-only internal audience verified on 2026-10-03. Empty existing groups are allowed only as explicitly listed. Every Apple preflight request is GET. Missing or changed signing assets, audience, build history, or authentication stop the release; they never trigger account repair.
+Every push to `main` that passes CI uploads one iOS build (app plus widgets extension) and one Mac Catalyst build to the existing App Store Connect record, in two parallel jobs. Both use the same Git-count build number, source SHA and marketing version, on the IOS and MAC_OS version trains. `.github/release/release-policy.json` pins the existing profile UUIDs and public certificate fingerprint, app identity, production origin, marketing version, and Jim-only internal audience verified on 2026-10-03. Empty existing groups are allowed only as explicitly listed. Every Apple preflight request is GET. Missing or changed signing assets, audience, build history, or authentication stop the release; they never trigger account repair.
 
 The workflow imports this repository's existing signing identity into a temporary runner keychain. It downloads the pinned existing profiles, verifies live certificate/profile resources and decoded entitlements, preserves any cached profile with the same UUID, and signs/exports manually without provisioning-update flags. Export produces an App Store-eligible build (not TestFlight internal-only), so a processed build can be distributed to internal testers and later selected for an App Store version. It preserves the exact Git-count build number, and embeds the full source SHA. The exported app and all approved extensions must match the expected source, build, version, platform, signing identity, profiles, and required entitlements. Current signing state, audience, and build availability are rechecked immediately before the sole binary upload.
 
@@ -8,14 +8,16 @@ Ownership was cleared on 2026-10-03. Main pushes automatically run the guarded i
 
 ## Local checks
 
+The release guards, signing and upload steps are the shared `ios/prepare`, `ios/upload` and `ios/cleanup` actions from [`jimgreco/release-tools`](https://github.com/jimgreco/release-tools), pinned by commit in `testflight.yml` (iOS and Mac Catalyst jobs; see its `ios/README.md`). This repository keeps only the policy, `.github/release/release-policy.json`, and the step that sets the production `API_BASE_URL`. The engine's tests run in release-tools CI. Locally:
+
 ```sh
-node --test .github/scripts/release-guard-tests.mjs
-PYTHONDONTWRITEBYTECODE=1 python3 .github/scripts/test_release.py
+python3 <release-tools>/ios/scripts/verify-release.py validate-policy --policy .github/release/release-policy.json
+node <release-tools>/ios/scripts/asc-readonly.mjs validate-policy --policy .github/release/release-policy.json
 actionlint .github/workflows/testflight.yml
 git diff --check
 ```
 
-Tests use synthetic in-memory responses and temporary files. They neither read real private keys nor contact Apple. Passing these tests does not prove current Apple validity, accepted version-train status, successful signing, successful upload, tester availability, or device acceptance. The actual authenticated GET checks and final artifact verification must pass during release. A successful uploader response is followed by a separate processing/internal-group availability check; if that times out, inspect the existing Apple build before retrying.
+The engine's tests use synthetic in-memory responses and temporary files. They neither read real private keys nor contact Apple. Passing these tests does not prove current Apple validity, accepted version-train status, successful signing, successful upload, tester availability, or device acceptance. The actual authenticated GET checks and final artifact verification must pass during release. A successful uploader response is followed by a separate processing/internal-group availability check; if that times out, inspect the existing Apple build before retrying.
 
 ## Authentication and scope
 

@@ -39,7 +39,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
   `npm run build`; use `test:smoke`, `test:database`, or `test:family` when the
   affected behavior requires those journeys. Use the one-shot `test:run` in agents.
 - Deployment: `docs/DEPLOYMENT.md` and `.github/workflows/`; use the final commit
-  for CI, live deployment, and applicable TestFlight verification.
+  for CI, live deployment, and applicable TestFlight verification. Server and
+  TestFlight releases use the shared `jimgreco/release-tools` engines pinned by
+  commit; this repo keeps only `.github/release/server.json` and
+  `.github/release/release-policy.json`.
 - Preserve the generated Next.js guidance above. Read the applicable installed
   Next.js documentation before code changes that use its APIs.
 
