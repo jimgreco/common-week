@@ -6,9 +6,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: common-week-testflight
-  cancel-in-progress: false
 
 # Release guards, signing and upload come from jimgreco/release-tools (ios/),
 # pinned by commit. This repository keeps only its policy
