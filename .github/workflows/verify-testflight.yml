@@ -27,6 +27,12 @@ jobs:
     - uses: actions/setup-node@v5
       with:
         node-version: 22
+    - uses: actions/checkout@v5
+      with:
+        repository: jimgreco/release-tools
+        ref: ff61f1c6a6eb51ea982246473203bcc903ce8153
+        path: .release-tools
+        persist-credentials: false
     - name: Check existing build source and read guards
       env:
         SOURCE_SHA: ${{ inputs.source_sha }}
@@ -37,7 +43,7 @@ jobs:
         [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]
         git merge-base --is-ancestor "$SOURCE_SHA" HEAD
         test "$(git rev-list --count "$SOURCE_SHA")" = "$BUILD_NUMBER"
-        node --test .github/scripts/release-guard-tests.mjs
+        node .release-tools/ios/scripts/asc-readonly.mjs validate-policy --policy .github/release/release-policy.json
     - name: Read Apple processing and existing audience only
       env:
         SOURCE_SHA: ${{ inputs.source_sha }}
@@ -61,4 +67,4 @@ jobs:
         with open(os.environ['APP_STORE_CONNECT_API_KEY_PATH'], 'x') as file:
             file.write(key.rstrip() + '\n')
         PYKEY
-        node .github/scripts/asc-readonly.mjs verify-upload --sha "$SOURCE_SHA" --build "$BUILD_NUMBER"
+        node .release-tools/ios/scripts/asc-readonly.mjs verify-upload --policy .github/release/release-policy.json --sha "$SOURCE_SHA" --build "$BUILD_NUMBER"

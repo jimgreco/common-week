@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { importPKCS8, SignJWT } from "jose";
 
 const API_BASE = "https://api.appstoreconnect.apple.com";
-const policy = JSON.parse(readFileSync(new URL("../.github/scripts/release-policy.json", import.meta.url)));
+const policy = JSON.parse(readFileSync(new URL("../.github/release/release-policy.json", import.meta.url)));
 // Apple's appVersionState values in which a version's build, notes and release type can still change.
 const EDITABLE = new Set(["PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"]);
 const SUBMITTED = new Set(["WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_DEVELOPER_RELEASE", "PENDING_APPLE_RELEASE", "PROCESSING_FOR_DISTRIBUTION", "READY_FOR_DISTRIBUTION", "READY_FOR_SALE"]);
