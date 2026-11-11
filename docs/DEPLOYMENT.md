@@ -2,7 +2,7 @@
 
 ## Consolidated EC2 server
 
-**Deploy to EC2** (`.github/workflows/deploy.yml`) runs the web, database and offline-recovery tests, then calls the shared release workflow from [`jimgreco/release-tools`](https://github.com/jimgreco/release-tools) pinned by commit. Its procedure is documented in [release-tools `server/README.md`](https://github.com/jimgreco/release-tools/blob/ff61f1c6a6eb51ea982246473203bcc903ce8153/server/README.md); this app's settings are in `.github/release/server.json`. Every run publishes `ghcr.io/jimgreco/common-week:<sha>` (ARM64, `APP_BUILD=<sha>`). Pushes to `main`, and dispatches on `main` with `deploy: true`, also release it. `expected_live_build` is optional and, when given, must equal the live build; `recovery_evidence` is a free-text note only.
+**Release** (`.github/workflows/release.yml`, the standard release-tools template) runs `.github/workflows/verify.yml` (web, database, offline-recovery, family and browser smoke tests, plus the iOS simulator and Mac Catalyst tests) on pull requests and on pushes to `main`. On a push to `main` it then calls the shared server release workflow from [`jimgreco/release-tools`](https://github.com/jimgreco/release-tools) pinned by commit, and uploads to TestFlight. A manual run on `main` releases what its `server` and `ios` checkboxes select. The server procedure is documented in [release-tools `server/README.md`](https://github.com/jimgreco/release-tools/blob/ff61f1c6a6eb51ea982246473203bcc903ce8153/server/README.md); this app's settings are in `.github/release/server.json`. A server release publishes `ghcr.io/jimgreco/common-week:<sha>` (ARM64, `APP_BUILD=<sha>`) and releases it.
 
 A release reads the live build from `https://weekofus.com/api/health` and refuses unless it is an ancestor of the commit being released, so a re-run of an older push or a hotfix from another branch is never overwritten. On the host it takes the shared-host release locks, reconstructs the live Compose invocation (profile `common-week`, with `COMMON_WEEK_IMAGE`, `COMMON_WEEK_APP_BUILD` and `COMMON_WEEK_APP_URL` taken from the running container) and refuses on any configuration drift. It then changes only the image and `APP_BUILD` of `common-week`, through a `~/deploy/releases/common-week-image-<sha>.json` override, in this order:
 
@@ -10,7 +10,7 @@ A release reads the live build from `https://weekofus.com/api/health` and refuse
 2. Back up only the `common_week` database (`pg_dump -Fc` inside `shared_db`), check it is readable and contains `planning_items`, and keep the 20 newest in `~/deploy/backups/common-week/`. If the backup fails, nothing has changed.
 3. Run `scripts/check-offline-recovery-role.mjs --before-migration` from the new image while the current build still serves.
 4. Stop Week of Us (and its embedded notification scheduler), run `scripts/migrate.mjs` and `scripts/check-offline-recovery-role.mjs --require-compatible` from the new image, and recreate only `common-week` with `--no-deps --no-build`.
-5. Require `/api/health` inside the container to report `status: ok`, `database: ready` and the exact build. After that, a separate job checks the same on the public URL.
+5. Require `/api/health` inside the container to report `status: ok`, `database: ready` and the exact build. After that, the shared release workflow checks the same on the public URL.
 
 Once migrations have started, any failure leaves Week of Us stopped for a compatible corrected build; there is no automatic rollback to a pre-migration binary. `88c34e7` is the minimum compatible rollback revision; never restart pre-audit workers after migration 020. Keep migration 021 during recovery, since reverting the old Google linking flow reintroduces the vulnerability. A readable backup is not a tested restore: for releases with risky migrations, still rehearse against a staging copy first.
 
@@ -18,7 +18,7 @@ The release never transfers credentials or edits `.env`, shared Compose files, d
 
 The host release needs the `production` environment secrets `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` and the pinned `EC2_KNOWN_HOSTS` (passed to the shared workflow as `EC2_SSH_KNOWN_HOSTS`).
 
-Native distribution is separate: CI uploads iOS and Mac Catalyst builds on pushes to `main`, or when dispatched with `upload_native: true` (see [native-testflight-existing-assets.md](native-testflight-existing-assets.md)). Old clients keep ordinary sign-in but cannot finish new Calendar linking until updated. Older ambiguous offline drafts remain quarantined; never automatically reassign or delete them.
+Native distribution is the `ios` job of the same workflow (`.github/workflows/testflight.yml`): it uploads iOS and Mac Catalyst builds on pushes to `main`, or on a manual run with `ios` selected (see [native-testflight-existing-assets.md](native-testflight-existing-assets.md)). Old clients keep ordinary sign-in but cannot finish new Calendar linking until updated. Older ambiguous offline drafts remain quarantined; never automatically reassign or delete them.
 
 ## Weekly summary endpoint
 

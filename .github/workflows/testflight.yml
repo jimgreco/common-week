@@ -2,16 +2,6 @@ name: TestFlight
 
 on:
   workflow_call:
-    inputs:
-      upload:
-        type: boolean
-        default: false
-  workflow_dispatch:
-    inputs:
-      upload:
-        description: Upload iOS and Mac using the pinned existing signing assets
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -26,7 +16,6 @@ concurrency:
 jobs:
   build:
     name: iOS
-    if: inputs.upload && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
@@ -63,7 +52,6 @@ jobs:
     # Same app record, certificate, audience and Git-count build as iOS, on the
     # MAC_OS train. The widgets extension is iOS-only, so the package has no appex.
     name: Mac Catalyst
-    if: inputs.upload && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:

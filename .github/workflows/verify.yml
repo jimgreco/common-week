@@ -1,22 +1,10 @@
-name: CI
+name: Verify
 
 on:
-  pull_request:
-  push:
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      upload_native:
-        description: Upload iOS and Mac builds using existing signing assets
-        type: boolean
-        default: false
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: common-week-ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -261,12 +249,3 @@ jobs:
             output/xcode/CommonWeekMacCatalystTests.xcresult
           if-no-files-found: warn
           retention-days: 14
-
-  testflight:
-    name: TestFlight
-    if: (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.upload_native)) && github.ref == 'refs/heads/main'
-    needs: [verify, ios, maccatalyst]
-    uses: ./.github/workflows/testflight.yml
-    with:
-      upload: true
-    secrets: inherit

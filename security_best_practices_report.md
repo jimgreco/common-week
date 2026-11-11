@@ -15,7 +15,7 @@ Reviewed scope: Next.js 16.3, React 19, TypeScript, Google OAuth/Calendar, Postg
 - PostgreSQL runs under the dedicated `common_week_app` login and separate `common_week` database, not the shared administrator login (`../deploy/docker-compose.yml:156-172`).
 - Realtime requires an authenticated household and uses one shared PostgreSQL listener per app process, preventing browser streams from exhausting the main query pool (`src/app/api/realtime/route.ts:8-49`, `src/lib/server/realtime.ts:1-75`).
 - The browser receives no database/provider secret. Server modules use `server-only`, and the CSP blocks arbitrary script/connect origins (`src/lib/server/database.ts:1-59`, `src/proxy.ts:6-43`).
-- CI uses reproducible installs, audits the production build, migrates real PostgreSQL, and runs explicit cross-household tests (`.github/workflows/ci.yml:15-52`, `scripts/test-database.mjs:1-129`).
+- CI uses reproducible installs, audits the production build, migrates real PostgreSQL, and runs explicit cross-household tests (`.github/workflows/verify.yml`, `scripts/test-database.mjs:1-129`).
 
 ## Medium findings
 
