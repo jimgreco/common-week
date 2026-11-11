@@ -16,7 +16,7 @@ Once migrations have started, any failure leaves Week of Us stopped for a compat
 
 The release never transfers credentials or edits `.env`, shared Compose files, database roles/grants or ownership. The role checks are read-only; a mismatch stops the release. See [exact role requirements](OFFLINE-DRAFT-RECOVERY.md#database-role-release-gate-october-7-follow-up). The live Compose chain includes this app's `common-week-apple.yml` layer (reference copy in `.github/deploy/`); keep it, and the existing Google/Apple, email/APNs, database and encryption configuration, intact. Any change to those is its own reviewed step outside a release.
 
-The host release needs the `production` environment secrets `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` and the pinned `EC2_KNOWN_HOSTS` (passed to the shared workflow as `EC2_SSH_KNOWN_HOSTS`).
+The host release needs the secrets `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY` and the pinned `EC2_SSH_KNOWN_HOSTS`, the same names as every other app. The older `EC2_KNOWN_HOSTS` secret is no longer used and can be deleted.
 
 Native distribution is the `ios` job of the same workflow (`.github/workflows/testflight.yml`): it uploads iOS and Mac Catalyst builds on pushes to `main`, or on a manual run with `ios` selected (see [native-testflight-existing-assets.md](native-testflight-existing-assets.md)). Old clients keep ordinary sign-in but cannot finish new Calendar linking until updated. Older ambiguous offline drafts remain quarantined; never automatically reassign or delete them.
 
