@@ -27,7 +27,6 @@
     "COMMON_WEEK_APP_BUILD": "env:common-week:APP_BUILD",
     "COMMON_WEEK_APP_URL": "env:common-week:NEXT_PUBLIC_APP_URL"
   },
-  "backup": { "database": "common_week", "require_table": "planning_items", "keep": 20 },
   "preflight": [
     { "service": "common-week", "command": ["node", "scripts/check-offline-recovery-role.mjs", "--before-migration"] }
   ],
@@ -39,5 +38,5 @@
     ]
   },
   "on_failure_after_migration": "stop",
-  "public": { "url": "https://weekofus.com/api/health", "field": "build", "length": 40, "refuse_backwards": true }
+  "refuse_backwards": true
 }
